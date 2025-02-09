@@ -2,18 +2,19 @@ package com.mudhut.nudge.utils.exceptions;
 
 public class ErrorResponse {
     private String code;
-    private String message;
+    private Object message;
 
-    public ErrorResponse(String code, String message) {
+    public ErrorResponse(String code, Object message) {
         this.code = code;
         this.message = message;
     }
 
+    // Getters
     public String getCode() {
         return code;
     }
 
-    public String getMessage() {
+    public Object getMessage() {
         return message;
     }
 }

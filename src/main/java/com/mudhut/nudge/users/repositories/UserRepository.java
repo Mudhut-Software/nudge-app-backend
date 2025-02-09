@@ -1,4 +1,4 @@
-package com.mudhut.nudge.users;
+package com.mudhut.nudge.users.repositories;
 
 import java.util.Optional;
 

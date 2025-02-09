@@ -1,4 +1,4 @@
-package com.mudhut.nudge.users;
+package com.mudhut.nudge.users.services;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -13,6 +13,10 @@ import com.mudhut.nudge.users.models.ResetPasswordRequest;
 import com.mudhut.nudge.users.models.User;
 import com.mudhut.nudge.users.models.UserRole;
 import com.mudhut.nudge.users.models.VerificationToken;
+import com.mudhut.nudge.users.repositories.PasswordResetTokenRepository;
+import com.mudhut.nudge.users.repositories.PhoneVerificationTokenRepository;
+import com.mudhut.nudge.users.repositories.UserRepository;
+import com.mudhut.nudge.users.repositories.VerificationTokenRepository;
 import com.mudhut.nudge.utils.exceptions.UserAlreadyExistsException;
 
 import jakarta.persistence.EntityNotFoundException;

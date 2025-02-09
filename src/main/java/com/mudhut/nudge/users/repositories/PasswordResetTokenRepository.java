@@ -1,4 +1,4 @@
-package com.mudhut.nudge.users;
+package com.mudhut.nudge.users.repositories;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import com.mudhut.nudge.users.models.PasswordResetToken;

@@ -1,4 +1,4 @@
-package com.mudhut.nudge.users;
+package com.mudhut.nudge.users.controllers;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -8,6 +8,7 @@ import com.mudhut.nudge.users.models.LoginRequest;
 import com.mudhut.nudge.users.models.RegisterRequest;
 import com.mudhut.nudge.users.models.ResetPasswordRequest;
 import com.mudhut.nudge.users.models.User;
+import com.mudhut.nudge.users.services.UserService;
 
 import jakarta.validation.Valid;
 
