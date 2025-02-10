@@ -23,13 +23,6 @@ public class GlobalExceptionHandler {
                 HttpStatus.CONFLICT);
     }
 
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<?> handleIllegalArgumentException(IllegalArgumentException ex) {
-        return new ResponseEntity<>(
-                new ErrorResponse("VALIDATION_ERROR", ex.getMessage()),
-                HttpStatus.BAD_REQUEST);
-    }
-
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<?> handleConstraintViolationException(ConstraintViolationException ex) {
         Map<String, String> errors = new HashMap<>();
@@ -53,6 +46,13 @@ public class GlobalExceptionHandler {
         });
         return new ResponseEntity<>(
                 new ErrorResponse("VALIDATION_ERROR", errors),
+                HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<?> handleIllegalArgumentException(IllegalArgumentException ex) {
+        return new ResponseEntity<>(
+                new ErrorResponse("VALIDATION_ERROR", ex.getMessage()),
                 HttpStatus.BAD_REQUEST);
     }
 
