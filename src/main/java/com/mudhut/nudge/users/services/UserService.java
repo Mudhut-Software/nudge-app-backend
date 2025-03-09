@@ -5,19 +5,22 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.mudhut.nudge.email.JavaEmailService;
+import com.mudhut.nudge.users.entities.PasswordResetToken;
+import com.mudhut.nudge.users.entities.PhoneVerificationToken;
+import com.mudhut.nudge.users.entities.User;
+import com.mudhut.nudge.users.entities.UserRole;
+import com.mudhut.nudge.users.entities.VerificationToken;
 import com.mudhut.nudge.users.models.LoginRequest;
-import com.mudhut.nudge.users.models.PasswordResetToken;
-import com.mudhut.nudge.users.models.PhoneVerificationToken;
 import com.mudhut.nudge.users.models.RegisterRequest;
 import com.mudhut.nudge.users.models.ResetPasswordRequest;
-import com.mudhut.nudge.users.models.User;
-import com.mudhut.nudge.users.models.UserRole;
-import com.mudhut.nudge.users.models.VerificationToken;
 import com.mudhut.nudge.users.repositories.PasswordResetTokenRepository;
 import com.mudhut.nudge.users.repositories.PhoneVerificationTokenRepository;
 import com.mudhut.nudge.users.repositories.UserRepository;
 import com.mudhut.nudge.users.repositories.VerificationTokenRepository;
 import com.mudhut.nudge.utils.exceptions.UserAlreadyExistsException;
+import com.mudhut.nudge.utils.exceptions.UserNotFoundException;
+import com.mudhut.nudge.utils.UrlService;
 
 import jakarta.persistence.EntityNotFoundException;
 
@@ -44,6 +47,12 @@ public class UserService {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private JavaEmailService emailService;
+
+    @Autowired
+    private UrlService urlService;
 
     private static final String EMAIL_PATTERN = "^[_A-Za-z0-9-\\+]+(\\.[_A-Za-z0-9-]+)*@" +
             "[A-Za-z0-9-]+(\\.[A-Za-z0-9]+)*(\\.[A-Za-z]{2,})$";
@@ -116,10 +125,39 @@ public class UserService {
         }
 
         try {
-            return userRepository.save(newUser);
+            User savedUser = userRepository.save(newUser);
+
+            // Generate verification token and send verification email
+            String token = createVerificationToken(newUser);
+
+            sendVerificationEmail(savedUser, token);
+
+            return savedUser;
         } catch (Exception e) {
             throw new RuntimeException("Error occurred while creating user", e);
         }
+    }
+
+    private void sendVerificationEmail(User user, String token) {
+        // Create verification URL
+        String verificationUrl = urlService.buildUrlWithParam("/verify-email", "token", token);
+
+        // Email content
+        String subject = "Please verify your email address";
+
+        StringBuilder contentBuilder = new StringBuilder();
+
+        contentBuilder.append("Dear User,\n\n")
+                .append("Please click the link below to verify your email address:\n")
+                .append(verificationUrl).append("\n\n")
+                .append("This link will expire in 24 hours.\n\n")
+                .append("Thank you,\n")
+                .append("The Nudge App Team");
+
+        String content = contentBuilder.toString();
+
+        // Send the email
+        emailService.sendEmail(user.getEmail(), subject, content);
     }
 
     public User authenticateUser(LoginRequest loginRequest) {
@@ -236,7 +274,7 @@ public class UserService {
     @Transactional
     public void initiateForgotPassword(String email) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new EntityNotFoundException("User not found with email: " + email));
+                .orElseThrow(() -> new UserNotFoundException("User not found with email: " + email));
 
         // Invalidate any existing unused tokens for this user
         invalidateExistingPasswordResetTokens(user);
@@ -247,7 +285,29 @@ public class UserService {
         passwordResetTokenRepository.save(resetToken);
 
         // Here you would typically send an email with the reset link
-        // sendPasswordResetEmail(user.getEmail(), token);
+        sendPasswordResetEmail(user.getEmail(), token);
+    }
+
+    private void sendPasswordResetEmail(String email, String token) {
+        // Create password reset URL
+        String resetUrl = urlService.buildUrlWithParam("/reset-password", "token", token);
+
+        // Email content
+        String subject = "Reset Your Password";
+
+        StringBuilder contentBuilder = new StringBuilder();
+        contentBuilder.append("Dear User,\n\n")
+                .append("You have requested to reset your password. Please click the link below to set a new password:\n")
+                .append(resetUrl).append("\n\n")
+                .append("This link will expire in 24 hours.\n\n")
+                .append("If you did not request a password reset, please ignore this email or contact support if you have concerns.\n\n")
+                .append("Thank you,\n")
+                .append("The Nudge App Team");
+
+        String content = contentBuilder.toString();
+
+        // Send the email
+        emailService.sendEmail(email, subject, content);
     }
 
     private void invalidateExistingPasswordResetTokens(User user) {

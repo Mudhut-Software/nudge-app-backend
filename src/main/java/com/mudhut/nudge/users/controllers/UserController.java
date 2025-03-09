@@ -4,11 +4,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import com.mudhut.nudge.users.entities.User;
+import com.mudhut.nudge.users.models.ForgotPasswordRequest;
 import com.mudhut.nudge.users.models.LoginRequest;
 import com.mudhut.nudge.users.models.RegisterRequest;
 import com.mudhut.nudge.users.models.ResetPasswordRequest;
-import com.mudhut.nudge.users.models.User;
 import com.mudhut.nudge.users.services.UserService;
+import com.mudhut.nudge.utils.models.GeneralRequestResponse;
 
 import jakarta.validation.Valid;
 
@@ -42,14 +44,18 @@ public class UserController {
     }
 
     @PostMapping("/forgot-password")
-    public ResponseEntity<?> forgotPassword(@RequestParam String email) {
-        userService.initiateForgotPassword(email);
-        return ResponseEntity.ok().build();
+    public ResponseEntity<GeneralRequestResponse> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        userService.initiateForgotPassword(request.getEmail());
+        GeneralRequestResponse response = new GeneralRequestResponse(
+                "An email has been sent to you with password reset instructions");
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/reset-password")
-    public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+    public ResponseEntity<GeneralRequestResponse> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         userService.resetPassword(request);
-        return ResponseEntity.ok().build();
+        GeneralRequestResponse response = new GeneralRequestResponse(
+                "Your password has been reset successfully");
+        return ResponseEntity.ok(response);
     }
 }

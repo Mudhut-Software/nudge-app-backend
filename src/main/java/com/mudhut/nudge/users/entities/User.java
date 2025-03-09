@@ -1,4 +1,4 @@
-package com.mudhut.nudge.users.models;
+package com.mudhut.nudge.users.entities;
 
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;

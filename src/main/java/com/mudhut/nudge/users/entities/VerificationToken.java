@@ -1,11 +1,11 @@
-package com.mudhut.nudge.users.models;
+package com.mudhut.nudge.users.entities;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "password_reset_tokens")
-public class PasswordResetToken {
+@Table(name = "verification_tokens")
+public class VerificationToken {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -20,13 +20,13 @@ public class PasswordResetToken {
 
     private boolean used = false;
 
-    public PasswordResetToken() {
+    public VerificationToken() {
     }
 
-    public PasswordResetToken(String token, User user) {
+    public VerificationToken(String token, User user) {
         this.token = token;
         this.user = user;
-        this.expiryDate = LocalDateTime.now().plusHours(1); // Token valid for 1 hour
+        this.expiryDate = LocalDateTime.now().plusHours(24); // Token valid for 24 hours
     }
 
     // Getters and Setters

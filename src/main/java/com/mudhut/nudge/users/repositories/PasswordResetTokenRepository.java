@@ -1,8 +1,9 @@
 package com.mudhut.nudge.users.repositories;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-import com.mudhut.nudge.users.models.PasswordResetToken;
-import com.mudhut.nudge.users.models.User;
+
+import com.mudhut.nudge.users.entities.PasswordResetToken;
+import com.mudhut.nudge.users.entities.User;
 
 import java.util.List;
 import java.util.Optional;

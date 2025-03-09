@@ -1,18 +1,18 @@
-package com.mudhut.nudge.users.models;
+package com.mudhut.nudge.users.entities;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "phone_verification_tokens")
-public class PhoneVerificationToken {
+@Table(name = "password_reset_tokens")
+public class PasswordResetToken {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String code;
+    private String token;
 
-    @OneToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
@@ -20,13 +20,13 @@ public class PhoneVerificationToken {
 
     private boolean used = false;
 
-    public PhoneVerificationToken() {
+    public PasswordResetToken() {
     }
 
-    public PhoneVerificationToken(String code, User user) {
-        this.code = code;
+    public PasswordResetToken(String token, User user) {
+        this.token = token;
         this.user = user;
-        this.expiryDate = LocalDateTime.now().plusMinutes(15); // Code valid for 15 minutes
+        this.expiryDate = LocalDateTime.now().plusHours(1); // Token valid for 1 hour
     }
 
     // Getters and Setters
@@ -34,12 +34,12 @@ public class PhoneVerificationToken {
         return id;
     }
 
-    public String getCode() {
-        return code;
+    public String getToken() {
+        return token;
     }
 
-    public void setCode(String code) {
-        this.code = code;
+    public void setToken(String token) {
+        this.token = token;
     }
 
     public User getUser() {

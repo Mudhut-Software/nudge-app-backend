@@ -1,4 +1,4 @@
-package com.mudhut.nudge.users.models;
+package com.mudhut.nudge.users.entities;
 
 public enum UserRole {
     SUPER_ADMIN,
