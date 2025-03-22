@@ -24,6 +24,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers("/reset-password").permitAll()
+                        .requestMatchers("/verify-email").permitAll()
                         .anyRequest().authenticated());
 
         return http.build();
