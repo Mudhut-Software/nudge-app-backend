@@ -12,4 +12,17 @@ public class EnvConfig {
     public String getMailerSendApiToken() {
         return env.getProperty("MAILERSEND_API_TOKEN");
     }
+
+    public String getJwtSecret() {
+        return env.getProperty("JWT_SECRET");
+    }
+
+    public Integer getAccessTokenExpiryInMinutes() {
+        return Integer.parseInt(env.getProperty("ACCESS_TOKEN_EXPIRY_IN_MINUTES"));
+    }
+
+    public Integer getRefreshTokenExpiryInMinutes() {
+        return Integer.parseInt(env.getProperty("REFRESH_TOKEN_EXPIRY_IN_MINUTES"));
+    }
+
 }

@@ -6,13 +6,13 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
-import com.mudhut.nudge.users.services.UserService;
+import com.mudhut.nudge.users.services.VerificationService;
 
 @Controller
 public class AuthTemplatesController {
 
     @Autowired
-    UserService userService;
+    VerificationService verificationService;
 
     @GetMapping("/reset-password")
     public String showResetPasswordForm(@RequestParam String token, Model model) {
@@ -23,7 +23,7 @@ public class AuthTemplatesController {
     @GetMapping("/verify-email")
     public String verifyEmail(@RequestParam String token, Model model) {
         try {
-            userService.verifyEmail(token);
+            verificationService.verifyEmail(token);
             model.addAttribute("message", "Your email has been verified successfully. Your account is now active.");
             model.addAttribute("status", "success");
         } catch (IllegalArgumentException e) {

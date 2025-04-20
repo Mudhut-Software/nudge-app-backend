@@ -19,13 +19,11 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http
-                .csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/**").permitAll()
-                        .requestMatchers("/reset-password").permitAll()
-                        .requestMatchers("/verify-email").permitAll()
-                        .anyRequest().authenticated());
+        http.csrf(csrf -> csrf.disable()).authorizeHttpRequests(auth -> auth
+                .requestMatchers("/reset-password").permitAll()
+                .requestMatchers("/verify-email").permitAll()
+                .requestMatchers("/api/v1/auth/**").permitAll()
+                .anyRequest().authenticated());
 
         return http.build();
     }
