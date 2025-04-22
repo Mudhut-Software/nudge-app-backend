@@ -17,12 +17,12 @@ public class EnvConfig {
         return env.getProperty("JWT_SECRET");
     }
 
-    public Integer getAccessTokenExpiryInMinutes() {
-        return Integer.parseInt(env.getProperty("ACCESS_TOKEN_EXPIRY_IN_MINUTES"));
+    public Integer getAccessTokenExpiryInMillis() {
+        return Integer.parseInt(env.getProperty("ACCESS_TOKEN_EXPIRY_IN_MILLIS"));
     }
 
-    public Integer getRefreshTokenExpiryInMinutes() {
-        return Integer.parseInt(env.getProperty("REFRESH_TOKEN_EXPIRY_IN_MINUTES"));
+    public Integer getRefreshTokenExpiryInMillis() {
+        return Integer.parseInt(env.getProperty("REFRESH_TOKEN_EXPIRY_IN_MILLIS"));
     }
 
 }

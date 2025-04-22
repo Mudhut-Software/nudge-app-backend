@@ -6,7 +6,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import com.mudhut.nudge.users.entities.RefreshToken;
 import com.mudhut.nudge.users.entities.User;
+import com.mudhut.nudge.users.models.AuthResponse;
 import com.mudhut.nudge.users.models.LoginRequest;
 import com.mudhut.nudge.users.repositories.UserRepository;
 import com.mudhut.nudge.users.services.helpers.PasswordValidator;
@@ -28,7 +30,13 @@ public class LoginService {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
-    public User authenticateUser(LoginRequest loginRequest) {
+    @Autowired
+    private JwtService jwtService;
+
+    @Autowired
+    private RefreshTokenService refreshTokenService;
+
+    public AuthResponse authenticateUser(LoginRequest loginRequest) {
         // Validate email format
         if (!Pattern.compile(EMAIL_PATTERN).matcher(loginRequest.getEmail()).matches()) {
             throw new IllegalArgumentException("Invalid email format");
@@ -46,6 +54,15 @@ public class LoginService {
             throw new IllegalArgumentException("Invalid password");
         }
 
-        return user;
+        // Generate access token
+        String accessToken = jwtService.generateToken(user);
+
+        // Generate refresh token
+        RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
+
+        return AuthResponse.builder()
+                .accessToken(accessToken)
+                .refreshToken(refreshToken.getToken())
+                .build();
     }
 }

@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import com.mudhut.nudge.users.entities.User;
+import com.mudhut.nudge.users.models.AuthResponse;
 import com.mudhut.nudge.users.models.ForgotPasswordRequest;
 import com.mudhut.nudge.users.models.LoginRequest;
 import com.mudhut.nudge.users.models.RegisterRequest;
@@ -43,7 +44,7 @@ public class UserController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<User> authenticateUser(@Valid @RequestBody LoginRequest request) {
+    public ResponseEntity<AuthResponse> authenticateUser(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(loginService.authenticateUser(request));
     }
 

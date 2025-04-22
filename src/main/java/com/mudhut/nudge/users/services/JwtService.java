@@ -2,6 +2,7 @@ package com.mudhut.nudge.users.services;
 
 import com.mudhut.nudge.config.EnvConfig;
 import com.mudhut.nudge.users.entities.User;
+
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import io.jsonwebtoken.security.SecurityException;
@@ -29,10 +30,9 @@ public class JwtService {
     public String generateToken(User user) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("id", user.getId());
-        claims.put("email", user.getEmail());
         claims.put("role", user.getRole().name());
 
-        return createToken(claims, user.getEmail(), envConfig.getAccessTokenExpiryInMinutes());
+        return createToken(claims, user.getEmail(), envConfig.getAccessTokenExpiryInMillis());
     }
 
     private String createToken(Map<String, Object> claims, String subject, int expirationMs) {

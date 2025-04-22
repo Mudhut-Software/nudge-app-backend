@@ -23,6 +23,13 @@ public class RefreshToken {
     public RefreshToken() {
     }
 
+    public RefreshToken(Long id, String token, Instant expiryDate, User user) {
+        this.id = id;
+        this.token = token;
+        this.expiryDate = expiryDate;
+        this.user = user;
+    }
+
     public Long getId() {
         return id;
     }
@@ -53,5 +60,46 @@ public class RefreshToken {
 
     public void setExpiryDate(Instant expiryDate) {
         this.expiryDate = expiryDate;
+    }
+
+    // Static builder method
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    // Builder class
+    public static class Builder {
+        private Long id;
+        private String token;
+        private Instant expiryDate;
+        private User user;
+
+        private Builder() {
+            // private constructor to enforce the use of the builder() method
+        }
+
+        public Builder id(Long id) {
+            this.id = id;
+            return this;
+        }
+
+        public Builder token(String token) {
+            this.token = token;
+            return this;
+        }
+
+        public Builder expiryDate(Instant expiryDate) {
+            this.expiryDate = expiryDate;
+            return this;
+        }
+
+        public Builder user(User user) {
+            this.user = user;
+            return this;
+        }
+
+        public RefreshToken build() {
+            return new RefreshToken(id, token, expiryDate, user);
+        }
     }
 }
