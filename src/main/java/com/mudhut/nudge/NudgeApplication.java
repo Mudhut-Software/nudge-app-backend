@@ -9,5 +9,4 @@ public class NudgeApplication {
 	public static void main(String[] args) {
 		SpringApplication.run(NudgeApplication.class, args);
 	}
-
 }
