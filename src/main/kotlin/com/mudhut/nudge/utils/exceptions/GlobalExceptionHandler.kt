@@ -168,6 +168,33 @@ class GlobalExceptionHandler {
         )
     }
 
+    @ExceptionHandler(BusinessNotFoundException::class)
+    fun handleBusinessNotFoundException(ex: BusinessNotFoundException): ResponseEntity<ErrorResponse> {
+        logger.warn("Business not found: {}", ex.message)
+        return ResponseEntity(
+            ErrorResponse(ERROR_CODE_NOT_FOUND, ex.message ?: "Business not found"),
+            HttpStatus.NOT_FOUND
+        )
+    }
+
+    @ExceptionHandler(BusinessAccessDeniedException::class)
+    fun handleBusinessAccessDeniedException(ex: BusinessAccessDeniedException): ResponseEntity<ErrorResponse> {
+        logger.warn("Business access denied: {}", ex.message)
+        return ResponseEntity(
+            ErrorResponse(ERROR_CODE_AUTHORIZATION, ex.message ?: "Access denied"),
+            HttpStatus.FORBIDDEN
+        )
+    }
+
+    @ExceptionHandler(InvitationException::class)
+    fun handleInvitationException(ex: InvitationException): ResponseEntity<ErrorResponse> {
+        logger.warn("Invitation error: {}", ex.message)
+        return ResponseEntity(
+            ErrorResponse(ERROR_CODE_VALIDATION, ex.message ?: "Invitation error"),
+            HttpStatus.BAD_REQUEST
+        )
+    }
+
     @ExceptionHandler(Exception::class)
     fun handleGenericException(ex: Exception): ResponseEntity<ErrorResponse> {
         logger.error("Unhandled exception occurred", ex)
