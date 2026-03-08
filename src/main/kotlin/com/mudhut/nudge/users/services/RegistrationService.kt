@@ -1,5 +1,6 @@
 package com.mudhut.nudge.users.services
 
+import com.mudhut.nudge.businesses.services.BusinessInvitationService
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.UserRole
 import com.mudhut.nudge.users.models.RegisterRequest
@@ -15,7 +16,8 @@ class RegistrationService(
     private val userRepository: UserRepository,
     private val passwordValidator: PasswordValidator,
     private val passwordEncoder: PasswordEncoder,
-    private val verificationService: VerificationService
+    private val verificationService: VerificationService,
+    private val businessInvitationService: BusinessInvitationService
 ) {
     companion object {
         private const val EMAIL_PATTERN = "^[_A-Za-z0-9-\\+]+(\\.[_A-Za-z0-9-]+)*@" +
@@ -58,6 +60,7 @@ class RegistrationService(
 
         try {
             val savedUser = userRepository.save(newUser)
+            businessInvitationService.resolveInvitationsForNewUser(savedUser.email!!)
             val token = verificationService.createVerificationToken(newUser)
             verificationService.sendVerificationEmail(savedUser, token)
             return savedUser
