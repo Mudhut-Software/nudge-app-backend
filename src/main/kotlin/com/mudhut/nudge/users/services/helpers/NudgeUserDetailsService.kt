@@ -16,10 +16,14 @@ class NudgeUserDetailsService(
         val user = userRepository.findByEmail(username)
             .orElseThrow { UsernameNotFoundException("User not found with username: $username") }
 
+        val authorities = listOf(
+            SimpleGrantedAuthority("ROLE_${user.role?.name ?: "BASIC_USER"}")
+        )
+
         return org.springframework.security.core.userdetails.User(
             user.email,
             user.password,
-            listOf(SimpleGrantedAuthority("BASIC_USER"))
+            authorities
         )
     }
 }

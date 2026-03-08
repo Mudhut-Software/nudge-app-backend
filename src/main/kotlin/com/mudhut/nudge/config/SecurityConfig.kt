@@ -7,6 +7,7 @@ import org.springframework.security.authentication.AuthenticationManager
 import org.springframework.security.authentication.AuthenticationProvider
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration
+import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
 import org.springframework.security.config.http.SessionCreationPolicy
@@ -48,6 +49,10 @@ class SecurityConfig(
                     .requestMatchers("/reset-password").permitAll()
                     .requestMatchers("/verify-email").permitAll()
                     .requestMatchers("/api/v1/auth/**").permitAll()
+                    .requestMatchers(
+                        HttpMethod.POST,
+                        "/api/v1/categories"
+                    ).hasAnyRole("SUPER_ADMIN", "ADMIN")
                     .anyRequest().authenticated()
             }
             .headers { headers ->
