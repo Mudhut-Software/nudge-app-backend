@@ -11,10 +11,10 @@ class JavaEmailService(
 
     override fun sendEmail(to: String, subject: String, content: String) {
         val message = SimpleMailMessage().apply {
-            setFrom("mudhutsoftware@gmail.com")
+            from = "mudhutsoftware@gmail.com"
             setTo(to)
             setSubject(subject)
-            setText(content)
+            text = content
         }
         emailSender.send(message)
     }
