@@ -1,6 +1,5 @@
 package com.mudhut.nudge.users.controllers
 
-import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.models.*
 import com.mudhut.nudge.users.services.ForgotPasswordService
 import com.mudhut.nudge.users.services.LoginService
@@ -23,8 +22,8 @@ class UserController(
 ) {
 
     @PostMapping("/register")
-    fun registerUser(@Valid @RequestBody request: RegisterRequest): ResponseEntity<User> =
-        ResponseEntity.ok(registrationService.createUser(request))
+    fun registerUser(@Valid @RequestBody request: RegisterRequest): ResponseEntity<UserResponse> =
+        ResponseEntity.ok(UserResponse.from(registrationService.createUser(request)))
 
     @PostMapping("/login")
     fun authenticateUser(@Valid @RequestBody request: LoginRequest): ResponseEntity<AuthResponse> =

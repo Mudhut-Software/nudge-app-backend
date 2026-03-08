@@ -92,5 +92,6 @@ class UserControllerTest {
             .andExpect(MockMvcResultMatchers.status().isOk)
             .andExpect(MockMvcResultMatchers.jsonPath("$.email").value("test@example.com"))
             .andExpect(MockMvcResultMatchers.jsonPath("$.phoneNumber").value("+256759123321"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.password").doesNotExist())
     }
 }
