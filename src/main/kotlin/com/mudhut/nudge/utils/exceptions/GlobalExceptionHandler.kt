@@ -177,6 +177,15 @@ class GlobalExceptionHandler {
         )
     }
 
+    @ExceptionHandler(CategoryNotFoundException::class)
+    fun handleCategoryNotFoundException(ex: CategoryNotFoundException): ResponseEntity<ErrorResponse> {
+        logger.warn("Category not found: {}", ex.message)
+        return ResponseEntity(
+            ErrorResponse(ERROR_CODE_NOT_FOUND, ex.message ?: "Category not found"),
+            HttpStatus.NOT_FOUND
+        )
+    }
+
     @ExceptionHandler(BusinessAccessDeniedException::class)
     fun handleBusinessAccessDeniedException(ex: BusinessAccessDeniedException): ResponseEntity<ErrorResponse> {
         logger.warn("Business access denied: {}", ex.message)

@@ -1,5 +1,6 @@
 package com.mudhut.nudge.businesses.services
 
+import com.mudhut.nudge.businesses.entities.BusinessMember
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.models.BusinessMemberResponse
 import com.mudhut.nudge.businesses.models.UpdateMemberRoleRequest
@@ -117,7 +118,7 @@ class BusinessMemberService(
             .map { toResponse(it) }
     }
 
-    private fun toResponse(member: com.mudhut.nudge.businesses.entities.BusinessMember): BusinessMemberResponse {
+    private fun toResponse(member: BusinessMember): BusinessMemberResponse {
         return BusinessMemberResponse(
             id = member.id!!,
             userId = member.user!!.id!!,

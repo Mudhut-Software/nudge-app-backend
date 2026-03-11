@@ -3,7 +3,9 @@ package com.mudhut.nudge.businesses.controllers
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.mudhut.nudge.businesses.models.CategoryResponse
 import com.mudhut.nudge.businesses.models.CreateCategoryRequest
+import com.mudhut.nudge.businesses.models.UpdateCategoryRequest
 import com.mudhut.nudge.businesses.services.BusinessCategoryService
+import com.mudhut.nudge.utils.exceptions.CategoryNotFoundException
 import com.mudhut.nudge.config.EnvConfig
 import com.mudhut.nudge.config.JwtAuthenticationFilter
 import com.mudhut.nudge.config.SecurityConfig
@@ -123,5 +125,107 @@ class BusinessCategoryControllerTest {
             .andExpect(MockMvcResultMatchers.status().isOk)
             .andExpect(MockMvcResultMatchers.jsonPath("$[0].name").value("E-Pharmacy"))
             .andExpect(MockMvcResultMatchers.jsonPath("$[0].parentId").value(1))
+    }
+
+    // --- GET by ID tests ---
+
+    @Test
+    @WithMockUser
+    fun testGetCategoryById_Success() {
+        val response = CategoryResponse(1L, "Healthcare", "Health services", null, true, true)
+
+        Mockito.`when`(businessCategoryService.getCategoryById(1L)).thenReturn(response)
+
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/categories/1"))
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.id").value(1))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.name").value("Healthcare"))
+    }
+
+    @Test
+    @WithMockUser
+    fun testGetCategoryById_NotFound() {
+        Mockito.`when`(businessCategoryService.getCategoryById(99L))
+            .thenThrow(CategoryNotFoundException("Category not found with id: 99"))
+
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/categories/99"))
+            .andExpect(MockMvcResultMatchers.status().isNotFound)
+    }
+
+    // --- UPDATE tests ---
+
+    @Test
+    @WithMockUser(roles = ["SUPER_ADMIN"])
+    fun testUpdateCategory_Success() {
+        val request = UpdateCategoryRequest(name = "Updated Name", description = "Updated desc")
+        val response = CategoryResponse(1L, "Updated Name", "Updated desc", null, true, false)
+
+        Mockito.`when`(businessCategoryService.updateCategory(Mockito.eq(1L), anyObject()))
+            .thenReturn(response)
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.put("/api/v1/categories/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.name").value("Updated Name"))
+    }
+
+    @Test
+    @WithMockUser(roles = ["BASIC_USER"])
+    fun testUpdateCategory_ForbiddenForBasicUser() {
+        val request = UpdateCategoryRequest(name = "Updated Name")
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.put("/api/v1/categories/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isForbidden)
+    }
+
+    @Test
+    @WithMockUser(roles = ["ADMIN"])
+    fun testUpdateCategory_NotFound() {
+        Mockito.`when`(businessCategoryService.updateCategory(Mockito.eq(99L), anyObject()))
+            .thenThrow(CategoryNotFoundException("Category not found with id: 99"))
+
+        val request = UpdateCategoryRequest(name = "New Name")
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.put("/api/v1/categories/99")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isNotFound)
+    }
+
+    // --- DELETE tests ---
+
+    @Test
+    @WithMockUser(roles = ["SUPER_ADMIN"])
+    fun testDeleteCategory_Success() {
+        Mockito.doNothing().`when`(businessCategoryService).deleteCategory(1L)
+
+        mockMvc.perform(MockMvcRequestBuilders.delete("/api/v1/categories/1"))
+            .andExpect(MockMvcResultMatchers.status().isNoContent)
+    }
+
+    @Test
+    @WithMockUser(roles = ["BASIC_USER"])
+    fun testDeleteCategory_ForbiddenForBasicUser() {
+        mockMvc.perform(MockMvcRequestBuilders.delete("/api/v1/categories/1"))
+            .andExpect(MockMvcResultMatchers.status().isForbidden)
+    }
+
+    @Test
+    @WithMockUser(roles = ["ADMIN"])
+    fun testDeleteCategory_NotFound() {
+        Mockito.doThrow(CategoryNotFoundException("Category not found with id: 99"))
+            .`when`(businessCategoryService).deleteCategory(99L)
+
+        mockMvc.perform(MockMvcRequestBuilders.delete("/api/v1/categories/99"))
+            .andExpect(MockMvcResultMatchers.status().isNotFound)
     }
 }

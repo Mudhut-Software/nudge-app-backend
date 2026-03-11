@@ -9,4 +9,5 @@ interface BusinessCategoryRepository : JpaRepository<BusinessCategory, Long> {
     fun findByParentIsNullAndIsActiveTrue(): List<BusinessCategory>
     fun findByParentIdAndIsActiveTrue(parentId: Long): List<BusinessCategory>
     fun existsByName(name: String): Boolean
+    fun existsByNameAndIdNot(name: String, id: Long): Boolean
 }

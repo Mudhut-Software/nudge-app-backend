@@ -53,6 +53,14 @@ class SecurityConfig(
                         HttpMethod.POST,
                         "/api/v1/categories"
                     ).hasAnyRole("SUPER_ADMIN", "ADMIN")
+                    .requestMatchers(
+                        HttpMethod.PUT,
+                        "/api/v1/categories/{id}"
+                    ).hasAnyRole("SUPER_ADMIN", "ADMIN")
+                    .requestMatchers(
+                        HttpMethod.DELETE,
+                        "/api/v1/categories/{id}"
+                    ).hasAnyRole("SUPER_ADMIN", "ADMIN")
                     .anyRequest().authenticated()
             }
             .headers { headers ->

@@ -2,6 +2,7 @@ package com.mudhut.nudge.businesses.controllers
 
 import com.mudhut.nudge.businesses.models.CategoryResponse
 import com.mudhut.nudge.businesses.models.CreateCategoryRequest
+import com.mudhut.nudge.businesses.models.UpdateCategoryRequest
 import com.mudhut.nudge.businesses.services.BusinessCategoryService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -25,8 +26,27 @@ class BusinessCategoryController(
         return ResponseEntity.ok(categoryService.getTopLevelCategories())
     }
 
+    @GetMapping("/{id}")
+    fun getCategoryById(@PathVariable id: Long): ResponseEntity<CategoryResponse> {
+        return ResponseEntity.ok(categoryService.getCategoryById(id))
+    }
+
     @GetMapping("/{id}/subcategories")
     fun getSubcategories(@PathVariable id: Long): ResponseEntity<List<CategoryResponse>> {
         return ResponseEntity.ok(categoryService.getSubcategories(id))
+    }
+
+    @PutMapping("/{id}")
+    fun updateCategory(
+        @PathVariable id: Long,
+        @Valid @RequestBody request: UpdateCategoryRequest
+    ): ResponseEntity<CategoryResponse> {
+        return ResponseEntity.ok(categoryService.updateCategory(id, request))
+    }
+
+    @DeleteMapping("/{id}")
+    fun deleteCategory(@PathVariable id: Long): ResponseEntity<Void> {
+        categoryService.deleteCategory(id)
+        return ResponseEntity.noContent().build()
     }
 }
