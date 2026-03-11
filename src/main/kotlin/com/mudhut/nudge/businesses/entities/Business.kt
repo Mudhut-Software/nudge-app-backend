@@ -27,7 +27,8 @@ class Business(
     @JoinColumn(name = "category_id", nullable = false)
     var category: BusinessCategory? = null,
 
-    var phone: String? = null,
+    @OneToMany(mappedBy = "business", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
+    var phoneNumbers: MutableList<BusinessPhoneNumber> = mutableListOf(),
 
     var email: String? = null,
 

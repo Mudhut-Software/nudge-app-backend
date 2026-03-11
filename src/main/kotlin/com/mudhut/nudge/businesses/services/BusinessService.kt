@@ -2,6 +2,7 @@ package com.mudhut.nudge.businesses.services
 
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessMember
+import com.mudhut.nudge.businesses.entities.BusinessPhoneNumber
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.models.BusinessResponse
 import com.mudhut.nudge.businesses.models.CreateBusinessRequest
@@ -37,7 +38,6 @@ class BusinessService(
             description = request.description
             this.owner = owner
             this.category = category
-            phone = request.phone
             email = request.email
             logoUrl = request.logoUrl
             address = request.address
@@ -45,6 +45,20 @@ class BusinessService(
         }
 
         val savedBusiness = businessRepository.save(business)
+
+        request.phoneNumbers?.let { numbers ->
+            if (numbers.size > 5) {
+                throw IllegalArgumentException("A business can have at most 5 phone numbers")
+            }
+            val phoneEntities = numbers.map { number ->
+                BusinessPhoneNumber().apply {
+                    phoneNumber = number
+                    this.business = savedBusiness
+                }
+            }
+            savedBusiness.phoneNumbers.addAll(phoneEntities)
+            businessRepository.save(savedBusiness)
+        }
 
         val ownerMembership = BusinessMember().apply {
             user = owner
@@ -76,7 +90,19 @@ class BusinessService(
                 .orElseThrow { IllegalArgumentException("Category not found with id: $categoryId") }
             business.category = category
         }
-        request.phone?.let { business.phone = it }
+        request.phoneNumbers?.let { numbers ->
+            if (numbers.size > 5) {
+                throw IllegalArgumentException("A business can have at most 5 phone numbers")
+            }
+            business.phoneNumbers.clear()
+            val phoneEntities = numbers.map { number ->
+                BusinessPhoneNumber().apply {
+                    phoneNumber = number
+                    this.business = business
+                }
+            }
+            business.phoneNumbers.addAll(phoneEntities)
+        }
         request.email?.let { business.email = it }
         request.logoUrl?.let { business.logoUrl = it }
         request.address?.let { business.address = it }
@@ -137,7 +163,7 @@ class BusinessService(
             ownerEmail = business.owner!!.email!!,
             categoryId = business.category!!.id!!,
             categoryName = business.category!!.name!!,
-            phone = business.phone,
+            phoneNumbers = business.phoneNumbers.map { it.phoneNumber!! },
             email = business.email,
             logoUrl = business.logoUrl,
             address = business.address,

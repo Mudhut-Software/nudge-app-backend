@@ -10,7 +10,7 @@ data class BusinessResponse(
     val ownerEmail: String,
     val categoryId: Long,
     val categoryName: String,
-    val phone: String?,
+    val phoneNumbers: List<String>,
     val email: String?,
     val logoUrl: String?,
     val address: String?,

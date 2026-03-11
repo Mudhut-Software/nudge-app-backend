@@ -12,7 +12,7 @@ data class CreateBusinessRequest(
     @field:NotNull(message = "Category is required")
     var categoryId: Long? = null,
 
-    var phone: String? = null,
+    var phoneNumbers: List<String>? = null,
 
     var email: String? = null,
 

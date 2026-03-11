@@ -1,8 +1,11 @@
 package com.mudhut.nudge.businesses.controllers
 
+import com.mudhut.nudge.businesses.models.AddPhoneNumberRequest
 import com.mudhut.nudge.businesses.models.BusinessResponse
 import com.mudhut.nudge.businesses.models.CreateBusinessRequest
+import com.mudhut.nudge.businesses.models.PhoneNumberResponse
 import com.mudhut.nudge.businesses.models.UpdateBusinessRequest
+import com.mudhut.nudge.businesses.services.BusinessPhoneNumberService
 import com.mudhut.nudge.businesses.services.BusinessService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -13,7 +16,8 @@ import org.springframework.web.bind.annotation.*
 @RestController
 @RequestMapping("/api/v1/businesses")
 class BusinessController(
-    private val businessService: BusinessService
+    private val businessService: BusinessService,
+    private val businessPhoneNumberService: BusinessPhoneNumberService
 ) {
 
     @PostMapping
@@ -51,5 +55,25 @@ class BusinessController(
     @GetMapping("/my")
     fun getMyBusinesses(authentication: Authentication): ResponseEntity<List<BusinessResponse>> {
         return ResponseEntity.ok(businessService.getMyBusinesses(authentication.name))
+    }
+
+    @PostMapping("/{id}/phone-numbers")
+    fun addPhoneNumber(
+        @PathVariable id: Long,
+        @Valid @RequestBody request: AddPhoneNumberRequest,
+        authentication: Authentication
+    ): ResponseEntity<PhoneNumberResponse> {
+        val saved = businessPhoneNumberService.addPhoneNumber(id, request.phoneNumber!!, authentication.name)
+        return ResponseEntity(PhoneNumberResponse(saved.id!!, saved.phoneNumber!!), HttpStatus.CREATED)
+    }
+
+    @DeleteMapping("/{id}/phone-numbers/{phoneNumberId}")
+    fun removePhoneNumber(
+        @PathVariable id: Long,
+        @PathVariable phoneNumberId: Long,
+        authentication: Authentication
+    ): ResponseEntity<Void> {
+        businessPhoneNumberService.removePhoneNumber(id, phoneNumberId, authentication.name)
+        return ResponseEntity.noContent().build()
     }
 }

@@ -3,7 +3,11 @@ package com.mudhut.nudge.businesses.controllers
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.models.BusinessResponse
+import com.mudhut.nudge.businesses.models.AddPhoneNumberRequest
 import com.mudhut.nudge.businesses.models.CreateBusinessRequest
+import com.mudhut.nudge.businesses.entities.Business
+import com.mudhut.nudge.businesses.entities.BusinessPhoneNumber
+import com.mudhut.nudge.businesses.services.BusinessPhoneNumberService
 import com.mudhut.nudge.businesses.services.BusinessService
 import com.mudhut.nudge.config.EnvConfig
 import com.mudhut.nudge.config.JwtAuthenticationFilter
@@ -33,6 +37,9 @@ class BusinessControllerTest {
 
     @MockitoBean
     private lateinit var businessService: BusinessService
+
+    @MockitoBean
+    private lateinit var businessPhoneNumberService: BusinessPhoneNumberService
 
     @MockitoBean
     private lateinit var jwtService: JwtService
@@ -69,7 +76,7 @@ class BusinessControllerTest {
             ownerEmail = "owner@test.com",
             categoryId = 1L,
             categoryName = "Healthcare",
-            phone = null,
+            phoneNumbers = emptyList(),
             email = null,
             logoUrl = null,
             address = null,
@@ -101,7 +108,7 @@ class BusinessControllerTest {
             ownerEmail = "owner@test.com",
             categoryId = 1L,
             categoryName = "Healthcare",
-            phone = null,
+            phoneNumbers = emptyList(),
             email = null,
             logoUrl = null,
             address = null,
@@ -123,7 +130,7 @@ class BusinessControllerTest {
             BusinessResponse(
                 id = 1L, name = "Biz 1", description = null, ownerId = 1L,
                 ownerEmail = "owner@test.com", categoryId = 1L, categoryName = "Healthcare",
-                phone = null, email = null, logoUrl = null, address = null,
+                phoneNumbers = emptyList(), email = null, logoUrl = null, address = null,
                 serviceArea = "Kampala", status = BusinessStatus.ACTIVE
             )
         )
@@ -145,6 +152,49 @@ class BusinessControllerTest {
 
         mockMvc.perform(
             MockMvcRequestBuilders.post("/api/v1/businesses")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isForbidden)
+    }
+
+    @Test
+    @WithMockUser(username = "admin@test.com")
+    fun testAddPhoneNumber_Success() {
+        val request = AddPhoneNumberRequest(phoneNumber = "+256700000000")
+        val business = Business(id = 1L, name = "Test Biz")
+        val saved = BusinessPhoneNumber(id = 10L, phoneNumber = "+256700000000", business = business)
+
+        Mockito.`when`(businessPhoneNumberService.addPhoneNumber(
+            Mockito.anyLong(), anyObject(), Mockito.anyString()
+        )).thenReturn(saved)
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/businesses/1/phone-numbers")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isCreated)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.id").value(10))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.phoneNumber").value("+256700000000"))
+    }
+
+    @Test
+    @WithMockUser(username = "admin@test.com")
+    fun testRemovePhoneNumber_Success() {
+        Mockito.doNothing().`when`(businessPhoneNumberService)
+            .removePhoneNumber(Mockito.eq(1L), Mockito.eq(10L), Mockito.anyString())
+
+        mockMvc.perform(MockMvcRequestBuilders.delete("/api/v1/businesses/1/phone-numbers/10"))
+            .andExpect(MockMvcResultMatchers.status().isNoContent)
+    }
+
+    @Test
+    fun testAddPhoneNumber_Unauthenticated() {
+        val request = AddPhoneNumberRequest(phoneNumber = "+256700000000")
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/businesses/1/phone-numbers")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request))
         )
