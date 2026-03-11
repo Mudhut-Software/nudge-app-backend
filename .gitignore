@@ -38,3 +38,6 @@ build/
 
 # Junie Analysis folder
 junie-analysis/
+
+# Design docs
+docs/
