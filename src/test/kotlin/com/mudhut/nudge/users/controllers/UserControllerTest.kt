@@ -1,0 +1,302 @@
+package com.mudhut.nudge.users.controllers
+
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.mudhut.nudge.users.entities.User
+import com.mudhut.nudge.users.entities.UserRole
+import com.mudhut.nudge.users.models.*
+import com.mudhut.nudge.users.services.ForgotPasswordService
+import com.mudhut.nudge.users.services.LoginService
+import com.mudhut.nudge.users.services.RegistrationService
+import com.mudhut.nudge.users.services.UserService
+import com.mudhut.nudge.users.services.VerificationService
+import com.mudhut.nudge.config.EnvConfig
+import com.mudhut.nudge.config.JwtAuthenticationFilter
+import com.mudhut.nudge.config.SecurityConfig
+import com.mudhut.nudge.users.services.JwtService
+import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
+import org.junit.jupiter.api.Test
+import org.mockito.Mockito
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
+import org.springframework.context.annotation.Import
+import org.springframework.http.MediaType
+import org.springframework.test.context.bean.override.mockito.MockitoBean
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers
+
+@WebMvcTest(UserController::class)
+@Import(SecurityConfig::class, JwtAuthenticationFilter::class)
+@AutoConfigureMockMvc
+class UserControllerTest {
+
+    @Autowired
+    private lateinit var mockMvc: MockMvc
+
+    @MockitoBean
+    private lateinit var registrationService: RegistrationService
+
+    @MockitoBean
+    private lateinit var loginService: LoginService
+
+    @MockitoBean
+    private lateinit var verificationService: VerificationService
+
+    @MockitoBean
+    private lateinit var forgotPasswordService: ForgotPasswordService
+
+    @MockitoBean
+    private lateinit var userService: UserService
+
+    @MockitoBean
+    private lateinit var jwtService: JwtService
+
+    @MockitoBean
+    private lateinit var userDetailsService: NudgeUserDetailsService
+
+    @MockitoBean
+    private lateinit var envConfig: EnvConfig
+
+    @Autowired
+    private lateinit var objectMapper: ObjectMapper
+
+    private fun <T> anyObject(): T {
+        Mockito.any<T>()
+        @Suppress("UNCHECKED_CAST")
+        return null as T
+    }
+
+    // --- POST /register ---
+
+    @Test
+    fun testRegisterUser_Success() {
+        val request = RegisterRequest(
+            email = "test@example.com",
+            password = "Password123!",
+            phoneNumber = "+256759123321",
+            role = UserRole.BASIC_USER
+        )
+
+        val user = User().apply {
+            id = 1L
+            email = "test@example.com"
+            password = "hashedpassword"
+            phoneNumber = "+256759123321"
+            role = UserRole.BASIC_USER
+            isEmailVerified = false
+            isPhoneVerified = false
+            isActive = false
+        }
+
+        Mockito.`when`(registrationService.createUser(anyObject())).thenReturn(user)
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.id").value(1))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.email").value("test@example.com"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.phoneNumber").value("+256759123321"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.role").value("BASIC_USER"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.isActive").value(false))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.password").doesNotExist())
+    }
+
+    @Test
+    fun testRegisterUser_ValidationError_MissingEmail() {
+        val request = RegisterRequest(
+            password = "Password123!",
+            phoneNumber = "+256759123321"
+        )
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+
+    @Test
+    fun testRegisterUser_ValidationError_MissingPassword() {
+        val request = RegisterRequest(
+            email = "test@example.com",
+            phoneNumber = "+256759123321"
+        )
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+
+    // --- POST /login ---
+
+    @Test
+    fun testLogin_Success() {
+        val request = LoginRequest(
+            email = "test@example.com",
+            password = "Password123!"
+        )
+
+        val authResponse = AuthResponse.builder()
+            .accessToken("jwt-access-token")
+            .refreshToken("jwt-refresh-token")
+            .build()
+
+        Mockito.`when`(loginService.authenticateUser(anyObject())).thenReturn(authResponse)
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.accessToken").value("jwt-access-token"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.refreshToken").value("jwt-refresh-token"))
+    }
+
+    @Test
+    fun testLogin_ValidationError_MissingEmail() {
+        val request = LoginRequest(password = "Password123!")
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+
+    @Test
+    fun testLogin_ValidationError_MissingPassword() {
+        val request = LoginRequest(email = "test@example.com")
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+
+    // --- POST /verify-email ---
+
+    @Test
+    fun testVerifyEmail_Success() {
+        Mockito.doNothing().`when`(verificationService).verifyEmail(Mockito.anyString())
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/verify-email")
+                .param("token", "valid-token")
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+
+        Mockito.verify(verificationService).verifyEmail("valid-token")
+    }
+
+    // --- POST /verify-phone ---
+
+    @Test
+    fun testVerifyPhone_Success() {
+        Mockito.doNothing().`when`(verificationService).verifyPhone(Mockito.anyString())
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/verify-phone")
+                .param("code", "123456")
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+
+        Mockito.verify(verificationService).verifyPhone("123456")
+    }
+
+    // --- POST /forgot-password ---
+
+    @Test
+    fun testForgotPassword_Success() {
+        Mockito.doNothing().`when`(forgotPasswordService).initiateForgotPassword(Mockito.anyString())
+
+        val request = ForgotPasswordRequest(email = "test@example.com")
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/forgot-password")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.message")
+                .value("An email has been sent to you with password reset instructions"))
+
+        Mockito.verify(forgotPasswordService).initiateForgotPassword("test@example.com")
+    }
+
+    @Test
+    fun testForgotPassword_ValidationError_InvalidEmail() {
+        val request = ForgotPasswordRequest(email = "not-an-email")
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/forgot-password")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+
+    // --- POST /reset-password ---
+
+    @Test
+    fun testResetPassword_Success() {
+        Mockito.doNothing().`when`(forgotPasswordService).resetPassword(anyObject())
+
+        val request = ResetPasswordRequest(
+            token = "valid-reset-token",
+            newPassword = "NewPassword123!",
+            confirmPassword = "NewPassword123!"
+        )
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/reset-password")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.message")
+                .value("Your password has been reset successfully"))
+    }
+
+    @Test
+    fun testResetPassword_ValidationError_MissingToken() {
+        val request = ResetPasswordRequest(
+            newPassword = "NewPassword123!",
+            confirmPassword = "NewPassword123!"
+        )
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/reset-password")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+
+    @Test
+    fun testResetPassword_ValidationError_ShortPassword() {
+        val request = ResetPasswordRequest(
+            token = "valid-reset-token",
+            newPassword = "short",
+            confirmPassword = "short"
+        )
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/reset-password")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+}
