@@ -8,6 +8,7 @@ import java.util.Optional
 @Repository
 interface UserRepository : JpaRepository<User, Long> {
     fun existsByEmail(email: String): Boolean
+    fun existsByUsername(username: String): Boolean
     fun existsByPhoneNumber(phoneNumber: String): Boolean
     fun findByEmail(email: String): Optional<User>
 }

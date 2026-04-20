@@ -73,6 +73,7 @@ class UserControllerTest {
     fun testRegisterUser_Success() {
         val request = RegisterRequest(
             email = "test@example.com",
+            username = "testuser",
             password = "Password123!",
             phoneNumber = "+256759123321",
             role = UserRole.BASIC_USER
@@ -81,12 +82,13 @@ class UserControllerTest {
         val user = User().apply {
             id = 1L
             email = "test@example.com"
+            username = "testuser"
             password = "hashedpassword"
             phoneNumber = "+256759123321"
             role = UserRole.BASIC_USER
             isEmailVerified = false
             isPhoneVerified = false
-            isActive = false
+            isActive = true
         }
 
         Mockito.`when`(registrationService.createUser(anyObject())).thenReturn(user)
@@ -99,15 +101,33 @@ class UserControllerTest {
             .andExpect(MockMvcResultMatchers.status().isOk)
             .andExpect(MockMvcResultMatchers.jsonPath("$.id").value(1))
             .andExpect(MockMvcResultMatchers.jsonPath("$.email").value("test@example.com"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.username").value("testuser"))
             .andExpect(MockMvcResultMatchers.jsonPath("$.phoneNumber").value("+256759123321"))
             .andExpect(MockMvcResultMatchers.jsonPath("$.role").value("BASIC_USER"))
-            .andExpect(MockMvcResultMatchers.jsonPath("$.isActive").value(false))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.isActive").value(true))
             .andExpect(MockMvcResultMatchers.jsonPath("$.password").doesNotExist())
     }
 
     @Test
     fun testRegisterUser_ValidationError_MissingEmail() {
         val request = RegisterRequest(
+            username = "testuser",
+            password = "Password123!",
+            phoneNumber = "+256759123321"
+        )
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+
+    @Test
+    fun testRegisterUser_ValidationError_MissingUsername() {
+        val request = RegisterRequest(
+            email = "test@example.com",
             password = "Password123!",
             phoneNumber = "+256759123321"
         )
@@ -124,6 +144,7 @@ class UserControllerTest {
     fun testRegisterUser_ValidationError_MissingPassword() {
         val request = RegisterRequest(
             email = "test@example.com",
+            username = "testuser",
             phoneNumber = "+256759123321"
         )
 
@@ -144,9 +165,21 @@ class UserControllerTest {
             password = "Password123!"
         )
 
+        val userResponse = UserResponse(
+            id = 1L,
+            email = "test@example.com",
+            username = "testuser",
+            phoneNumber = "+256759123321",
+            role = UserRole.BASIC_USER,
+            isEmailVerified = true,
+            isPhoneVerified = false,
+            isActive = true
+        )
+
         val authResponse = AuthResponse.builder()
             .accessToken("jwt-access-token")
             .refreshToken("jwt-refresh-token")
+            .user(userResponse)
             .build()
 
         Mockito.`when`(loginService.authenticateUser(anyObject())).thenReturn(authResponse)
@@ -159,6 +192,9 @@ class UserControllerTest {
             .andExpect(MockMvcResultMatchers.status().isOk)
             .andExpect(MockMvcResultMatchers.jsonPath("$.accessToken").value("jwt-access-token"))
             .andExpect(MockMvcResultMatchers.jsonPath("$.refreshToken").value("jwt-refresh-token"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.id").value(1))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.username").value("testuser"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.email").value("test@example.com"))
     }
 
     @Test

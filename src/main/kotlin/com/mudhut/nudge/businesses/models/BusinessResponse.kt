@@ -14,6 +14,8 @@ data class BusinessResponse(
     val email: String?,
     val logoUrl: String?,
     val address: String?,
-    val serviceArea: String,
+    val latitude: Double?,
+    val longitude: Double?,
+    val serviceAreas: List<String>,
     val status: BusinessStatus
 )

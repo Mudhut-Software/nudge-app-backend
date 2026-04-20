@@ -36,8 +36,17 @@ class Business(
 
     var address: String? = null,
 
-    @field:NotBlank
-    var serviceArea: String? = null,
+    var latitude: Double? = null,
+
+    var longitude: Double? = null,
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+        name = "business_service_areas",
+        joinColumns = [JoinColumn(name = "business_id")]
+    )
+    @Column(name = "service_area")
+    var serviceAreas: MutableList<String> = mutableListOf(),
 
     @Enumerated(EnumType.STRING)
     var status: BusinessStatus = BusinessStatus.ACTIVE,
