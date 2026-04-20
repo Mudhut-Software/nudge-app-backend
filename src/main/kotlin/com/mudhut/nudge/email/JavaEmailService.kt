@@ -1,10 +1,12 @@
 package com.mudhut.nudge.email
 
+import org.springframework.context.annotation.Primary
 import org.springframework.mail.SimpleMailMessage
 import org.springframework.mail.javamail.JavaMailSender
 import org.springframework.stereotype.Service
 
 @Service
+@Primary
 class JavaEmailService(
     private val emailSender: JavaMailSender
 ) : IEmailService {
