@@ -88,7 +88,7 @@ class UserControllerTest {
             role = UserRole.BASIC_USER
             isEmailVerified = false
             isPhoneVerified = false
-            isActive = true
+            isActive = false
         }
 
         Mockito.`when`(registrationService.createUser(anyObject())).thenReturn(user)
@@ -104,7 +104,7 @@ class UserControllerTest {
             .andExpect(MockMvcResultMatchers.jsonPath("$.username").value("testuser"))
             .andExpect(MockMvcResultMatchers.jsonPath("$.phoneNumber").value("+256759123321"))
             .andExpect(MockMvcResultMatchers.jsonPath("$.role").value("BASIC_USER"))
-            .andExpect(MockMvcResultMatchers.jsonPath("$.isActive").value(true))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.isActive").value(false))
             .andExpect(MockMvcResultMatchers.jsonPath("$.password").doesNotExist())
     }
 

@@ -59,7 +59,7 @@ class RegistrationService(
             phoneNumber = request.phoneNumber
             isEmailVerified = false
             isPhoneVerified = false
-            isActive = true
+            isActive = false
             role = request.role ?: UserRole.BASIC_USER
         }
 

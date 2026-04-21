@@ -87,6 +87,15 @@ class GlobalExceptionHandler {
         )
     }
 
+    @ExceptionHandler(IllegalStateException::class)
+    fun handleIllegalStateException(ex: IllegalStateException): ResponseEntity<ErrorResponse> {
+        logger.warn("Illegal state: {}", ex.message)
+        return ResponseEntity(
+            ErrorResponse(ERROR_CODE_AUTHENTICATION, ex.message ?: "Account is not in a valid state"),
+            HttpStatus.FORBIDDEN
+        )
+    }
+
     @ExceptionHandler(UserNotFoundException::class)
     fun handleUserNotFoundException(ex: UserNotFoundException): ResponseEntity<ErrorResponse> {
         logger.warn("User not found: {}", ex.message)
