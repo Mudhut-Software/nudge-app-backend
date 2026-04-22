@@ -1,6 +1,7 @@
 package com.mudhut.nudge.users.controllers
 
 import com.mudhut.nudge.users.services.VerificationService
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Controller
 import org.springframework.ui.Model
 import org.springframework.web.bind.annotation.GetMapping
@@ -8,7 +9,8 @@ import org.springframework.web.bind.annotation.RequestParam
 
 @Controller
 class AuthTemplatesController(
-    private val verificationService: VerificationService
+    private val verificationService: VerificationService,
+    @Value("\${nudge.frontend-url:}") private val frontendUrl: String
 ) {
 
     @GetMapping("/reset-password")
@@ -30,6 +32,12 @@ class AuthTemplatesController(
             model.addAttribute("message", e.message)
             model.addAttribute("status", "error")
         }
+        model.addAttribute("loginUrl", loginUrl())
         return "verification-result"
+    }
+
+    private fun loginUrl(): String {
+        val base = frontendUrl.trimEnd('/')
+        return if (base.isBlank()) "/login" else "$base/login"
     }
 }

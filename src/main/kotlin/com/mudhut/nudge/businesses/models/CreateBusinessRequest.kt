@@ -1,6 +1,7 @@
 package com.mudhut.nudge.businesses.models
 
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.NotEmpty
 import jakarta.validation.constraints.NotNull
 
 data class CreateBusinessRequest(
@@ -20,6 +21,10 @@ data class CreateBusinessRequest(
 
     var address: String? = null,
 
-    @field:NotBlank(message = "Service area is required")
-    var serviceArea: String? = null
+    var latitude: Double? = null,
+
+    var longitude: Double? = null,
+
+    @field:NotEmpty(message = "At least one service area is required")
+    var serviceAreas: List<String>? = null
 )

@@ -55,7 +55,7 @@
     <div class="container">
         <h1 th:class="${status == 'success'} ? 'success' : 'error'">Email Verification</h1>
         <p th:text="${message}">Verification message</p>
-        <a href="/login" class="btn">Go to Login</a>
+        <a th:href="${loginUrl}" href="/login" class="btn">Go to Login</a>
     </div>
 </body>
 

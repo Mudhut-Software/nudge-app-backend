@@ -59,29 +59,45 @@ class BusinessControllerTest {
         return null as T
     }
 
+    private fun sampleResponse(
+        id: Long = 1L,
+        name: String = "Test Pharmacy",
+        serviceAreas: List<String> = listOf("Kampala"),
+        latitude: Double? = null,
+        longitude: Double? = null
+    ) = BusinessResponse(
+        id = id,
+        name = name,
+        description = null,
+        ownerId = 1L,
+        ownerEmail = "owner@test.com",
+        categoryId = 1L,
+        categoryName = "Healthcare",
+        phoneNumbers = emptyList(),
+        email = null,
+        logoUrl = null,
+        address = null,
+        latitude = latitude,
+        longitude = longitude,
+        serviceAreas = serviceAreas,
+        status = BusinessStatus.ACTIVE
+    )
+
     @Test
     @WithMockUser(username = "owner@test.com")
     fun testCreateBusiness_Success() {
         val request = CreateBusinessRequest(
             name = "Test Pharmacy",
             categoryId = 1L,
-            serviceArea = "Kampala"
+            serviceAreas = listOf("Kampala", "Entebbe"),
+            latitude = 0.3476,
+            longitude = 32.5825
         )
 
-        val response = BusinessResponse(
-            id = 1L,
-            name = "Test Pharmacy",
-            description = null,
-            ownerId = 1L,
-            ownerEmail = "owner@test.com",
-            categoryId = 1L,
-            categoryName = "Healthcare",
-            phoneNumbers = emptyList(),
-            email = null,
-            logoUrl = null,
-            address = null,
-            serviceArea = "Kampala",
-            status = BusinessStatus.ACTIVE
+        val response = sampleResponse(
+            serviceAreas = listOf("Kampala", "Entebbe"),
+            latitude = 0.3476,
+            longitude = 32.5825
         )
 
         Mockito.`when`(businessService.createBusiness(anyObject(), Mockito.anyString()))
@@ -94,27 +110,16 @@ class BusinessControllerTest {
         )
             .andExpect(MockMvcResultMatchers.status().isCreated)
             .andExpect(MockMvcResultMatchers.jsonPath("$.name").value("Test Pharmacy"))
-            .andExpect(MockMvcResultMatchers.jsonPath("$.serviceArea").value("Kampala"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.serviceAreas[0]").value("Kampala"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.serviceAreas[1]").value("Entebbe"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.latitude").value(0.3476))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.longitude").value(32.5825))
     }
 
     @Test
     @WithMockUser(username = "owner@test.com")
     fun testGetBusiness_Success() {
-        val response = BusinessResponse(
-            id = 1L,
-            name = "Test Pharmacy",
-            description = null,
-            ownerId = 1L,
-            ownerEmail = "owner@test.com",
-            categoryId = 1L,
-            categoryName = "Healthcare",
-            phoneNumbers = emptyList(),
-            email = null,
-            logoUrl = null,
-            address = null,
-            serviceArea = "Kampala",
-            status = BusinessStatus.ACTIVE
-        )
+        val response = sampleResponse()
 
         Mockito.`when`(businessService.getBusinessById(1L)).thenReturn(response)
 
@@ -126,14 +131,7 @@ class BusinessControllerTest {
     @Test
     @WithMockUser(username = "owner@test.com")
     fun testGetMyBusinesses_Success() {
-        val businesses = listOf(
-            BusinessResponse(
-                id = 1L, name = "Biz 1", description = null, ownerId = 1L,
-                ownerEmail = "owner@test.com", categoryId = 1L, categoryName = "Healthcare",
-                phoneNumbers = emptyList(), email = null, logoUrl = null, address = null,
-                serviceArea = "Kampala", status = BusinessStatus.ACTIVE
-            )
-        )
+        val businesses = listOf(sampleResponse(id = 1L, name = "Biz 1"))
 
         Mockito.`when`(businessService.getMyBusinesses(Mockito.anyString())).thenReturn(businesses)
 
@@ -147,7 +145,7 @@ class BusinessControllerTest {
         val request = CreateBusinessRequest(
             name = "Test Pharmacy",
             categoryId = 1L,
-            serviceArea = "Kampala"
+            serviceAreas = listOf("Kampala")
         )
 
         mockMvc.perform(

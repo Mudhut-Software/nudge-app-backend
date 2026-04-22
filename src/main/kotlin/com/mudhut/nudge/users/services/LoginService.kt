@@ -2,6 +2,7 @@ package com.mudhut.nudge.users.services
 
 import com.mudhut.nudge.users.models.AuthResponse
 import com.mudhut.nudge.users.models.LoginRequest
+import com.mudhut.nudge.users.models.UserResponse
 import com.mudhut.nudge.users.repositories.UserRepository
 import com.mudhut.nudge.users.services.helpers.PasswordValidator
 import jakarta.persistence.EntityNotFoundException
@@ -44,6 +45,7 @@ class LoginService(
         return AuthResponse.builder()
             .accessToken(accessToken)
             .refreshToken(refreshToken.token)
+            .user(UserResponse.from(user))
             .build()
     }
 }

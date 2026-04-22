@@ -8,5 +8,7 @@ data class UpdateBusinessRequest(
     var email: String? = null,
     var logoUrl: String? = null,
     var address: String? = null,
-    var serviceArea: String? = null
+    var latitude: Double? = null,
+    var longitude: Double? = null,
+    var serviceAreas: List<String>? = null
 )

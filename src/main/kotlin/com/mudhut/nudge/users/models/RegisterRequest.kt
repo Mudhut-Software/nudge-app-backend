@@ -10,6 +10,10 @@ data class RegisterRequest(
     @field:Email(message = "Please provide a valid email")
     var email: String? = null,
 
+    @field:NotBlank(message = "Username is required")
+    @field:Size(min = 2, max = 50, message = "Username must be between 2 and 50 characters")
+    var username: String? = null,
+
     @field:NotBlank(message = "Password is required")
     @field:Size(min = 8, message = "Password must be at least 8 characters long")
     var password: String? = null,

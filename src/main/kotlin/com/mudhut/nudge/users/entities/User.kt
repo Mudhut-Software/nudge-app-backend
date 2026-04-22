@@ -21,6 +21,11 @@ class User(
     var email: String? = null,
 
     @field:NotBlank
+    @field:Size(min = 2, max = 50)
+    @Column(unique = true)
+    var username: String? = null,
+
+    @field:NotBlank
     @field:Size(min = 8, max = 120)
     var password: String? = null,
 
@@ -61,7 +66,7 @@ class User(
     }
 
     override fun toString(): String {
-        return "User(id=$id, email='$email', phoneNumber='$phoneNumber', role=$role, " +
+        return "User(id=$id, email='$email', username='$username', phoneNumber='$phoneNumber', role=$role, " +
                 "isEmailVerified=$isEmailVerified, isPhoneVerified=$isPhoneVerified, isActive=$isActive)"
     }
 }

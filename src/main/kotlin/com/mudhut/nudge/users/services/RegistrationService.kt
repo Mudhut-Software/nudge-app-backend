@@ -40,6 +40,10 @@ class RegistrationService(
             throw UserAlreadyExistsException("Email already registered: ${request.email}")
         }
 
+        if (userRepository.existsByUsername(request.username!!)) {
+            throw UserAlreadyExistsException("Username already taken: ${request.username}")
+        }
+
         if (!request.phoneNumber.isNullOrEmpty() &&
             userRepository.existsByPhoneNumber(request.phoneNumber!!)
         ) {
@@ -50,6 +54,7 @@ class RegistrationService(
 
         val newUser = User().apply {
             email = request.email
+            username = request.username
             password = passwordEncoder.encode(request.password)
             phoneNumber = request.phoneNumber
             isEmailVerified = false

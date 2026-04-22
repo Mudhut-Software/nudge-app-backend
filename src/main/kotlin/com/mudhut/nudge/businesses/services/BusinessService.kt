@@ -33,6 +33,16 @@ class BusinessService(
         val category = businessCategoryRepository.findById(request.categoryId!!)
             .orElseThrow { IllegalArgumentException("Category not found with id: ${request.categoryId}") }
 
+        val areas = request.serviceAreas
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.distinct()
+            ?: emptyList()
+
+        if (areas.isEmpty()) {
+            throw IllegalArgumentException("At least one service area is required")
+        }
+
         val business = Business().apply {
             name = request.name
             description = request.description
@@ -41,7 +51,9 @@ class BusinessService(
             email = request.email
             logoUrl = request.logoUrl
             address = request.address
-            serviceArea = request.serviceArea
+            latitude = request.latitude
+            longitude = request.longitude
+            serviceAreas = areas.toMutableList()
         }
 
         val savedBusiness = businessRepository.save(business)
@@ -106,7 +118,19 @@ class BusinessService(
         request.email?.let { business.email = it }
         request.logoUrl?.let { business.logoUrl = it }
         request.address?.let { business.address = it }
-        request.serviceArea?.let { business.serviceArea = it }
+        request.latitude?.let { business.latitude = it }
+        request.longitude?.let { business.longitude = it }
+        request.serviceAreas?.let { incoming ->
+            val cleaned = incoming
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+            if (cleaned.isEmpty()) {
+                throw IllegalArgumentException("At least one service area is required")
+            }
+            business.serviceAreas.clear()
+            business.serviceAreas.addAll(cleaned)
+        }
 
         val saved = businessRepository.save(business)
         return toResponse(saved)
@@ -167,7 +191,9 @@ class BusinessService(
             email = business.email,
             logoUrl = business.logoUrl,
             address = business.address,
-            serviceArea = business.serviceArea!!,
+            latitude = business.latitude,
+            longitude = business.longitude,
+            serviceAreas = business.serviceAreas.toList(),
             status = business.status
         )
     }
