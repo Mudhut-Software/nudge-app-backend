@@ -1,6 +1,8 @@
 package com.mudhut.nudge.users.controllers
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.mudhut.nudge.businesses.entities.BusinessRole
+import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.UserRole
 import com.mudhut.nudge.users.models.*
@@ -106,6 +108,8 @@ class UserControllerTest {
             .andExpect(MockMvcResultMatchers.jsonPath("$.role").value("BASIC_USER"))
             .andExpect(MockMvcResultMatchers.jsonPath("$.isActive").value(false))
             .andExpect(MockMvcResultMatchers.jsonPath("$.password").doesNotExist())
+            .andExpect(MockMvcResultMatchers.jsonPath("$.businesses").isArray)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.businesses.length()").value(0))
     }
 
     @Test
@@ -195,6 +199,53 @@ class UserControllerTest {
             .andExpect(MockMvcResultMatchers.jsonPath("$.user.id").value(1))
             .andExpect(MockMvcResultMatchers.jsonPath("$.user.username").value("testuser"))
             .andExpect(MockMvcResultMatchers.jsonPath("$.user.email").value("test@example.com"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.businesses").isArray)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.businesses.length()").value(0))
+    }
+
+    @Test
+    fun testLogin_Success_IncludesBusinessMemberships() {
+        val request = LoginRequest(
+            email = "owner@example.com",
+            password = "Password123!"
+        )
+
+        val userResponse = UserResponse(
+            id = 7L,
+            email = "owner@example.com",
+            username = "owner",
+            phoneNumber = "+256759123321",
+            role = UserRole.BASIC_USER,
+            isEmailVerified = true,
+            isPhoneVerified = false,
+            isActive = true,
+            businesses = listOf(
+                UserBusinessSummary(id = 42L, status = BusinessStatus.ACTIVE, role = BusinessRole.OWNER),
+                UserBusinessSummary(id = 43L, status = BusinessStatus.SUSPENDED, role = BusinessRole.STAFF)
+            )
+        )
+
+        val authResponse = AuthResponse.builder()
+            .accessToken("jwt-access-token")
+            .refreshToken("jwt-refresh-token")
+            .user(userResponse)
+            .build()
+
+        Mockito.`when`(loginService.authenticateUser(anyObject())).thenReturn(authResponse)
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.businesses.length()").value(2))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.businesses[0].id").value(42))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.businesses[0].status").value("ACTIVE"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.businesses[0].role").value("OWNER"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.businesses[1].id").value(43))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.businesses[1].status").value("SUSPENDED"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.businesses[1].role").value("STAFF"))
     }
 
     @Test
