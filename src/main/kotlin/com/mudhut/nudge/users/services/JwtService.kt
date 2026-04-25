@@ -21,7 +21,8 @@ class JwtService(
     fun generateToken(user: User): String {
         val claims = mutableMapOf<String, Any>(
             "id" to user.id!!,
-            "role" to user.role!!.name
+            "role" to user.role!!.name,
+            "jti" to UUID.randomUUID().toString(),
         )
         return createToken(claims, user.email!!, envConfig.accessTokenExpiryInMillis)
     }
@@ -43,6 +44,12 @@ class JwtService(
 
     fun extractUsername(token: String): String =
         extractClaim(token, Claims::getSubject)
+
+    fun extractJti(token: String): String? = try {
+        extractAllClaims(token)["jti"] as? String
+    } catch (e: Exception) {
+        null
+    }
 
     fun extractExpiration(token: String): Date =
         extractClaim(token, Claims::getExpiration)
