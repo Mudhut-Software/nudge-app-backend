@@ -7,6 +7,7 @@ import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.UserRole
 import com.mudhut.nudge.users.models.*
 import com.mudhut.nudge.users.services.ForgotPasswordService
+import com.mudhut.nudge.users.services.GoogleAuthService
 import com.mudhut.nudge.users.services.LoginService
 import com.mudhut.nudge.users.services.RegistrationService
 import com.mudhut.nudge.users.services.UserService
@@ -47,6 +48,9 @@ class UserControllerTest {
 
     @MockitoBean
     private lateinit var forgotPasswordService: ForgotPasswordService
+
+    @MockitoBean
+    private lateinit var googleAuthService: GoogleAuthService
 
     @MockitoBean
     private lateinit var userService: UserService
@@ -381,6 +385,52 @@ class UserControllerTest {
 
         mockMvc.perform(
             MockMvcRequestBuilders.post("/api/v1/auth/reset-password")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+
+    // --- POST /google ---
+
+    @Test
+    fun testGoogleAuth_Success() {
+        val authResponse = AuthResponse(
+            accessToken = "access-token",
+            refreshToken = "refresh-token",
+            user = UserResponse(
+                id = 1L,
+                email = "alice@example.com",
+                username = "alice",
+                phoneNumber = null,
+                role = UserRole.BASIC_USER,
+                isEmailVerified = true,
+                isPhoneVerified = false,
+                isActive = true
+            )
+        )
+        Mockito.`when`(googleAuthService.authenticate(Mockito.anyString())).thenReturn(authResponse)
+
+        val request = GoogleAuthRequest(idToken = "fake-google-id-token")
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/google")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request))
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.accessToken").value("access-token"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.email").value("alice@example.com"))
+
+        Mockito.verify(googleAuthService).authenticate("fake-google-id-token")
+    }
+
+    @Test
+    fun testGoogleAuth_ValidationError_MissingToken() {
+        val request = GoogleAuthRequest()
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/google")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request))
         )

@@ -2,6 +2,7 @@ package com.mudhut.nudge.users.controllers
 
 import com.mudhut.nudge.users.models.*
 import com.mudhut.nudge.users.services.ForgotPasswordService
+import com.mudhut.nudge.users.services.GoogleAuthService
 import com.mudhut.nudge.users.services.LoginService
 import com.mudhut.nudge.users.services.RegistrationService
 import com.mudhut.nudge.users.services.UserService
@@ -18,7 +19,8 @@ class UserController(
     private val loginService: LoginService,
     private val registrationService: RegistrationService,
     private val forgotPasswordService: ForgotPasswordService,
-    private val verificationService: VerificationService
+    private val verificationService: VerificationService,
+    private val googleAuthService: GoogleAuthService
 ) {
 
     @PostMapping("/register")
@@ -28,6 +30,10 @@ class UserController(
     @PostMapping("/login")
     fun authenticateUser(@Valid @RequestBody request: LoginRequest): ResponseEntity<AuthResponse> =
         ResponseEntity.ok(loginService.authenticateUser(request))
+
+    @PostMapping("/google")
+    fun googleAuth(@Valid @RequestBody request: GoogleAuthRequest): ResponseEntity<AuthResponse> =
+        ResponseEntity.ok(googleAuthService.authenticate(request.idToken!!))
 
     @PostMapping("/verify-email")
     fun verifyEmail(@RequestParam token: String): ResponseEntity<Any> {
