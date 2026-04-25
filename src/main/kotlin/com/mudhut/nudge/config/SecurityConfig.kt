@@ -47,7 +47,6 @@ class SecurityConfig(
             .csrf { it.disable() }
             .authorizeHttpRequests { auth ->
                 auth
-                    .requestMatchers("/reset-password").permitAll()
                     .requestMatchers("/verify-email").permitAll()
                     .requestMatchers("/api/v1/auth/**").permitAll()
                     .requestMatchers(
