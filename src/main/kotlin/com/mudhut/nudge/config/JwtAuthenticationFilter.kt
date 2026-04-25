@@ -40,6 +40,8 @@ class JwtAuthenticationFilter(
 
         if (username != null && SecurityContextHolder.getContext().authentication == null) {
             val jti = jwtService.extractJti(jwt!!)
+            // jti absent or revoked — pass through without populating the context;
+            // Spring Security's access rules reject the unauthenticated request downstream.
             if (jti == null || blocklistService.isRevoked(jti)) {
                 filterChain.doFilter(request, response)
                 return
