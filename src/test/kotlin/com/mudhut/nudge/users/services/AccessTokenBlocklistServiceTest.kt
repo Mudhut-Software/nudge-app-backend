@@ -4,7 +4,9 @@ import com.mudhut.nudge.users.entities.RevokedAccessToken
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.repositories.RevokedAccessTokenRepository
 import com.mudhut.nudge.users.repositories.UserRepository
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -42,10 +44,10 @@ class AccessTokenBlocklistServiceTest {
         val captor = ArgumentCaptor.forClass(RevokedAccessToken::class.java)
         verify(repo).save(captor.capture())
         val saved = captor.value
-        assertTrue(saved.jti == "jti-1")
-        assertTrue(saved.user?.id == 7L)
-        assertTrue(saved.expiresAt == expiresAt)
-        assertTrue(saved.revokedAt != null)
+        assertEquals("jti-1", saved.jti)
+        assertEquals(7L, saved.user?.id)
+        assertEquals(expiresAt, saved.expiresAt)
+        assertNotNull(saved.revokedAt)
     }
 
     @Test
@@ -68,9 +70,13 @@ class AccessTokenBlocklistServiceTest {
     }
 
     @Test
-    fun `isRevoked delegates to existsByJti`() {
+    fun `isRevoked returns true when the jti is blocklisted`() {
         `when`(repo.existsByJti("jti-4")).thenReturn(true)
         assertTrue(service.isRevoked("jti-4"))
+    }
+
+    @Test
+    fun `isRevoked returns false when the jti is not blocklisted`() {
         `when`(repo.existsByJti("jti-5")).thenReturn(false)
         assertFalse(service.isRevoked("jti-5"))
     }
@@ -79,7 +85,7 @@ class AccessTokenBlocklistServiceTest {
     fun `purgeExpired delegates to deleteAllByExpiresAtBefore with now`() {
         `when`(repo.deleteAllByExpiresAtBefore(any())).thenReturn(3)
         val deleted = service.purgeExpired()
-        assertTrue(deleted == 3)
+        assertEquals(3, deleted)
         verify(repo).deleteAllByExpiresAtBefore(any())
     }
 }

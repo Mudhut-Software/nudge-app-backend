@@ -13,7 +13,6 @@ class AccessTokenBlocklistService(
     private val userRepository: UserRepository,
 ) {
 
-    @Transactional
     fun revoke(jti: String, userId: Long, expiresAt: Instant) {
         if (!expiresAt.isAfter(Instant.now())) return
         if (repo.existsByJti(jti)) return
