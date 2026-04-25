@@ -15,14 +15,12 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
-import org.mockito.junit.jupiter.MockitoSettings
-import org.mockito.quality.Strictness
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import java.nio.charset.StandardCharsets
 import java.util.Date
 import java.util.UUID
 
 @ExtendWith(MockitoExtension::class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 class JwtServiceTest {
 
     @Mock private lateinit var envConfig: EnvConfig
@@ -32,8 +30,11 @@ class JwtServiceTest {
     @BeforeEach
     fun setUp() {
         `when`(envConfig.jwtSecret).thenReturn(secret)
-        `when`(envConfig.accessTokenExpiryInMillis).thenReturn(3_600_000)
         jwtService = JwtService(envConfig)
+    }
+
+    private fun stubAccessTokenExpiry() {
+        `when`(envConfig.accessTokenExpiryInMillis).thenReturn(3_600_000)
     }
 
     private fun aUser() = User(
@@ -45,6 +46,7 @@ class JwtServiceTest {
 
     @Test
     fun `generateToken includes a jti claim that is a UUID`() {
+        stubAccessTokenExpiry()
         val token = jwtService.generateToken(aUser())
         val jti = jwtService.extractJti(token)
         assertNotNull(jti)
@@ -53,6 +55,7 @@ class JwtServiceTest {
 
     @Test
     fun `extractJti round-trips the claim from generateToken`() {
+        stubAccessTokenExpiry()
         val token = jwtService.generateToken(aUser())
         val first: String? = jwtService.extractJti(token)
         val second: String? = jwtService.extractJti(token)
@@ -61,6 +64,8 @@ class JwtServiceTest {
 
     @Test
     fun `extractJti returns null when the claim is absent`() {
+        // Re-derive the signing key here so the test exercises a real signed
+        // token without a jti — there is no production hook to build one.
         val tokenWithoutJti = Jwts.builder()
             .setSubject("alice@example.com")
             .setIssuedAt(Date())
@@ -76,5 +81,15 @@ class JwtServiceTest {
     @Test
     fun `extractJti returns null on a malformed token`() {
         assertNull(jwtService.extractJti("not-a-jwt"))
+    }
+
+    @Test
+    fun `two generateToken calls produce different jti values`() {
+        stubAccessTokenExpiry()
+        val first = jwtService.extractJti(jwtService.generateToken(aUser()))
+        val second = jwtService.extractJti(jwtService.generateToken(aUser()))
+        assertNotNull(first)
+        assertNotNull(second)
+        assertNotEquals(first, second)
     }
 }
