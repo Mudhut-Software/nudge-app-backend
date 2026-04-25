@@ -32,6 +32,9 @@ class User(
     @Column(unique = true)
     var phoneNumber: String? = null,
 
+    @Column(unique = true)
+    var googleId: String? = null,
+
     @Enumerated(EnumType.STRING)
     var role: UserRole? = null,
 
