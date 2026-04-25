@@ -1,5 +1,6 @@
 package com.mudhut.nudge.config
 
+import com.mudhut.nudge.users.services.AccessTokenBlocklistService
 import com.mudhut.nudge.users.services.JwtService
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
 import jakarta.servlet.FilterChain
@@ -14,13 +15,14 @@ import org.springframework.web.filter.OncePerRequestFilter
 @Component
 class JwtAuthenticationFilter(
     private val jwtService: JwtService,
-    private val userDetailsService: NudgeUserDetailsService
+    private val userDetailsService: NudgeUserDetailsService,
+    private val blocklistService: AccessTokenBlocklistService,
 ) : OncePerRequestFilter() {
 
     override fun doFilterInternal(
         request: HttpServletRequest,
         response: HttpServletResponse,
-        filterChain: FilterChain
+        filterChain: FilterChain,
     ) {
         val authorizationHeader = request.getHeader("Authorization")
 
@@ -37,11 +39,15 @@ class JwtAuthenticationFilter(
         }
 
         if (username != null && SecurityContextHolder.getContext().authentication == null) {
+            val jti = jwtService.extractJti(jwt!!)
+            if (jti == null || blocklistService.isRevoked(jti)) {
+                filterChain.doFilter(request, response)
+                return
+            }
             val userDetails = userDetailsService.loadUserByUsername(username)
-
-            if (jwtService.validateToken(jwt!!, userDetails)) {
+            if (jwtService.validateToken(jwt, userDetails)) {
                 val authenticationToken = UsernamePasswordAuthenticationToken(
-                    userDetails, null, userDetails.authorities
+                    userDetails, null, userDetails.authorities,
                 )
                 authenticationToken.details = WebAuthenticationDetailsSource().buildDetails(request)
                 SecurityContextHolder.getContext().authentication = authenticationToken

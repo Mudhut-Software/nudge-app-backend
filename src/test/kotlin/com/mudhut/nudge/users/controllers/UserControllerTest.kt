@@ -15,6 +15,7 @@ import com.mudhut.nudge.users.services.VerificationService
 import com.mudhut.nudge.config.EnvConfig
 import com.mudhut.nudge.config.JwtAuthenticationFilter
 import com.mudhut.nudge.config.SecurityConfig
+import com.mudhut.nudge.users.services.AccessTokenBlocklistService
 import com.mudhut.nudge.users.services.JwtService
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
 import org.junit.jupiter.api.Test
@@ -60,6 +61,9 @@ class UserControllerTest {
 
     @MockitoBean
     private lateinit var userDetailsService: NudgeUserDetailsService
+
+    @MockitoBean
+    private lateinit var blocklistService: AccessTokenBlocklistService
 
     @MockitoBean
     private lateinit var envConfig: EnvConfig

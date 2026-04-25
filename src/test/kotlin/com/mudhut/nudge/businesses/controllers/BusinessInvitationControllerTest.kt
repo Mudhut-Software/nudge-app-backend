@@ -9,6 +9,7 @@ import com.mudhut.nudge.businesses.services.BusinessInvitationService
 import com.mudhut.nudge.config.EnvConfig
 import com.mudhut.nudge.config.JwtAuthenticationFilter
 import com.mudhut.nudge.config.SecurityConfig
+import com.mudhut.nudge.users.services.AccessTokenBlocklistService
 import com.mudhut.nudge.users.services.JwtService
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
 import com.mudhut.nudge.utils.models.GeneralRequestResponse
@@ -42,6 +43,9 @@ class BusinessInvitationControllerTest {
 
     @MockitoBean
     private lateinit var userDetailsService: NudgeUserDetailsService
+
+    @MockitoBean
+    private lateinit var blocklistService: AccessTokenBlocklistService
 
     @MockitoBean
     private lateinit var envConfig: EnvConfig
