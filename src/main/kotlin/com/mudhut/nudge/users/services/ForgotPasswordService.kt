@@ -7,8 +7,8 @@ import com.mudhut.nudge.users.models.ResetPasswordRequest
 import com.mudhut.nudge.users.repositories.PasswordResetTokenRepository
 import com.mudhut.nudge.users.repositories.UserRepository
 import com.mudhut.nudge.users.services.helpers.PasswordValidator
-import com.mudhut.nudge.utils.UrlService
 import com.mudhut.nudge.utils.exceptions.UserNotFoundException
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -20,9 +20,9 @@ class ForgotPasswordService(
     private val userRepository: UserRepository,
     private val passwordResetTokenRepository: PasswordResetTokenRepository,
     private val emailService: JavaEmailService,
-    private val urlService: UrlService,
     private val passwordValidator: PasswordValidator,
-    private val passwordEncoder: PasswordEncoder
+    private val passwordEncoder: PasswordEncoder,
+    @Value("\${nudge.frontend-url:}") private val frontendUrl: String
 ) {
 
     private fun invalidateExistingPasswordResetTokens(user: User) {
@@ -34,7 +34,8 @@ class ForgotPasswordService(
     }
 
     private fun sendPasswordResetEmail(email: String, token: String) {
-        val resetUrl = urlService.buildUrlWithParam("/reset-password", "token", token)
+        val base = frontendUrl.trimEnd('/')
+        val resetUrl = "$base/reset-password?token=$token"
 
         val subject = "Reset Your Password"
 

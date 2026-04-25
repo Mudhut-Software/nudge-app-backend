@@ -13,12 +13,6 @@ class AuthTemplatesController(
     @Value("\${nudge.frontend-url:}") private val frontendUrl: String
 ) {
 
-    @GetMapping("/reset-password")
-    fun showResetPasswordForm(@RequestParam token: String, model: Model): String {
-        model.addAttribute("token", token)
-        return "reset-password"
-    }
-
     @GetMapping("/verify-email")
     fun verifyEmail(@RequestParam token: String, model: Model): String {
         try {

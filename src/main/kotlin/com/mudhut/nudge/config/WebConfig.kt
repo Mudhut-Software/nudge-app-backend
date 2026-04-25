@@ -3,7 +3,6 @@ package com.mudhut.nudge.config
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Configuration
 import org.springframework.web.servlet.config.annotation.CorsRegistry
-import org.springframework.web.servlet.config.annotation.ViewControllerRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 
 @Configuration
@@ -28,9 +27,5 @@ class WebConfig(
             .allowedHeaders(*allowedHeaders.split(",").toTypedArray())
             .allowCredentials(true)
             .maxAge(maxAge)
-    }
-
-    override fun addViewControllers(registry: ViewControllerRegistry) {
-        registry.addViewController("/reset-password").setViewName("reset-password")
     }
 }
