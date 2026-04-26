@@ -18,6 +18,7 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.kotlin.any
+import org.springframework.dao.DataIntegrityViolationException
 import java.time.Instant
 
 @ExtendWith(MockitoExtension::class)
@@ -67,6 +68,19 @@ class AccessTokenBlocklistServiceTest {
         service.revoke("jti-3", userId = 7L, expiresAt = expiresAt)
 
         verify(repo, never()).save(any<RevokedAccessToken>())
+    }
+
+    @Test
+    fun `revoke swallows DataIntegrityViolationException from a concurrent insert`() {
+        val expiresAt = Instant.now().plusSeconds(60)
+        val userRef = User(id = 7L)
+        `when`(repo.existsByJti("jti-race")).thenReturn(false)
+        `when`(userRepository.getReferenceById(7L)).thenReturn(userRef)
+        `when`(repo.save(any<RevokedAccessToken>()))
+            .thenThrow(DataIntegrityViolationException("uq_revoked_access_tokens_jti"))
+
+        // Should not throw — concurrent insert is the desired end state.
+        service.revoke("jti-race", userId = 7L, expiresAt = expiresAt)
     }
 
     @Test
