@@ -21,7 +21,7 @@ class JwtService(
     fun generateToken(user: User): String {
         val claims = mutableMapOf<String, Any>(
             "id" to user.id!!,
-            "role" to user.role!!.name
+            "role" to user.role!!.name,
         )
         return createToken(claims, user.email!!, envConfig.accessTokenExpiryInMillis)
     }
@@ -30,6 +30,7 @@ class JwtService(
         return Jwts.builder()
             .setClaims(claims)
             .setSubject(subject)
+            .setId(UUID.randomUUID().toString())
             .setIssuedAt(Date(System.currentTimeMillis()))
             .setExpiration(Date(System.currentTimeMillis() + expirationMs))
             .signWith(getSigningKey(), SignatureAlgorithm.HS256)
@@ -43,6 +44,12 @@ class JwtService(
 
     fun extractUsername(token: String): String =
         extractClaim(token, Claims::getSubject)
+
+    fun extractJti(token: String): String? = try {
+        extractClaim(token, Claims::getId)
+    } catch (e: Exception) {
+        null
+    }
 
     fun extractExpiration(token: String): Date =
         extractClaim(token, Claims::getExpiration)

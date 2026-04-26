@@ -1,6 +1,7 @@
 package com.mudhut.nudge.utils.exceptions
 
 import com.mailersend.sdk.exceptions.MailerSendException
+import jakarta.persistence.EntityNotFoundException
 import jakarta.validation.ConstraintViolationException
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
@@ -101,6 +102,15 @@ class GlobalExceptionHandler {
         logger.warn("User not found: {}", ex.message)
         return ResponseEntity(
             ErrorResponse(ERROR_CODE_NOT_FOUND, ex.message ?: "User not found"),
+            HttpStatus.NOT_FOUND
+        )
+    }
+
+    @ExceptionHandler(EntityNotFoundException::class)
+    fun handleEntityNotFoundException(ex: EntityNotFoundException): ResponseEntity<ErrorResponse> {
+        logger.warn("Entity not found: {}", ex.message)
+        return ResponseEntity(
+            ErrorResponse(ERROR_CODE_NOT_FOUND, ex.message ?: "Resource not found"),
             HttpStatus.NOT_FOUND
         )
     }

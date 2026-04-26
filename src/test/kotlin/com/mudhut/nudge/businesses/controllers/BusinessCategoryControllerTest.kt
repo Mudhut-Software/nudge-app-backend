@@ -9,6 +9,7 @@ import com.mudhut.nudge.utils.exceptions.CategoryNotFoundException
 import com.mudhut.nudge.config.EnvConfig
 import com.mudhut.nudge.config.JwtAuthenticationFilter
 import com.mudhut.nudge.config.SecurityConfig
+import com.mudhut.nudge.users.services.AccessTokenBlocklistService
 import com.mudhut.nudge.users.services.JwtService
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
 import org.junit.jupiter.api.Test
@@ -40,6 +41,9 @@ class BusinessCategoryControllerTest {
 
     @MockitoBean
     private lateinit var userDetailsService: NudgeUserDetailsService
+
+    @MockitoBean
+    private lateinit var blocklistService: AccessTokenBlocklistService
 
     @MockitoBean
     private lateinit var envConfig: EnvConfig

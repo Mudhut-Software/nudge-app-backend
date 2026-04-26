@@ -4,12 +4,15 @@ import com.mudhut.nudge.users.models.*
 import com.mudhut.nudge.users.services.ForgotPasswordService
 import com.mudhut.nudge.users.services.GoogleAuthService
 import com.mudhut.nudge.users.services.LoginService
+import com.mudhut.nudge.users.services.LogoutService
 import com.mudhut.nudge.users.services.RegistrationService
 import com.mudhut.nudge.users.services.UserService
 import com.mudhut.nudge.users.services.VerificationService
 import com.mudhut.nudge.utils.models.GeneralRequestResponse
+import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
+import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -20,7 +23,8 @@ class UserController(
     private val registrationService: RegistrationService,
     private val forgotPasswordService: ForgotPasswordService,
     private val verificationService: VerificationService,
-    private val googleAuthService: GoogleAuthService
+    private val googleAuthService: GoogleAuthService,
+    private val logoutService: LogoutService,
 ) {
 
     @PostMapping("/register")
@@ -61,5 +65,11 @@ class UserController(
         return ResponseEntity.ok(
             GeneralRequestResponse("Your password has been reset successfully")
         )
+    }
+
+    @PostMapping("/logout")
+    fun logout(authentication: Authentication, request: HttpServletRequest): ResponseEntity<Void> {
+        logoutService.logout(authentication.name, request.getHeader("Authorization"))
+        return ResponseEntity.noContent().build()
     }
 }
