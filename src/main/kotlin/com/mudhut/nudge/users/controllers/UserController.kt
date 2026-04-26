@@ -70,6 +70,6 @@ class UserController(
     @PostMapping("/logout")
     fun logout(authentication: Authentication, request: HttpServletRequest): ResponseEntity<Void> {
         logoutService.logout(authentication.name, request.getHeader("Authorization"))
-        return ResponseEntity.ok().build()
+        return ResponseEntity.noContent().build()
     }
 }

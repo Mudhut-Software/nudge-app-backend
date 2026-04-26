@@ -449,14 +449,13 @@ class UserControllerTest {
 
     @Test
     fun testLogout_RequiresAuthentication() {
-        // No @WithMockUser → no Authentication in the security context → must be rejected.
-        // Spring Security's default with no custom entry point returns 403 for stateless
-        // configs; switch to .isUnauthorized if a custom entry point is added later.
+        // No @WithMockUser → no Authentication in the security context → 403 (matches
+        // BusinessControllerTest's unauthenticated-path convention).
         mockMvc.perform(
             MockMvcRequestBuilders.post("/api/v1/auth/logout")
                 .header("Authorization", "Bearer some-token")
         )
-            .andExpect(MockMvcResultMatchers.status().is4xxClientError)
+            .andExpect(MockMvcResultMatchers.status().isForbidden)
     }
 
     @Test
@@ -466,7 +465,7 @@ class UserControllerTest {
             MockMvcRequestBuilders.post("/api/v1/auth/logout")
                 .header("Authorization", "Bearer access-token")
         )
-            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.status().isNoContent)
 
         verify(logoutService).logout("alice@example.com", "Bearer access-token")
     }
