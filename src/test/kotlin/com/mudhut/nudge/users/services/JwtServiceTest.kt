@@ -92,4 +92,19 @@ class JwtServiceTest {
         assertNotNull(second)
         assertNotEquals(first, second)
     }
+
+    @Test
+    fun `parseClaims returns null on a malformed token`() {
+        val claims = jwtService.parseClaims("not-a-jwt")
+        assertNull(claims)
+    }
+
+    @Test
+    fun `parseClaims returns the body for a freshly generated token`() {
+        stubAccessTokenExpiry()
+        val token = jwtService.generateToken(aUser())
+        val claims = jwtService.parseClaims(token)
+        assertNotNull(claims)
+        assertEquals("alice@example.com", claims!!.subject)
+    }
 }

@@ -20,7 +20,7 @@ class LogoutService(
         // this branch is unreachable in production.
         val jti = jwtService.extractJti(token)
             ?: throw IllegalStateException("Authenticated request had no jti claim")
-        val expiresAt = jwtService.extractExpiration(token).toInstant()
+        val expiresAt = jwtService.extractExpiration(token)
         val user = userRepository.findByEmail(email)
             .orElseThrow { EntityNotFoundException("User not found with email: $email") }
 

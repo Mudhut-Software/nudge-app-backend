@@ -24,37 +24,39 @@ class JwtAuthenticationFilter(
         response: HttpServletResponse,
         filterChain: FilterChain,
     ) {
-        val authorizationHeader = request.getHeader("Authorization")
-
-        var username: String? = null
-        var jwt: String? = null
-
-        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
-            jwt = authorizationHeader.substring(7)
-            try {
-                username = jwtService.extractUsername(jwt)
-            } catch (e: Exception) {
-                logger.error("Error extracting username from token", e)
-            }
+        val header = request.getHeader("Authorization")
+        if (header == null || !header.startsWith("Bearer ")) {
+            filterChain.doFilter(request, response)
+            return
+        }
+        if (SecurityContextHolder.getContext().authentication != null) {
+            filterChain.doFilter(request, response)
+            return
         }
 
-        if (username != null && SecurityContextHolder.getContext().authentication == null) {
-            val jti = jwtService.extractJti(jwt!!)
-            // jti absent or revoked — pass through without populating the context;
-            // Spring Security's access rules reject the unauthenticated request downstream.
-            if (jti == null || blocklistService.isRevoked(jti)) {
-                filterChain.doFilter(request, response)
-                return
-            }
-            val userDetails = userDetailsService.loadUserByUsername(username)
-            if (jwtService.validateToken(jwt, userDetails)) {
-                val authenticationToken = UsernamePasswordAuthenticationToken(
-                    userDetails, null, userDetails.authorities,
-                )
-                authenticationToken.details = WebAuthenticationDetailsSource().buildDetails(request)
-                SecurityContextHolder.getContext().authentication = authenticationToken
-            }
+        val jwt = header.substring(7)
+        val claims = jwtService.parseClaims(jwt)
+        if (claims == null) {
+            filterChain.doFilter(request, response)
+            return
         }
+
+        val jti = jwtService.extractJti(claims)
+        // jti absent or revoked — pass through without populating the context;
+        // Spring Security's access rules reject the unauthenticated request downstream.
+        if (jti == null || blocklistService.isRevoked(jti)) {
+            filterChain.doFilter(request, response)
+            return
+        }
+
+        val username = jwtService.extractUsername(claims)
+        val userDetails = userDetailsService.loadUserByUsername(username)
+        val authToken = UsernamePasswordAuthenticationToken(
+            userDetails, null, userDetails.authorities,
+        )
+        authToken.details = WebAuthenticationDetailsSource().buildDetails(request)
+        SecurityContextHolder.getContext().authentication = authToken
+
         filterChain.doFilter(request, response)
     }
 }

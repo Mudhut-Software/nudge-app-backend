@@ -3,6 +3,7 @@ package com.mudhut.nudge.config
 import com.mudhut.nudge.users.services.AccessTokenBlocklistService
 import com.mudhut.nudge.users.services.JwtService
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
+import io.jsonwebtoken.Claims
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -30,6 +31,7 @@ class JwtAuthenticationFilterTest {
     @Mock private lateinit var request: HttpServletRequest
     @Mock private lateinit var response: HttpServletResponse
     @Mock private lateinit var chain: FilterChain
+    @Mock private lateinit var claims: Claims
 
     private lateinit var filter: JwtAuthenticationFilter
 
@@ -50,9 +52,9 @@ class JwtAuthenticationFilterTest {
 
     private fun stubValidUser(token: String, email: String): SpringUser {
         val user = SpringUser(email, "", listOf(SimpleGrantedAuthority("ROLE_BASIC_USER")))
-        `when`(jwtService.extractUsername(token)).thenReturn(email)
+        `when`(jwtService.parseClaims(token)).thenReturn(claims)
+        `when`(jwtService.extractUsername(claims)).thenReturn(email)
         `when`(userDetailsService.loadUserByUsername(email)).thenReturn(user)
-        `when`(jwtService.validateToken(token, user)).thenReturn(true)
         return user
     }
 
@@ -60,7 +62,7 @@ class JwtAuthenticationFilterTest {
     fun `valid token with present and unrevoked jti sets the security context`() {
         stubBearer("good")
         stubValidUser("good", "alice@example.com")
-        `when`(jwtService.extractJti("good")).thenReturn("jti-good")
+        `when`(jwtService.extractJti(claims)).thenReturn("jti-good")
         `when`(blocklistService.isRevoked("jti-good")).thenReturn(false)
 
         filter.doFilter(request, response, chain)
@@ -72,8 +74,8 @@ class JwtAuthenticationFilterTest {
     @Test
     fun `token without jti does not set the security context`() {
         stubBearer("nojti")
-        `when`(jwtService.extractUsername("nojti")).thenReturn("alice@example.com")
-        `when`(jwtService.extractJti("nojti")).thenReturn(null)
+        `when`(jwtService.parseClaims("nojti")).thenReturn(claims)
+        `when`(jwtService.extractJti(claims)).thenReturn(null)
 
         filter.doFilter(request, response, chain)
 
@@ -85,14 +87,26 @@ class JwtAuthenticationFilterTest {
     @Test
     fun `token with revoked jti does not set the security context`() {
         stubBearer("revoked")
-        `when`(jwtService.extractUsername("revoked")).thenReturn("alice@example.com")
-        `when`(jwtService.extractJti("revoked")).thenReturn("jti-revoked")
+        `when`(jwtService.parseClaims("revoked")).thenReturn(claims)
+        `when`(jwtService.extractJti(claims)).thenReturn("jti-revoked")
         `when`(blocklistService.isRevoked("jti-revoked")).thenReturn(true)
 
         filter.doFilter(request, response, chain)
 
         assertNull(SecurityContextHolder.getContext().authentication)
         verify(userDetailsService, never()).loadUserByUsername(org.mockito.ArgumentMatchers.anyString())
+        verify(chain).doFilter(request, response)
+    }
+
+    @Test
+    fun `token that fails to parse does not set the security context`() {
+        stubBearer("bogus")
+        `when`(jwtService.parseClaims("bogus")).thenReturn(null)
+
+        filter.doFilter(request, response, chain)
+
+        assertNull(SecurityContextHolder.getContext().authentication)
+        verify(jwtService, never()).extractJti(claims)
         verify(chain).doFilter(request, response)
     }
 
