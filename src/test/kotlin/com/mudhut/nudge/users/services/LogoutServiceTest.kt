@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import java.time.Instant
@@ -64,5 +65,6 @@ class LogoutServiceTest {
         assertThrows(EntityNotFoundException::class.java) {
             service.logout("ghost@example.com", "Bearer access-token")
         }
+        verifyNoInteractions(blocklistService, refreshTokenService)
     }
 }

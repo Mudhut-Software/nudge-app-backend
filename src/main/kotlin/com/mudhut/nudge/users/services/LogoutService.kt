@@ -16,6 +16,8 @@ class LogoutService(
     @Transactional
     fun logout(email: String, authorizationHeader: String) {
         val token = authorizationHeader.removePrefix("Bearer ").trim()
+        // Defensive: JwtAuthenticationFilter already rejects null-jti tokens, so
+        // this branch is unreachable in production.
         val jti = jwtService.extractJti(token)
             ?: throw IllegalStateException("Authenticated request had no jti claim")
         val expiresAt = jwtService.extractExpiration(token).toInstant()
