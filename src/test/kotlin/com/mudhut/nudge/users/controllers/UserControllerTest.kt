@@ -9,6 +9,7 @@ import com.mudhut.nudge.users.models.*
 import com.mudhut.nudge.users.services.ForgotPasswordService
 import com.mudhut.nudge.users.services.GoogleAuthService
 import com.mudhut.nudge.users.services.LoginService
+import com.mudhut.nudge.users.services.LogoutService
 import com.mudhut.nudge.users.services.RegistrationService
 import com.mudhut.nudge.users.services.UserService
 import com.mudhut.nudge.users.services.VerificationService
@@ -20,11 +21,13 @@ import com.mudhut.nudge.users.services.JwtService
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.mockito.Mockito.verify
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
+import org.springframework.security.test.context.support.WithMockUser
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
@@ -64,6 +67,9 @@ class UserControllerTest {
 
     @MockitoBean
     private lateinit var blocklistService: AccessTokenBlocklistService
+
+    @MockitoBean
+    private lateinit var logoutService: LogoutService
 
     @MockitoBean
     private lateinit var envConfig: EnvConfig
@@ -439,5 +445,29 @@ class UserControllerTest {
                 .content(objectMapper.writeValueAsString(request))
         )
             .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+
+    @Test
+    fun testLogout_RequiresAuthentication() {
+        // No @WithMockUser → no Authentication in the security context → must be rejected.
+        // Spring Security's default with no custom entry point returns 403 for stateless
+        // configs; switch to .isUnauthorized if a custom entry point is added later.
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/logout")
+                .header("Authorization", "Bearer some-token")
+        )
+            .andExpect(MockMvcResultMatchers.status().is4xxClientError)
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com", roles = ["BASIC_USER"])
+    fun testLogout_Success() {
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/logout")
+                .header("Authorization", "Bearer access-token")
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+
+        verify(logoutService).logout("alice@example.com", "Bearer access-token")
     }
 }
