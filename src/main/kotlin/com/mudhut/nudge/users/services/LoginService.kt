@@ -50,7 +50,7 @@ class LoginService(
 
         return AuthResponse.builder()
             .accessToken(accessToken)
-            .refreshToken(refreshToken.token)
+            .refreshToken(refreshToken)
             .user(UserResponse.from(user, memberships))
             .build()
     }
