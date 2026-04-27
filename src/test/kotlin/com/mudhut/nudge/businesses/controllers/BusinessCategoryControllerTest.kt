@@ -6,11 +6,8 @@ import com.mudhut.nudge.businesses.models.CreateCategoryRequest
 import com.mudhut.nudge.businesses.models.UpdateCategoryRequest
 import com.mudhut.nudge.businesses.services.BusinessCategoryService
 import com.mudhut.nudge.utils.exceptions.CategoryNotFoundException
-import com.mudhut.nudge.config.EnvConfig
-import com.mudhut.nudge.config.JwtAuthenticationFilter
+import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
-import com.mudhut.nudge.users.services.AccessTokenBlocklistService
-import com.mudhut.nudge.users.services.JwtService
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -26,7 +23,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers
 
 @WebMvcTest(BusinessCategoryController::class)
-@Import(SecurityConfig::class, JwtAuthenticationFilter::class)
+@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class)
 @AutoConfigureMockMvc
 class BusinessCategoryControllerTest {
 
@@ -37,16 +34,7 @@ class BusinessCategoryControllerTest {
     private lateinit var businessCategoryService: BusinessCategoryService
 
     @MockitoBean
-    private lateinit var jwtService: JwtService
-
-    @MockitoBean
     private lateinit var userDetailsService: NudgeUserDetailsService
-
-    @MockitoBean
-    private lateinit var blocklistService: AccessTokenBlocklistService
-
-    @MockitoBean
-    private lateinit var envConfig: EnvConfig
 
     @Autowired
     private lateinit var objectMapper: ObjectMapper
