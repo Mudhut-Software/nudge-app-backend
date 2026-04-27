@@ -5,11 +5,8 @@ import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.models.BusinessMemberResponse
 import com.mudhut.nudge.businesses.models.UpdateMemberRoleRequest
 import com.mudhut.nudge.businesses.services.BusinessMemberService
-import com.mudhut.nudge.config.EnvConfig
-import com.mudhut.nudge.config.JwtAuthenticationFilter
+import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
-import com.mudhut.nudge.users.services.AccessTokenBlocklistService
-import com.mudhut.nudge.users.services.JwtService
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
 import com.mudhut.nudge.utils.models.GeneralRequestResponse
 import org.junit.jupiter.api.Test
@@ -27,7 +24,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers
 import java.time.LocalDateTime
 
 @WebMvcTest(BusinessMemberController::class)
-@Import(SecurityConfig::class, JwtAuthenticationFilter::class)
+@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class)
 @AutoConfigureMockMvc
 class BusinessMemberControllerTest {
 
@@ -38,16 +35,7 @@ class BusinessMemberControllerTest {
     private lateinit var businessMemberService: BusinessMemberService
 
     @MockitoBean
-    private lateinit var jwtService: JwtService
-
-    @MockitoBean
     private lateinit var userDetailsService: NudgeUserDetailsService
-
-    @MockitoBean
-    private lateinit var blocklistService: AccessTokenBlocklistService
-
-    @MockitoBean
-    private lateinit var envConfig: EnvConfig
 
     @Autowired
     private lateinit var objectMapper: ObjectMapper

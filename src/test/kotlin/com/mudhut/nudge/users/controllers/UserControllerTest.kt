@@ -13,11 +13,8 @@ import com.mudhut.nudge.users.services.LogoutService
 import com.mudhut.nudge.users.services.RegistrationService
 import com.mudhut.nudge.users.services.UserService
 import com.mudhut.nudge.users.services.VerificationService
-import com.mudhut.nudge.config.EnvConfig
-import com.mudhut.nudge.config.JwtAuthenticationFilter
+import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
-import com.mudhut.nudge.users.services.AccessTokenBlocklistService
-import com.mudhut.nudge.users.services.JwtService
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -34,7 +31,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers
 
 @WebMvcTest(UserController::class)
-@Import(SecurityConfig::class, JwtAuthenticationFilter::class)
+@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class)
 @AutoConfigureMockMvc
 class UserControllerTest {
 
@@ -60,19 +57,10 @@ class UserControllerTest {
     private lateinit var userService: UserService
 
     @MockitoBean
-    private lateinit var jwtService: JwtService
-
-    @MockitoBean
     private lateinit var userDetailsService: NudgeUserDetailsService
 
     @MockitoBean
-    private lateinit var blocklistService: AccessTokenBlocklistService
-
-    @MockitoBean
     private lateinit var logoutService: LogoutService
-
-    @MockitoBean
-    private lateinit var envConfig: EnvConfig
 
     @Autowired
     private lateinit var objectMapper: ObjectMapper
