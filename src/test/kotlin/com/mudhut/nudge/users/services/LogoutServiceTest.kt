@@ -14,8 +14,6 @@ import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import java.time.Instant
-import java.time.temporal.ChronoUnit
-import java.util.Date
 import java.util.Optional
 
 @ExtendWith(MockitoExtension::class)
@@ -43,12 +41,10 @@ class LogoutServiceTest {
     @Test
     fun `logout revokes the access jti and deletes the user's refresh token`() {
         val user = user()
-        // Truncate to millis: java.util.Date has ms resolution, so the round-trip
-        // Instant -> Date -> Instant in the service would otherwise drop sub-ms nanos.
-        val expiry = Instant.now().plusSeconds(60).truncatedTo(ChronoUnit.MILLIS)
+        val expiry = Instant.now().plusSeconds(60)
         `when`(userRepository.findByEmail(user.email!!)).thenReturn(Optional.of(user))
         `when`(jwtService.extractJti("access-token")).thenReturn("jti-1")
-        `when`(jwtService.extractExpiration("access-token")).thenReturn(Date.from(expiry))
+        `when`(jwtService.extractExpiration("access-token")).thenReturn(expiry)
 
         service.logout(user.email!!, "Bearer access-token")
 
@@ -60,7 +56,7 @@ class LogoutServiceTest {
     fun `logout throws when the user cannot be resolved`() {
         `when`(userRepository.findByEmail("ghost@example.com")).thenReturn(Optional.empty())
         `when`(jwtService.extractJti("access-token")).thenReturn("jti-1")
-        `when`(jwtService.extractExpiration("access-token")).thenReturn(Date())
+        `when`(jwtService.extractExpiration("access-token")).thenReturn(Instant.now())
 
         assertThrows(EntityNotFoundException::class.java) {
             service.logout("ghost@example.com", "Bearer access-token")

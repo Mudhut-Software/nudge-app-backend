@@ -6,17 +6,20 @@ import io.jsonwebtoken.*
 import io.jsonwebtoken.security.Keys
 import io.jsonwebtoken.security.SecurityException
 import org.slf4j.LoggerFactory
-import org.springframework.security.core.userdetails.UserDetails
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
 import java.security.Key
-import java.util.*
+import java.time.Instant
+import java.util.Date
+import java.util.UUID
 
 @Service
 class JwtService(
     private val envConfig: EnvConfig
 ) {
     private val logger = LoggerFactory.getLogger(JwtService::class.java)
+
+    // ------- token issuance -------
 
     fun generateToken(user: User): String {
         val claims = mutableMapOf<String, Any>(
@@ -42,54 +45,52 @@ class JwtService(
         return Keys.hmacShaKeyFor(keyBytes)
     }
 
-    fun extractUsername(token: String): String =
-        extractClaim(token, Claims::getSubject)
+    // ------- parse-once primitive -------
 
-    fun extractJti(token: String): String? = try {
-        extractClaim(token, Claims::getId)
-    } catch (e: Exception) {
-        null
-    }
-
-    fun extractExpiration(token: String): Date =
-        extractClaim(token, Claims::getExpiration)
-
-    fun <T> extractClaim(token: String, claimsResolver: (Claims) -> T): T {
-        val claims = extractAllClaims(token)
-        return claimsResolver(claims)
-    }
-
-    private fun extractAllClaims(token: String): Claims {
-        return Jwts.parserBuilder()
+    /**
+     * Parse and verify the token in one shot. Returns null on any parse/signature/expiry
+     * failure (and logs the reason). Callers that need to inspect multiple claims should
+     * call this once and pass the resulting Claims to the extractors below — avoids
+     * re-parsing and re-verifying the HMAC for every claim read.
+     */
+    fun parseClaims(token: String): Claims? = try {
+        Jwts.parserBuilder()
             .setSigningKey(getSigningKey())
             .build()
             .parseClaimsJws(token)
             .body
+    } catch (e: SecurityException) {
+        logger.error("Invalid JWT signature: {}", e.message); null
+    } catch (e: MalformedJwtException) {
+        logger.error("Invalid JWT token: {}", e.message); null
+    } catch (e: ExpiredJwtException) {
+        logger.error("JWT token is expired: {}", e.message); null
+    } catch (e: UnsupportedJwtException) {
+        logger.error("JWT token is unsupported: {}", e.message); null
+    } catch (e: IllegalArgumentException) {
+        logger.error("JWT claims string is empty: {}", e.message); null
     }
 
-    private fun isTokenExpired(token: String): Boolean =
-        extractExpiration(token).before(Date())
+    // ------- Claims-taking accessors (no parsing) -------
 
-    fun validateToken(token: String, userDetails: UserDetails): Boolean {
-        val username = extractUsername(token)
-        return username == userDetails.username && !isTokenExpired(token)
-    }
+    fun extractUsername(claims: Claims): String = claims.subject
 
-    fun validateToken(token: String): Boolean {
-        try {
-            Jwts.parserBuilder().setSigningKey(getSigningKey()).build().parseClaimsJws(token)
-            return true
-        } catch (e: SecurityException) {
-            logger.error("Invalid JWT signature: {}", e.message)
-        } catch (e: MalformedJwtException) {
-            logger.error("Invalid JWT token: {}", e.message)
-        } catch (e: ExpiredJwtException) {
-            logger.error("JWT token is expired: {}", e.message)
-        } catch (e: UnsupportedJwtException) {
-            logger.error("JWT token is unsupported: {}", e.message)
-        } catch (e: IllegalArgumentException) {
-            logger.error("JWT claims string is empty: {}", e.message)
-        }
-        return false
-    }
+    fun extractJti(claims: Claims): String? = claims.id
+
+    fun extractExpiration(claims: Claims): Instant = claims.expiration.toInstant()
+
+    // ------- token-taking convenience (delegate to parse + accessor) -------
+
+    fun extractUsername(token: String): String = extractUsername(parseClaimsOrThrow(token))
+
+    fun extractJti(token: String): String? = parseClaims(token)?.let(::extractJti)
+
+    fun extractExpiration(token: String): Instant = extractExpiration(parseClaimsOrThrow(token))
+
+    private fun parseClaimsOrThrow(token: String): Claims = parseClaims(token)
+        ?: throw JwtException("Failed to parse JWT")
+
+    // ------- legacy signature-only validator (kept for backward compatibility, currently unused) -------
+
+    fun validateToken(token: String): Boolean = parseClaims(token) != null
 }
