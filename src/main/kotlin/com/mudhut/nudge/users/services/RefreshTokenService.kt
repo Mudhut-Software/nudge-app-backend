@@ -7,29 +7,36 @@ import com.mudhut.nudge.users.repositories.RefreshTokenRepository
 import com.mudhut.nudge.users.repositories.UserRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.time.Instant
-import java.util.*
+import java.util.HexFormat
+import java.util.Optional
+import java.util.UUID
 
 @Service
 class RefreshTokenService(
     private val refreshTokenRepository: RefreshTokenRepository,
     private val userRepository: UserRepository,
-    private val envConfig: EnvConfig
+    private val envConfig: EnvConfig,
 ) {
 
     fun findByToken(token: String): Optional<RefreshToken> =
-        refreshTokenRepository.findByToken(token)
+        refreshTokenRepository.findByToken(hash(token))
 
-    fun createRefreshToken(user: User): RefreshToken {
+    @Transactional
+    fun createRefreshToken(user: User): String {
         refreshTokenRepository.findByUser(user).ifPresent { refreshTokenRepository.delete(it) }
 
-        val refreshToken = RefreshToken.builder()
-            .user(user)
-            .token(UUID.randomUUID().toString())
-            .expiryDate(Instant.now().plusMillis(envConfig.refreshTokenExpiryInMillis))
-            .build()
-
-        return refreshTokenRepository.save(refreshToken)
+        val raw = UUID.randomUUID().toString()
+        refreshTokenRepository.save(
+            RefreshToken.builder()
+                .user(user)
+                .token(hash(raw))
+                .expiryDate(Instant.now().plusMillis(envConfig.refreshTokenExpiryInMillis))
+                .build()
+        )
+        return raw
     }
 
     fun verifyExpiration(token: RefreshToken): RefreshToken {
@@ -43,5 +50,11 @@ class RefreshTokenService(
     @Transactional
     fun deleteByUserId(userId: Long) {
         userRepository.findById(userId).ifPresent { refreshTokenRepository.deleteByUser(it) }
+    }
+
+    private fun hash(token: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(token.toByteArray(StandardCharsets.UTF_8))
+        return HexFormat.of().formatHex(digest)
     }
 }
