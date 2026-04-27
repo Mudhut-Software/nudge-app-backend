@@ -6,7 +6,6 @@ import io.jsonwebtoken.*
 import io.jsonwebtoken.security.Keys
 import io.jsonwebtoken.security.SecurityException
 import org.slf4j.LoggerFactory
-import org.springframework.security.core.userdetails.UserDetails
 import org.springframework.stereotype.Service
 import java.nio.charset.StandardCharsets
 import java.security.Key

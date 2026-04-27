@@ -107,6 +107,7 @@ class JwtAuthenticationFilterTest {
 
         assertNull(SecurityContextHolder.getContext().authentication)
         verify(jwtService, never()).extractJti(claims)
+        verify(userDetailsService, never()).loadUserByUsername(org.mockito.ArgumentMatchers.anyString())
         verify(chain).doFilter(request, response)
     }
 
