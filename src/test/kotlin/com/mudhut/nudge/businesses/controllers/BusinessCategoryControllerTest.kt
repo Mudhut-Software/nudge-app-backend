@@ -11,10 +11,18 @@ import com.mudhut.nudge.config.SecurityConfig
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.isNull
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.context.annotation.Import
+import org.springframework.data.domain.PageImpl
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
 import org.springframework.http.MediaType
 import org.springframework.security.test.context.support.WithMockUser
 import org.springframework.test.context.bean.override.mockito.MockitoBean
@@ -90,18 +98,48 @@ class BusinessCategoryControllerTest {
 
     @Test
     @WithMockUser
-    fun testGetTopLevelCategories_Success() {
+    fun testGetTopLevelCategories_ReturnsPaginatedResponseShape() {
         val categories = listOf(
             CategoryResponse(1L, "Healthcare", null, null, true, true),
             CategoryResponse(2L, "Home Services", null, null, true, false)
         )
-
-        Mockito.`when`(businessCategoryService.getTopLevelCategories()).thenReturn(categories)
+        val pageable = PageRequest.of(0, 20, Sort.by("name").ascending())
+        whenever(businessCategoryService.getTopLevelCategories(any(), isNull()))
+            .thenReturn(PageImpl(categories, pageable, 2))
 
         mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/categories"))
             .andExpect(MockMvcResultMatchers.status().isOk)
-            .andExpect(MockMvcResultMatchers.jsonPath("$.length()").value(2))
-            .andExpect(MockMvcResultMatchers.jsonPath("$[0].name").value("Healthcare"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.content.length()").value(2))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.content[0].name").value("Healthcare"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.totalElements").value(2))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.size").value(20))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.number").value(0))
+    }
+
+    @Test
+    @WithMockUser
+    fun testGetTopLevelCategories_PassesSearchTermToService() {
+        val match = listOf(CategoryResponse(1L, "Healthcare", null, null, true, true))
+        whenever(businessCategoryService.getTopLevelCategories(any(), eq("heal")))
+            .thenReturn(PageImpl(match, PageRequest.of(0, 20, Sort.by("name").ascending()), 1))
+
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/categories?search=heal"))
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.content[0].name").value("Healthcare"))
+
+        verify(businessCategoryService).getTopLevelCategories(any(), eq("heal"))
+    }
+
+    @Test
+    @WithMockUser
+    fun testGetTopLevelCategories_BlankSearchTreatedAsNoFilter() {
+        whenever(businessCategoryService.getTopLevelCategories(any(), eq("")))
+            .thenReturn(PageImpl(emptyList(), PageRequest.of(0, 20, Sort.by("name").ascending()), 0))
+
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/categories?search="))
+            .andExpect(MockMvcResultMatchers.status().isOk)
+
+        verify(businessCategoryService).getTopLevelCategories(any(), eq(""))
     }
 
     @Test
