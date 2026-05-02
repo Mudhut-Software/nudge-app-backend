@@ -145,7 +145,7 @@ class BusinessControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request))
         )
-            .andExpect(MockMvcResultMatchers.status().isForbidden)
+            .andExpect(MockMvcResultMatchers.status().isUnauthorized)
     }
 
     @Test
@@ -188,6 +188,6 @@ class BusinessControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request))
         )
-            .andExpect(MockMvcResultMatchers.status().isForbidden)
+            .andExpect(MockMvcResultMatchers.status().isUnauthorized)
     }
 }
