@@ -442,13 +442,11 @@ class UserControllerTest {
 
     @Test
     fun testLogout_RequiresAuthentication() {
-        // No @WithMockUser → no Authentication in the security context → 403 (matches
-        // BusinessControllerTest's unauthenticated-path convention).
         mockMvc.perform(
             MockMvcRequestBuilders.post("/api/v1/auth/logout")
                 .header("Authorization", "Bearer some-token")
         )
-            .andExpect(MockMvcResultMatchers.status().isForbidden)
+            .andExpect(MockMvcResultMatchers.status().isUnauthorized)
     }
 
     @Test
