@@ -11,8 +11,10 @@ import com.mudhut.nudge.users.services.GoogleAuthService
 import com.mudhut.nudge.users.services.LoginService
 import com.mudhut.nudge.users.services.LogoutService
 import com.mudhut.nudge.users.services.RegistrationService
+import com.mudhut.nudge.users.services.TokenRefreshService
 import com.mudhut.nudge.users.services.UserService
 import com.mudhut.nudge.users.services.VerificationService
+import org.springframework.security.authentication.AuthenticationServiceException
 import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
@@ -61,6 +63,9 @@ class UserControllerTest {
 
     @MockitoBean
     private lateinit var logoutService: LogoutService
+
+    @MockitoBean
+    private lateinit var tokenRefreshService: TokenRefreshService
 
     @Autowired
     private lateinit var objectMapper: ObjectMapper
@@ -456,5 +461,72 @@ class UserControllerTest {
             .andExpect(MockMvcResultMatchers.status().isNoContent)
 
         verify(logoutService).logout("alice@example.com", "Bearer access-token")
+    }
+
+    // --- POST /refresh ---
+
+    @Test
+    fun testRefresh_Success() {
+        val userResponse = UserResponse(
+            id = 1L,
+            email = "test@example.com",
+            username = "testuser",
+            phoneNumber = "+256759123321",
+            role = UserRole.BASIC_USER,
+            isEmailVerified = true,
+            isPhoneVerified = false,
+            isActive = true
+        )
+
+        val authResponse = AuthResponse.builder()
+            .accessToken("new-access-token")
+            .refreshToken("existing-refresh-token")
+            .user(userResponse)
+            .build()
+
+        Mockito.`when`(tokenRefreshService.refresh("existing-refresh-token")).thenReturn(authResponse)
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"refreshToken":"existing-refresh-token"}""")
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.accessToken").value("new-access-token"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.refreshToken").value("existing-refresh-token"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.id").value(1))
+    }
+
+    @Test
+    fun testRefresh_ValidationError_MissingToken() {
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{}""")
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+
+    @Test
+    fun testRefresh_ValidationError_BlankToken() {
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"refreshToken":"   "}""")
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+
+    @Test
+    fun testRefresh_InvalidToken_ReturnsUnauthorized() {
+        Mockito.`when`(tokenRefreshService.refresh("bad-token"))
+            .thenThrow(AuthenticationServiceException("Invalid refresh token"))
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"refreshToken":"bad-token"}""")
+        )
+            .andExpect(MockMvcResultMatchers.status().isUnauthorized)
     }
 }

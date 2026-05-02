@@ -6,6 +6,7 @@ import com.mudhut.nudge.users.services.GoogleAuthService
 import com.mudhut.nudge.users.services.LoginService
 import com.mudhut.nudge.users.services.LogoutService
 import com.mudhut.nudge.users.services.RegistrationService
+import com.mudhut.nudge.users.services.TokenRefreshService
 import com.mudhut.nudge.users.services.UserService
 import com.mudhut.nudge.users.services.VerificationService
 import com.mudhut.nudge.utils.models.GeneralRequestResponse
@@ -25,6 +26,7 @@ class UserController(
     private val verificationService: VerificationService,
     private val googleAuthService: GoogleAuthService,
     private val logoutService: LogoutService,
+    private val tokenRefreshService: TokenRefreshService,
 ) {
 
     @PostMapping("/register")
@@ -38,6 +40,10 @@ class UserController(
     @PostMapping("/google")
     fun googleAuth(@Valid @RequestBody request: GoogleAuthRequest): ResponseEntity<AuthResponse> =
         ResponseEntity.ok(googleAuthService.authenticate(request.idToken!!))
+
+    @PostMapping("/refresh")
+    fun refreshToken(@Valid @RequestBody request: RefreshTokenRequest): ResponseEntity<AuthResponse> =
+        ResponseEntity.ok(tokenRefreshService.refresh(request.refreshToken!!))
 
     @PostMapping("/verify-email")
     fun verifyEmail(@RequestParam token: String): ResponseEntity<Any> {
