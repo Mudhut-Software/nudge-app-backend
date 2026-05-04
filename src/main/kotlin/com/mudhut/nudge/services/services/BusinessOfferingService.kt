@@ -7,6 +7,7 @@ import com.mudhut.nudge.services.entities.ServiceImage
 import com.mudhut.nudge.services.models.CreateServiceRequest
 import com.mudhut.nudge.services.models.MediaResponse
 import com.mudhut.nudge.services.models.ServiceResponse
+import com.mudhut.nudge.services.models.UpdateServiceRequest
 import com.mudhut.nudge.services.entities.PriceMode
 import com.mudhut.nudge.services.entities.ServiceStatus
 import com.mudhut.nudge.services.repositories.ServiceRepository
@@ -55,6 +56,43 @@ class BusinessOfferingService(
                 )
             )
         }
+
+        val saved = serviceRepository.save(entity)
+        return toResponse(saved)
+    }
+
+    @Transactional
+    fun updateService(
+        serviceId: Long,
+        userEmail: String,
+        request: UpdateServiceRequest
+    ): ServiceResponse {
+        val entity = serviceRepository.findById(serviceId)
+            .orElseThrow { BusinessNotFoundException("Service not found with id: $serviceId") }
+        businessService.requireRole(entity.business!!.id!!, userEmail, BusinessRole.MANAGER)
+
+        // Compute resulting pricing tuple. When priceMode is in the patch, treat the patch's
+        // amount/currency/unit as authoritative even if null (you may be transitioning to QUOTE
+        // and explicitly clearing the others). When priceMode is unchanged, fall back to stored.
+        val newMode = request.priceMode ?: entity.priceMode!!
+        val newAmount = if (request.priceMode != null) request.priceAmount else (request.priceAmount ?: entity.priceAmount)
+        val newCurrency = if (request.priceMode != null) request.priceCurrency else (request.priceCurrency ?: entity.priceCurrency)
+        val newUnit = if (request.priceMode != null) request.priceUnit else (request.priceUnit ?: entity.priceUnit)
+        validatePricing(newMode, newAmount, newCurrency, newUnit)
+
+        request.title?.let { entity.title = it }
+        request.description?.let { entity.description = it }
+        request.coverImage?.let {
+            entity.coverImageUrl = it.url
+            entity.coverImagePublicId = it.publicId
+        }
+        entity.priceMode = newMode
+        entity.priceAmount = newAmount
+        entity.priceCurrency = newCurrency
+        entity.priceUnit = newUnit
+        request.status?.let { entity.status = it }
+
+        // Gallery handling deferred to Task 10.
 
         val saved = serviceRepository.save(entity)
         return toResponse(saved)

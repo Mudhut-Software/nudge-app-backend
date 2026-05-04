@@ -8,6 +8,7 @@ import com.mudhut.nudge.services.entities.Service as ServiceEntity
 import com.mudhut.nudge.services.entities.ServiceStatus
 import com.mudhut.nudge.services.models.CreateServiceRequest
 import com.mudhut.nudge.services.models.MediaInput
+import com.mudhut.nudge.services.models.UpdateServiceRequest
 import com.mudhut.nudge.services.repositories.ServiceRepository
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -251,5 +252,107 @@ class BusinessOfferingServiceTest {
         assertThrows(com.mudhut.nudge.utils.exceptions.BusinessNotFoundException::class.java) {
             offeringService.getService(999L, "owner@test.com")
         }
+    }
+
+    @Test
+    fun `updateService patches the title and leaves other fields untouched`() {
+        val entity = ServiceEntity(
+            id = 7L,
+            business = businessFixture(),
+            title = "Old title",
+            coverImageUrl = "u",
+            coverImagePublicId = "nudge/services/u",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { it.arguments[0] }
+
+        val response = offeringService.updateService(
+            serviceId = 7L,
+            userEmail = "owner@test.com",
+            request = UpdateServiceRequest(title = "New title")
+        )
+
+        verify(businessService).requireRole(1L, "owner@test.com", BusinessRole.MANAGER)
+        assertEquals("New title", response.title)
+        assertEquals(PriceMode.QUOTE, response.priceMode)
+    }
+
+    @Test
+    fun `updateService toggles status to INACTIVE`() {
+        val entity = ServiceEntity(
+            id = 7L,
+            business = businessFixture(),
+            title = "X",
+            coverImageUrl = "u",
+            coverImagePublicId = "nudge/services/u",
+            priceMode = PriceMode.QUOTE,
+            status = ServiceStatus.ACTIVE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { it.arguments[0] }
+
+        val response = offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceRequest(status = ServiceStatus.INACTIVE)
+        )
+
+        assertEquals(ServiceStatus.INACTIVE, response.status)
+    }
+
+    @Test
+    fun `updateService re-validates pricing when mode changes`() {
+        val entity = ServiceEntity(
+            id = 7L,
+            business = businessFixture(),
+            title = "X",
+            coverImageUrl = "u",
+            coverImagePublicId = "nudge/services/u",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+
+        // Move from QUOTE to FIXED but supply no amount → must reject.
+        assertThrows(IllegalArgumentException::class.java) {
+            offeringService.updateService(
+                7L, "owner@test.com",
+                UpdateServiceRequest(priceMode = PriceMode.FIXED)
+            )
+        }
+    }
+
+    @Test
+    fun `updateService replaces cover image fields when provided`() {
+        val entity = ServiceEntity(
+            id = 7L,
+            business = businessFixture(),
+            title = "X",
+            coverImageUrl = "old",
+            coverImagePublicId = "nudge/services/old",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { it.arguments[0] }
+
+        val response = offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceRequest(
+                coverImage = MediaInput(
+                    url = "newUrl",
+                    publicId = "nudge/services/new"
+                )
+            )
+        )
+
+        assertEquals("newUrl", response.coverImage.url)
+        assertEquals("nudge/services/new", response.coverImage.publicId)
     }
 }
