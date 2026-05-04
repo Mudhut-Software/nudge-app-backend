@@ -92,7 +92,19 @@ class BusinessOfferingService(
         entity.priceUnit = newUnit
         request.status?.let { entity.status = it }
 
-        // Gallery handling deferred to Task 10.
+        request.galleryImages?.let { incoming ->
+            entity.galleryImages.clear()
+            incoming.forEachIndexed { idx, media ->
+                entity.galleryImages.add(
+                    ServiceImage(
+                        service = entity,
+                        url = media.url,
+                        publicId = media.publicId,
+                        position = idx
+                    )
+                )
+            }
+        }
 
         val saved = serviceRepository.save(entity)
         return toResponse(saved)

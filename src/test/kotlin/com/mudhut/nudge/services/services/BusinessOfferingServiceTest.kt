@@ -5,6 +5,7 @@ import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
 import com.mudhut.nudge.services.entities.PriceMode
 import com.mudhut.nudge.services.entities.Service as ServiceEntity
+import com.mudhut.nudge.services.entities.ServiceImage
 import com.mudhut.nudge.services.entities.ServiceStatus
 import com.mudhut.nudge.services.models.CreateServiceRequest
 import com.mudhut.nudge.services.models.MediaInput
@@ -354,5 +355,79 @@ class BusinessOfferingServiceTest {
 
         assertEquals("newUrl", response.coverImage.url)
         assertEquals("nudge/services/new", response.coverImage.publicId)
+    }
+
+    private fun entityWithGallery(images: List<Pair<String, String>>): ServiceEntity {
+        val entity = ServiceEntity(
+            id = 7L,
+            business = businessFixture(),
+            title = "X",
+            coverImageUrl = "u",
+            coverImagePublicId = "nudge/services/u",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
+        images.forEachIndexed { idx, (url, publicId) ->
+            entity.galleryImages.add(
+                ServiceImage(
+                    service = entity,
+                    url = url,
+                    publicId = publicId,
+                    position = idx
+                )
+            )
+        }
+        return entity
+    }
+
+    @Test
+    fun `updateService leaves gallery untouched when galleryImages is null`() {
+        val entity = entityWithGallery(listOf("a" to "nudge/services/a"))
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { it.arguments[0] }
+
+        val response = offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceRequest(title = "Renamed")
+        )
+
+        assertEquals(1, response.galleryImages.size)
+        assertEquals("a", response.galleryImages[0].url)
+    }
+
+    @Test
+    fun `updateService clears gallery when galleryImages is empty`() {
+        val entity = entityWithGallery(listOf("a" to "nudge/services/a", "b" to "nudge/services/b"))
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { it.arguments[0] }
+
+        val response = offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceRequest(galleryImages = emptyList())
+        )
+
+        assertTrue(response.galleryImages.isEmpty())
+    }
+
+    @Test
+    fun `updateService replaces gallery wholesale and re-numbers positions`() {
+        val entity = entityWithGallery(listOf("a" to "nudge/services/a", "b" to "nudge/services/b"))
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { it.arguments[0] }
+
+        val response = offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceRequest(
+                galleryImages = listOf(
+                    MediaInput("c", "nudge/services/c"),
+                    MediaInput("d", "nudge/services/d")
+                )
+            )
+        )
+
+        assertEquals(2, response.galleryImages.size)
+        assertEquals(listOf("c", "d"), response.galleryImages.map { it.url })
+        assertEquals(listOf(0, 1), response.galleryImages.map { it.position })
     }
 }
