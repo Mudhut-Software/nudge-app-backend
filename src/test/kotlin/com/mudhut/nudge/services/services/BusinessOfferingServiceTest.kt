@@ -430,4 +430,33 @@ class BusinessOfferingServiceTest {
         assertEquals(listOf("c", "d"), response.galleryImages.map { it.url })
         assertEquals(listOf(0, 1), response.galleryImages.map { it.position })
     }
+
+    @Test
+    fun `deleteService hard-deletes the service`() {
+        val entity = ServiceEntity(
+            id = 7L,
+            business = businessFixture(),
+            title = "X",
+            coverImageUrl = "u",
+            coverImagePublicId = "nudge/services/u",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+
+        offeringService.deleteService(7L, "owner@test.com")
+
+        verify(businessService).requireRole(1L, "owner@test.com", BusinessRole.MANAGER)
+        verify(serviceRepository).delete(entity)
+    }
+
+    @Test
+    fun `deleteService throws when the service does not exist`() {
+        `when`(serviceRepository.findById(999L)).thenReturn(java.util.Optional.empty())
+
+        assertThrows(com.mudhut.nudge.utils.exceptions.BusinessNotFoundException::class.java) {
+            offeringService.deleteService(999L, "owner@test.com")
+        }
+    }
 }

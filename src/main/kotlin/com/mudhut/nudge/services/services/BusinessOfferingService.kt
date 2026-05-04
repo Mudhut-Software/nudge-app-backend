@@ -110,6 +110,14 @@ class BusinessOfferingService(
         return toResponse(saved)
     }
 
+    @Transactional
+    fun deleteService(serviceId: Long, userEmail: String) {
+        val entity = serviceRepository.findById(serviceId)
+            .orElseThrow { BusinessNotFoundException("Service not found with id: $serviceId") }
+        businessService.requireRole(entity.business!!.id!!, userEmail, BusinessRole.MANAGER)
+        serviceRepository.delete(entity)
+    }
+
     fun getService(serviceId: Long, userEmail: String): ServiceResponse {
         val entity = serviceRepository.findById(serviceId)
             .orElseThrow { BusinessNotFoundException("Service not found with id: $serviceId") }
