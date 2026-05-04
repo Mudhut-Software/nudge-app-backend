@@ -221,4 +221,35 @@ class BusinessOfferingServiceTest {
 
         assertEquals(0, page.totalElements)
     }
+
+    @Test
+    fun `getService returns the service when caller is a member`() {
+        val business = businessFixture()
+        val entity = ServiceEntity(
+            id = 7L,
+            business = business,
+            title = "Get-quote service",
+            coverImageUrl = "u",
+            coverImagePublicId = "nudge/services/u",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+
+        val response = offeringService.getService(7L, "owner@test.com")
+
+        verify(businessService).requireRole(1L, "owner@test.com", BusinessRole.STAFF)
+        assertEquals(7L, response.id)
+        assertEquals("Get-quote service", response.title)
+    }
+
+    @Test
+    fun `getService throws when the service does not exist`() {
+        `when`(serviceRepository.findById(999L)).thenReturn(java.util.Optional.empty())
+
+        assertThrows(com.mudhut.nudge.utils.exceptions.BusinessNotFoundException::class.java) {
+            offeringService.getService(999L, "owner@test.com")
+        }
+    }
 }

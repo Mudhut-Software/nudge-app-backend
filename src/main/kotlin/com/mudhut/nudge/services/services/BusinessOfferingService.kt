@@ -10,6 +10,7 @@ import com.mudhut.nudge.services.models.ServiceResponse
 import com.mudhut.nudge.services.entities.PriceMode
 import com.mudhut.nudge.services.entities.ServiceStatus
 import com.mudhut.nudge.services.repositories.ServiceRepository
+import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import jakarta.transaction.Transactional
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -57,6 +58,13 @@ class BusinessOfferingService(
 
         val saved = serviceRepository.save(entity)
         return toResponse(saved)
+    }
+
+    fun getService(serviceId: Long, userEmail: String): ServiceResponse {
+        val entity = serviceRepository.findById(serviceId)
+            .orElseThrow { BusinessNotFoundException("Service not found with id: $serviceId") }
+        businessService.requireRole(entity.business!!.id!!, userEmail, BusinessRole.STAFF)
+        return toResponse(entity)
     }
 
     fun listServices(
