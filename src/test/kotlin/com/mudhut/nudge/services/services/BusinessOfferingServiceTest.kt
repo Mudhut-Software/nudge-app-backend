@@ -10,6 +10,7 @@ import com.mudhut.nudge.services.models.CreateServiceRequest
 import com.mudhut.nudge.services.models.MediaInput
 import com.mudhut.nudge.services.repositories.ServiceRepository
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.InjectMocks
@@ -83,5 +84,103 @@ class BusinessOfferingServiceTest {
         assertEquals(ServiceStatus.ACTIVE, response.status)
         assertEquals("nudge/services/cover", response.coverImage.publicId)
         assertTrue(response.galleryImages.isEmpty())
+    }
+
+    private fun perUnitRequest() = fixedRequest().copy(
+        priceMode = PriceMode.PER_UNIT,
+        priceUnit = "plate"
+    )
+
+    private fun quoteRequest() = fixedRequest().copy(
+        priceMode = PriceMode.QUOTE,
+        priceAmount = null,
+        priceCurrency = null,
+        priceUnit = null
+    )
+
+    @Test
+    fun `createService persists a PER_UNIT-priced service`() {
+        val business = businessFixture()
+        `when`(businessService.findBusinessEntity(1L)).thenReturn(business)
+        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { invocation ->
+            (invocation.arguments[0] as ServiceEntity).apply {
+                id = 100L
+                createdAt = LocalDateTime.now()
+                updatedAt = LocalDateTime.now()
+            }
+        }
+
+        val response = offeringService.createService(1L, "owner@test.com", perUnitRequest())
+
+        assertEquals(PriceMode.PER_UNIT, response.priceMode)
+        assertEquals("plate", response.priceUnit)
+    }
+
+    @Test
+    fun `createService persists a QUOTE service with no price fields`() {
+        val business = businessFixture()
+        `when`(businessService.findBusinessEntity(1L)).thenReturn(business)
+        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { invocation ->
+            (invocation.arguments[0] as ServiceEntity).apply {
+                id = 101L
+                createdAt = LocalDateTime.now()
+                updatedAt = LocalDateTime.now()
+            }
+        }
+
+        val response = offeringService.createService(1L, "owner@test.com", quoteRequest())
+
+        assertEquals(PriceMode.QUOTE, response.priceMode)
+        assertNull(response.priceAmount)
+        assertNull(response.priceCurrency)
+        assertNull(response.priceUnit)
+    }
+
+    @Test
+    fun `createService rejects FIXED without amount`() {
+        val request = fixedRequest().copy(priceAmount = null)
+        assertThrows(IllegalArgumentException::class.java) {
+            offeringService.createService(1L, "owner@test.com", request)
+        }
+    }
+
+    @Test
+    fun `createService rejects FIXED with a unit`() {
+        val request = fixedRequest().copy(priceUnit = "plate")
+        assertThrows(IllegalArgumentException::class.java) {
+            offeringService.createService(1L, "owner@test.com", request)
+        }
+    }
+
+    @Test
+    fun `createService rejects PER_UNIT without unit`() {
+        val request = perUnitRequest().copy(priceUnit = null)
+        assertThrows(IllegalArgumentException::class.java) {
+            offeringService.createService(1L, "owner@test.com", request)
+        }
+    }
+
+    @Test
+    fun `createService rejects QUOTE with an amount`() {
+        val request = quoteRequest().copy(priceAmount = BigDecimal("100.00"))
+        assertThrows(IllegalArgumentException::class.java) {
+            offeringService.createService(1L, "owner@test.com", request)
+        }
+    }
+
+    @Test
+    fun `createService rejects non-positive amount`() {
+        val request = fixedRequest().copy(priceAmount = BigDecimal.ZERO)
+        assertThrows(IllegalArgumentException::class.java) {
+            offeringService.createService(1L, "owner@test.com", request)
+        }
+    }
+
+    @Test
+    fun `createService rejects malformed currency`() {
+        val request = fixedRequest().copy(priceCurrency = "ugx")
+        assertThrows(IllegalArgumentException::class.java) {
+            offeringService.createService(1L, "owner@test.com", request)
+        }
     }
 }
