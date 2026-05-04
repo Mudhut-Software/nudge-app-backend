@@ -8,8 +8,11 @@ import com.mudhut.nudge.services.models.CreateServiceRequest
 import com.mudhut.nudge.services.models.MediaResponse
 import com.mudhut.nudge.services.models.ServiceResponse
 import com.mudhut.nudge.services.entities.PriceMode
+import com.mudhut.nudge.services.entities.ServiceStatus
 import com.mudhut.nudge.services.repositories.ServiceRepository
 import jakarta.transaction.Transactional
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
 
@@ -54,6 +57,21 @@ class BusinessOfferingService(
 
         val saved = serviceRepository.save(entity)
         return toResponse(saved)
+    }
+
+    fun listServices(
+        businessId: Long,
+        userEmail: String,
+        pageable: Pageable,
+        statusFilter: ServiceStatus?
+    ): Page<ServiceResponse> {
+        businessService.requireRole(businessId, userEmail, BusinessRole.STAFF)
+        val page = if (statusFilter == null) {
+            serviceRepository.findAllByBusinessId(businessId, pageable)
+        } else {
+            serviceRepository.findAllByBusinessIdAndStatus(businessId, statusFilter, pageable)
+        }
+        return page.map { toResponse(it) }
     }
 
     private val currencyRegex = Regex("^[A-Z]{3}$")

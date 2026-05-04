@@ -19,6 +19,9 @@ import org.mockito.Mockito.`when`
 import org.mockito.Mockito.any
 import org.mockito.Mockito.verify
 import org.mockito.junit.jupiter.MockitoExtension
+import org.springframework.data.domain.PageImpl
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
 import java.math.BigDecimal
 import java.time.LocalDateTime
 
@@ -182,5 +185,40 @@ class BusinessOfferingServiceTest {
         assertThrows(IllegalArgumentException::class.java) {
             offeringService.createService(1L, "owner@test.com", request)
         }
+    }
+
+    @Test
+    fun `listServices returns paginated services for a business`() {
+        val business = businessFixture()
+        val s1 = ServiceEntity(
+            id = 1L,
+            business = business,
+            title = "A",
+            coverImageUrl = "u",
+            coverImagePublicId = "nudge/services/u",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
+        val pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt"))
+        `when`(serviceRepository.findAllByBusinessId(1L, pageable))
+            .thenReturn(PageImpl(listOf(s1), pageable, 1))
+
+        val page = offeringService.listServices(1L, "owner@test.com", pageable, null)
+
+        verify(businessService).requireRole(1L, "owner@test.com", BusinessRole.STAFF)
+        assertEquals(1, page.totalElements)
+        assertEquals("A", page.content[0].title)
+    }
+
+    @Test
+    fun `listServices filters by status when provided`() {
+        val pageable = PageRequest.of(0, 20)
+        `when`(serviceRepository.findAllByBusinessIdAndStatus(1L, ServiceStatus.ACTIVE, pageable))
+            .thenReturn(PageImpl(emptyList(), pageable, 0))
+
+        val page = offeringService.listServices(1L, "owner@test.com", pageable, ServiceStatus.ACTIVE)
+
+        assertEquals(0, page.totalElements)
     }
 }
