@@ -15,6 +15,8 @@ import com.mudhut.nudge.users.services.TokenRefreshService
 import com.mudhut.nudge.users.services.UserService
 import com.mudhut.nudge.users.services.VerificationService
 import org.springframework.security.authentication.AuthenticationServiceException
+import com.mudhut.nudge.config.JsonAccessDeniedHandler
+import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
 import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
@@ -33,7 +35,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers
 
 @WebMvcTest(UserController::class)
-@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class)
+@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class, JsonAuthenticationEntryPoint::class, JsonAccessDeniedHandler::class)
 @AutoConfigureMockMvc
 class UserControllerTest {
 

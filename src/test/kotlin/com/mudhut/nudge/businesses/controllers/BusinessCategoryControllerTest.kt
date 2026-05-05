@@ -6,6 +6,8 @@ import com.mudhut.nudge.businesses.models.CreateCategoryRequest
 import com.mudhut.nudge.businesses.models.UpdateCategoryRequest
 import com.mudhut.nudge.businesses.services.BusinessCategoryService
 import com.mudhut.nudge.utils.exceptions.CategoryNotFoundException
+import com.mudhut.nudge.config.JsonAccessDeniedHandler
+import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
 import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
@@ -31,7 +33,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers
 
 @WebMvcTest(BusinessCategoryController::class)
-@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class)
+@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class, JsonAuthenticationEntryPoint::class, JsonAccessDeniedHandler::class)
 @AutoConfigureMockMvc
 class BusinessCategoryControllerTest {
 
