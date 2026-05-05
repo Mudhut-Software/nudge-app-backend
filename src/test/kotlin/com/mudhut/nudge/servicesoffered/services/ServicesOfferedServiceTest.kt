@@ -50,8 +50,8 @@ class ServicesOfferedServiceTest {
         title = title,
         description = null,
         coverImage = MediaInput(
-            url = "https://res.cloudinary.com/x/image/upload/nudge/services/cover.jpg",
-            publicId = "nudge/services/cover"
+            url = "https://res.cloudinary.com/x/image/upload/nudge/images/cover.jpg",
+            publicId = "nudge/images/cover"
         ),
         priceMode = PriceMode.FIXED,
         priceAmount = amount,
@@ -87,7 +87,7 @@ class ServicesOfferedServiceTest {
         assertEquals("UGX", response.priceCurrency)
         assertNull(response.priceUnit)
         assertEquals(ServiceOfferedStatus.ACTIVE, response.status)
-        assertEquals("nudge/services/cover", response.coverImage.publicId)
+        assertEquals("nudge/images/cover", response.coverImage.publicId)
         assertTrue(response.galleryImages.isEmpty())
     }
 
@@ -197,7 +197,7 @@ class ServicesOfferedServiceTest {
             business = business,
             title = "A",
             coverImageUrl = "u",
-            coverImagePublicId = "nudge/services/u",
+            coverImagePublicId = "nudge/images/u",
             priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
@@ -232,7 +232,7 @@ class ServicesOfferedServiceTest {
             business = business,
             title = "Get-quote service",
             coverImageUrl = "u",
-            coverImagePublicId = "nudge/services/u",
+            coverImagePublicId = "nudge/images/u",
             priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
@@ -262,7 +262,7 @@ class ServicesOfferedServiceTest {
             business = businessFixture(),
             title = "Old title",
             coverImageUrl = "u",
-            coverImagePublicId = "nudge/services/u",
+            coverImagePublicId = "nudge/images/u",
             priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
@@ -288,7 +288,7 @@ class ServicesOfferedServiceTest {
             business = businessFixture(),
             title = "X",
             coverImageUrl = "u",
-            coverImagePublicId = "nudge/services/u",
+            coverImagePublicId = "nudge/images/u",
             priceMode = PriceMode.QUOTE,
             status = ServiceOfferedStatus.ACTIVE,
             createdAt = LocalDateTime.now(),
@@ -312,7 +312,7 @@ class ServicesOfferedServiceTest {
             business = businessFixture(),
             title = "X",
             coverImageUrl = "u",
-            coverImagePublicId = "nudge/services/u",
+            coverImagePublicId = "nudge/images/u",
             priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
@@ -335,7 +335,7 @@ class ServicesOfferedServiceTest {
             business = businessFixture(),
             title = "X",
             coverImageUrl = "old",
-            coverImagePublicId = "nudge/services/old",
+            coverImagePublicId = "nudge/images/old",
             priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
@@ -348,13 +348,13 @@ class ServicesOfferedServiceTest {
             UpdateServiceOfferedRequest(
                 coverImage = MediaInput(
                     url = "newUrl",
-                    publicId = "nudge/services/new"
+                    publicId = "nudge/images/new"
                 )
             )
         )
 
         assertEquals("newUrl", response.coverImage.url)
-        assertEquals("nudge/services/new", response.coverImage.publicId)
+        assertEquals("nudge/images/new", response.coverImage.publicId)
     }
 
     private fun entityWithGallery(images: List<Pair<String, String>>): ServiceOffered {
@@ -363,7 +363,7 @@ class ServicesOfferedServiceTest {
             business = businessFixture(),
             title = "X",
             coverImageUrl = "u",
-            coverImagePublicId = "nudge/services/u",
+            coverImagePublicId = "nudge/images/u",
             priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
@@ -383,7 +383,7 @@ class ServicesOfferedServiceTest {
 
     @Test
     fun `updateService leaves gallery untouched when galleryImages is null`() {
-        val entity = entityWithGallery(listOf("a" to "nudge/services/a"))
+        val entity = entityWithGallery(listOf("a" to "nudge/images/a"))
         `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
         `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
 
@@ -398,7 +398,7 @@ class ServicesOfferedServiceTest {
 
     @Test
     fun `updateService clears gallery when galleryImages is empty`() {
-        val entity = entityWithGallery(listOf("a" to "nudge/services/a", "b" to "nudge/services/b"))
+        val entity = entityWithGallery(listOf("a" to "nudge/images/a", "b" to "nudge/images/b"))
         `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
         `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
 
@@ -412,7 +412,7 @@ class ServicesOfferedServiceTest {
 
     @Test
     fun `updateService replaces gallery wholesale and re-numbers positions`() {
-        val entity = entityWithGallery(listOf("a" to "nudge/services/a", "b" to "nudge/services/b"))
+        val entity = entityWithGallery(listOf("a" to "nudge/images/a", "b" to "nudge/images/b"))
         `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
         `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
 
@@ -420,8 +420,8 @@ class ServicesOfferedServiceTest {
             7L, "owner@test.com",
             UpdateServiceOfferedRequest(
                 galleryImages = listOf(
-                    MediaInput("c", "nudge/services/c"),
-                    MediaInput("d", "nudge/services/d")
+                    MediaInput("c", "nudge/images/c"),
+                    MediaInput("d", "nudge/images/d")
                 )
             )
         )
@@ -438,7 +438,7 @@ class ServicesOfferedServiceTest {
             business = businessFixture(),
             title = "X",
             coverImageUrl = "u",
-            coverImagePublicId = "nudge/services/u",
+            coverImagePublicId = "nudge/images/u",
             priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()

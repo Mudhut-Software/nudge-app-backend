@@ -60,7 +60,7 @@ class ServiceOfferedControllerTest {
         businessId = 10L,
         title = "Sofa cleaning",
         description = null,
-        coverImage = MediaResponse(url = "u", publicId = "nudge/services/u"),
+        coverImage = MediaResponse(url = "u", publicId = "nudge/images/u"),
         priceMode = PriceMode.FIXED,
         priceAmount = BigDecimal("50000.00"),
         priceCurrency = "UGX",
@@ -77,7 +77,7 @@ class ServiceOfferedControllerTest {
         val request = CreateServiceOfferedRequest(
             title = "Sofa cleaning",
             description = null,
-            coverImage = MediaInput("u", "nudge/services/u"),
+            coverImage = MediaInput("u", "nudge/images/u"),
             priceMode = PriceMode.FIXED,
             priceAmount = BigDecimal("50000.00"),
             priceCurrency = "UGX",
@@ -103,7 +103,7 @@ class ServiceOfferedControllerTest {
     fun `POST returns 400 on missing title`() {
         val payload = """
             {
-              "coverImage": {"url":"u","publicId":"nudge/services/u"},
+              "coverImage": {"url":"u","publicId":"nudge/images/u"},
               "priceMode": "QUOTE"
             }
         """.trimIndent()
@@ -118,7 +118,7 @@ class ServiceOfferedControllerTest {
 
     @Test
     @WithMockUser(username = "owner@test.com")
-    fun `POST returns 400 when publicId does not start with nudge slash services`() {
+    fun `POST returns 400 when publicId is not under nudge slash images or nudge slash videos`() {
         val request = CreateServiceOfferedRequest(
             title = "Sofa cleaning",
             description = null,
