@@ -1,13 +1,13 @@
-package com.mudhut.nudge.services.models
+package com.mudhut.nudge.servicesoffered.models
 
-import com.mudhut.nudge.services.entities.PriceMode
+import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
 import java.math.BigDecimal
 
-data class CreateServiceRequest(
+data class CreateServiceOfferedRequest(
     @field:NotBlank
     @field:Size(max = 120)
     val title: String,

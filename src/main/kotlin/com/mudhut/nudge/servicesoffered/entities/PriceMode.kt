@@ -1,4 +1,4 @@
-package com.mudhut.nudge.services.entities
+package com.mudhut.nudge.servicesoffered.entities
 
 enum class PriceMode {
     FIXED,

@@ -1,16 +1,16 @@
-package com.mudhut.nudge.services.controllers
+package com.mudhut.nudge.servicesoffered.controllers
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
-import com.mudhut.nudge.services.entities.PriceMode
-import com.mudhut.nudge.services.entities.ServiceStatus
-import com.mudhut.nudge.services.models.CreateServiceRequest
-import com.mudhut.nudge.services.models.MediaInput
-import com.mudhut.nudge.services.models.MediaResponse
-import com.mudhut.nudge.services.models.ServiceResponse
-import com.mudhut.nudge.services.models.UpdateServiceRequest
-import com.mudhut.nudge.services.services.BusinessOfferingService
+import com.mudhut.nudge.servicesoffered.entities.PriceMode
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
+import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
+import com.mudhut.nudge.servicesoffered.models.MediaInput
+import com.mudhut.nudge.servicesoffered.models.MediaResponse
+import com.mudhut.nudge.servicesoffered.models.ServiceOfferedResponse
+import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
+import com.mudhut.nudge.servicesoffered.services.ServicesOfferedService
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
@@ -36,10 +36,10 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.math.BigDecimal
 import java.time.LocalDateTime
 
-@WebMvcTest(ServiceController::class)
+@WebMvcTest(ServiceOfferedController::class)
 @Import(SecurityConfig::class, PassThroughJwtFilterConfig::class)
 @AutoConfigureMockMvc
-class ServiceControllerTest {
+class ServiceOfferedControllerTest {
 
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -48,12 +48,12 @@ class ServiceControllerTest {
     private lateinit var objectMapper: ObjectMapper
 
     @MockitoBean
-    private lateinit var offeringService: BusinessOfferingService
+    private lateinit var offeringService: ServicesOfferedService
 
     @MockitoBean
     private lateinit var userDetailsService: NudgeUserDetailsService
 
-    private fun sampleResponse(id: Long = 1L) = ServiceResponse(
+    private fun sampleResponse(id: Long = 1L) = ServiceOfferedResponse(
         id = id,
         businessId = 10L,
         title = "Sofa cleaning",
@@ -63,7 +63,7 @@ class ServiceControllerTest {
         priceAmount = BigDecimal("50000.00"),
         priceCurrency = "UGX",
         priceUnit = null,
-        status = ServiceStatus.ACTIVE,
+        status = ServiceOfferedStatus.ACTIVE,
         galleryImages = emptyList(),
         createdAt = LocalDateTime.now(),
         updatedAt = LocalDateTime.now()
@@ -72,7 +72,7 @@ class ServiceControllerTest {
     @Test
     @WithMockUser(username = "owner@test.com")
     fun `POST creates a service and returns 201`() {
-        val request = CreateServiceRequest(
+        val request = CreateServiceOfferedRequest(
             title = "Sofa cleaning",
             description = null,
             coverImage = MediaInput("u", "nudge/services/u"),
@@ -117,7 +117,7 @@ class ServiceControllerTest {
     @Test
     @WithMockUser(username = "owner@test.com")
     fun `POST returns 400 when publicId does not start with nudge slash services`() {
-        val request = CreateServiceRequest(
+        val request = CreateServiceOfferedRequest(
             title = "Sofa cleaning",
             description = null,
             coverImage = MediaInput("u", "wrong/prefix/u"),
@@ -156,7 +156,7 @@ class ServiceControllerTest {
                 eq(10L),
                 eq("owner@test.com"),
                 any<Pageable>(),
-                eq(ServiceStatus.ACTIVE)
+                eq(ServiceOfferedStatus.ACTIVE)
             )
         ).thenReturn(PageImpl(emptyList()))
 
@@ -178,7 +178,7 @@ class ServiceControllerTest {
     @Test
     @WithMockUser(username = "owner@test.com")
     fun `PATCH updates the service`() {
-        val request = UpdateServiceRequest(title = "Renamed")
+        val request = UpdateServiceOfferedRequest(title = "Renamed")
         whenever(
             offeringService.updateService(eq(7L), eq("owner@test.com"), any())
         ).thenReturn(sampleResponse(id = 7L).copy(title = "Renamed"))

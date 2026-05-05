@@ -1,6 +1,6 @@
-package com.mudhut.nudge.services.entities
+package com.mudhut.nudge.servicesoffered.entities
 
-enum class ServiceStatus {
+enum class ServiceOfferedStatus {
     ACTIVE,
     INACTIVE
 }

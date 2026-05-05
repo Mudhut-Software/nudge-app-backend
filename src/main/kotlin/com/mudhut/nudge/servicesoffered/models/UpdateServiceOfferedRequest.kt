@@ -1,12 +1,12 @@
-package com.mudhut.nudge.services.models
+package com.mudhut.nudge.servicesoffered.models
 
-import com.mudhut.nudge.services.entities.PriceMode
-import com.mudhut.nudge.services.entities.ServiceStatus
+import com.mudhut.nudge.servicesoffered.entities.PriceMode
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Size
 import java.math.BigDecimal
 
-data class UpdateServiceRequest(
+data class UpdateServiceOfferedRequest(
     @field:Size(max = 120)
     val title: String? = null,
 
@@ -25,7 +25,7 @@ data class UpdateServiceRequest(
     @field:Size(max = 32)
     val priceUnit: String? = null,
 
-    val status: ServiceStatus? = null,
+    val status: ServiceOfferedStatus? = null,
 
     @field:Size(max = 5)
     @field:Valid

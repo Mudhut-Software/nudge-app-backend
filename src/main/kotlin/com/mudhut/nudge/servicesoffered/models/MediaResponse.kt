@@ -1,4 +1,4 @@
-package com.mudhut.nudge.services.models
+package com.mudhut.nudge.servicesoffered.models
 
 data class MediaResponse(
     val url: String,

@@ -1,4 +1,4 @@
-package com.mudhut.nudge.services.entities
+package com.mudhut.nudge.servicesoffered.entities
 
 import com.mudhut.nudge.businesses.entities.Business
 import jakarta.persistence.*
@@ -8,8 +8,8 @@ import java.math.BigDecimal
 import java.time.LocalDateTime
 
 @Entity
-@Table(name = "services")
-class Service(
+@Table(name = "services_offered")
+class ServiceOffered(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     var id: Long? = null,
@@ -45,7 +45,7 @@ class Service(
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
-    var status: ServiceStatus = ServiceStatus.ACTIVE,
+    var status: ServiceOfferedStatus = ServiceOfferedStatus.ACTIVE,
 
     @OneToMany(
         mappedBy = "service",
@@ -54,7 +54,7 @@ class Service(
         fetch = FetchType.LAZY
     )
     @OrderBy("position ASC")
-    var galleryImages: MutableList<ServiceImage> = mutableListOf(),
+    var galleryImages: MutableList<ServiceOfferedImage> = mutableListOf(),
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

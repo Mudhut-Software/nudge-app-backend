@@ -1,4 +1,4 @@
-package com.mudhut.nudge.services.models
+package com.mudhut.nudge.servicesoffered.models
 
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Pattern

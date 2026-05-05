@@ -1,17 +1,17 @@
-package com.mudhut.nudge.services.entities
+package com.mudhut.nudge.servicesoffered.entities
 
 import jakarta.persistence.*
 
 @Entity
-@Table(name = "service_images")
-class ServiceImage(
+@Table(name = "service_offered_images")
+class ServiceOfferedImage(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     var id: Long? = null,
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "service_id", nullable = false)
-    var service: Service? = null,
+    var service: ServiceOffered? = null,
 
     @Column(nullable = false)
     var url: String? = null,

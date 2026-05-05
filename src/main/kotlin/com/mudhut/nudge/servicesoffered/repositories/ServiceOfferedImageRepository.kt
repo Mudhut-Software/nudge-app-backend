@@ -1,8 +1,8 @@
-package com.mudhut.nudge.services.repositories
+package com.mudhut.nudge.servicesoffered.repositories
 
-import com.mudhut.nudge.services.entities.ServiceImage
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedImage
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.stereotype.Repository
 
 @Repository
-interface ServiceImageRepository : JpaRepository<ServiceImage, Long>
+interface ServiceOfferedImageRepository : JpaRepository<ServiceOfferedImage, Long>

@@ -1,11 +1,11 @@
-package com.mudhut.nudge.services.models
+package com.mudhut.nudge.servicesoffered.models
 
-import com.mudhut.nudge.services.entities.PriceMode
-import com.mudhut.nudge.services.entities.ServiceStatus
+import com.mudhut.nudge.servicesoffered.entities.PriceMode
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import java.math.BigDecimal
 import java.time.LocalDateTime
 
-data class ServiceResponse(
+data class ServiceOfferedResponse(
     val id: Long,
     val businessId: Long,
     val title: String,
@@ -15,7 +15,7 @@ data class ServiceResponse(
     val priceAmount: BigDecimal?,
     val priceCurrency: String?,
     val priceUnit: String?,
-    val status: ServiceStatus,
+    val status: ServiceOfferedStatus,
     val galleryImages: List<MediaResponse>,
     val createdAt: LocalDateTime,
     val updatedAt: LocalDateTime

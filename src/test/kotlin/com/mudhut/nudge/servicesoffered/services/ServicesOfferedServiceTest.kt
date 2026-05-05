@@ -1,16 +1,16 @@
-package com.mudhut.nudge.services.services
+package com.mudhut.nudge.servicesoffered.services
 
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
-import com.mudhut.nudge.services.entities.PriceMode
-import com.mudhut.nudge.services.entities.Service as ServiceEntity
-import com.mudhut.nudge.services.entities.ServiceImage
-import com.mudhut.nudge.services.entities.ServiceStatus
-import com.mudhut.nudge.services.models.CreateServiceRequest
-import com.mudhut.nudge.services.models.MediaInput
-import com.mudhut.nudge.services.models.UpdateServiceRequest
-import com.mudhut.nudge.services.repositories.ServiceRepository
+import com.mudhut.nudge.servicesoffered.entities.PriceMode
+import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedImage
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
+import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
+import com.mudhut.nudge.servicesoffered.models.MediaInput
+import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
+import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
@@ -28,16 +28,16 @@ import java.math.BigDecimal
 import java.time.LocalDateTime
 
 @ExtendWith(MockitoExtension::class)
-class BusinessOfferingServiceTest {
+class ServicesOfferedServiceTest {
 
     @Mock
-    private lateinit var serviceRepository: ServiceRepository
+    private lateinit var serviceRepository: ServiceOfferedRepository
 
     @Mock
     private lateinit var businessService: BusinessService
 
     @InjectMocks
-    private lateinit var offeringService: BusinessOfferingService
+    private lateinit var offeringService: ServicesOfferedService
 
     private fun businessFixture(id: Long = 1L) =
         Business(id = id, name = "Test Biz")
@@ -46,7 +46,7 @@ class BusinessOfferingServiceTest {
         title: String = "Sofa cleaning",
         amount: BigDecimal = BigDecimal("50000.00"),
         currency: String = "UGX"
-    ) = CreateServiceRequest(
+    ) = CreateServiceOfferedRequest(
         title = title,
         description = null,
         coverImage = MediaInput(
@@ -64,8 +64,8 @@ class BusinessOfferingServiceTest {
     fun `createService persists a FIXED-priced service`() {
         val business = businessFixture()
         `when`(businessService.findBusinessEntity(1L)).thenReturn(business)
-        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { invocation ->
-            val entity = invocation.arguments[0] as ServiceEntity
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { invocation ->
+            val entity = invocation.arguments[0] as ServiceOffered
             entity.id = 99L
             entity.createdAt = LocalDateTime.now()
             entity.updatedAt = LocalDateTime.now()
@@ -86,7 +86,7 @@ class BusinessOfferingServiceTest {
         assertEquals(BigDecimal("50000.00"), response.priceAmount)
         assertEquals("UGX", response.priceCurrency)
         assertNull(response.priceUnit)
-        assertEquals(ServiceStatus.ACTIVE, response.status)
+        assertEquals(ServiceOfferedStatus.ACTIVE, response.status)
         assertEquals("nudge/services/cover", response.coverImage.publicId)
         assertTrue(response.galleryImages.isEmpty())
     }
@@ -107,8 +107,8 @@ class BusinessOfferingServiceTest {
     fun `createService persists a PER_UNIT-priced service`() {
         val business = businessFixture()
         `when`(businessService.findBusinessEntity(1L)).thenReturn(business)
-        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { invocation ->
-            (invocation.arguments[0] as ServiceEntity).apply {
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { invocation ->
+            (invocation.arguments[0] as ServiceOffered).apply {
                 id = 100L
                 createdAt = LocalDateTime.now()
                 updatedAt = LocalDateTime.now()
@@ -125,8 +125,8 @@ class BusinessOfferingServiceTest {
     fun `createService persists a QUOTE service with no price fields`() {
         val business = businessFixture()
         `when`(businessService.findBusinessEntity(1L)).thenReturn(business)
-        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { invocation ->
-            (invocation.arguments[0] as ServiceEntity).apply {
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { invocation ->
+            (invocation.arguments[0] as ServiceOffered).apply {
                 id = 101L
                 createdAt = LocalDateTime.now()
                 updatedAt = LocalDateTime.now()
@@ -192,7 +192,7 @@ class BusinessOfferingServiceTest {
     @Test
     fun `listServices returns paginated services for a business`() {
         val business = businessFixture()
-        val s1 = ServiceEntity(
+        val s1 = ServiceOffered(
             id = 1L,
             business = business,
             title = "A",
@@ -216,10 +216,10 @@ class BusinessOfferingServiceTest {
     @Test
     fun `listServices filters by status when provided`() {
         val pageable = PageRequest.of(0, 20)
-        `when`(serviceRepository.findAllByBusinessIdAndStatus(1L, ServiceStatus.ACTIVE, pageable))
+        `when`(serviceRepository.findAllByBusinessIdAndStatus(1L, ServiceOfferedStatus.ACTIVE, pageable))
             .thenReturn(PageImpl(emptyList(), pageable, 0))
 
-        val page = offeringService.listServices(1L, "owner@test.com", pageable, ServiceStatus.ACTIVE)
+        val page = offeringService.listServices(1L, "owner@test.com", pageable, ServiceOfferedStatus.ACTIVE)
 
         assertEquals(0, page.totalElements)
     }
@@ -227,7 +227,7 @@ class BusinessOfferingServiceTest {
     @Test
     fun `getService returns the service when caller is a member`() {
         val business = businessFixture()
-        val entity = ServiceEntity(
+        val entity = ServiceOffered(
             id = 7L,
             business = business,
             title = "Get-quote service",
@@ -257,7 +257,7 @@ class BusinessOfferingServiceTest {
 
     @Test
     fun `updateService patches the title and leaves other fields untouched`() {
-        val entity = ServiceEntity(
+        val entity = ServiceOffered(
             id = 7L,
             business = businessFixture(),
             title = "Old title",
@@ -268,12 +268,12 @@ class BusinessOfferingServiceTest {
             updatedAt = LocalDateTime.now()
         )
         `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
-        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { it.arguments[0] }
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
 
         val response = offeringService.updateService(
             serviceId = 7L,
             userEmail = "owner@test.com",
-            request = UpdateServiceRequest(title = "New title")
+            request = UpdateServiceOfferedRequest(title = "New title")
         )
 
         verify(businessService).requireRole(1L, "owner@test.com", BusinessRole.MANAGER)
@@ -283,31 +283,31 @@ class BusinessOfferingServiceTest {
 
     @Test
     fun `updateService toggles status to INACTIVE`() {
-        val entity = ServiceEntity(
+        val entity = ServiceOffered(
             id = 7L,
             business = businessFixture(),
             title = "X",
             coverImageUrl = "u",
             coverImagePublicId = "nudge/services/u",
             priceMode = PriceMode.QUOTE,
-            status = ServiceStatus.ACTIVE,
+            status = ServiceOfferedStatus.ACTIVE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
         )
         `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
-        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { it.arguments[0] }
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
 
         val response = offeringService.updateService(
             7L, "owner@test.com",
-            UpdateServiceRequest(status = ServiceStatus.INACTIVE)
+            UpdateServiceOfferedRequest(status = ServiceOfferedStatus.INACTIVE)
         )
 
-        assertEquals(ServiceStatus.INACTIVE, response.status)
+        assertEquals(ServiceOfferedStatus.INACTIVE, response.status)
     }
 
     @Test
     fun `updateService re-validates pricing when mode changes`() {
-        val entity = ServiceEntity(
+        val entity = ServiceOffered(
             id = 7L,
             business = businessFixture(),
             title = "X",
@@ -323,14 +323,14 @@ class BusinessOfferingServiceTest {
         assertThrows(IllegalArgumentException::class.java) {
             offeringService.updateService(
                 7L, "owner@test.com",
-                UpdateServiceRequest(priceMode = PriceMode.FIXED)
+                UpdateServiceOfferedRequest(priceMode = PriceMode.FIXED)
             )
         }
     }
 
     @Test
     fun `updateService replaces cover image fields when provided`() {
-        val entity = ServiceEntity(
+        val entity = ServiceOffered(
             id = 7L,
             business = businessFixture(),
             title = "X",
@@ -341,11 +341,11 @@ class BusinessOfferingServiceTest {
             updatedAt = LocalDateTime.now()
         )
         `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
-        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { it.arguments[0] }
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
 
         val response = offeringService.updateService(
             7L, "owner@test.com",
-            UpdateServiceRequest(
+            UpdateServiceOfferedRequest(
                 coverImage = MediaInput(
                     url = "newUrl",
                     publicId = "nudge/services/new"
@@ -357,8 +357,8 @@ class BusinessOfferingServiceTest {
         assertEquals("nudge/services/new", response.coverImage.publicId)
     }
 
-    private fun entityWithGallery(images: List<Pair<String, String>>): ServiceEntity {
-        val entity = ServiceEntity(
+    private fun entityWithGallery(images: List<Pair<String, String>>): ServiceOffered {
+        val entity = ServiceOffered(
             id = 7L,
             business = businessFixture(),
             title = "X",
@@ -370,7 +370,7 @@ class BusinessOfferingServiceTest {
         )
         images.forEachIndexed { idx, (url, publicId) ->
             entity.galleryImages.add(
-                ServiceImage(
+                ServiceOfferedImage(
                     service = entity,
                     url = url,
                     publicId = publicId,
@@ -385,11 +385,11 @@ class BusinessOfferingServiceTest {
     fun `updateService leaves gallery untouched when galleryImages is null`() {
         val entity = entityWithGallery(listOf("a" to "nudge/services/a"))
         `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
-        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { it.arguments[0] }
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
 
         val response = offeringService.updateService(
             7L, "owner@test.com",
-            UpdateServiceRequest(title = "Renamed")
+            UpdateServiceOfferedRequest(title = "Renamed")
         )
 
         assertEquals(1, response.galleryImages.size)
@@ -400,11 +400,11 @@ class BusinessOfferingServiceTest {
     fun `updateService clears gallery when galleryImages is empty`() {
         val entity = entityWithGallery(listOf("a" to "nudge/services/a", "b" to "nudge/services/b"))
         `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
-        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { it.arguments[0] }
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
 
         val response = offeringService.updateService(
             7L, "owner@test.com",
-            UpdateServiceRequest(galleryImages = emptyList())
+            UpdateServiceOfferedRequest(galleryImages = emptyList())
         )
 
         assertTrue(response.galleryImages.isEmpty())
@@ -414,11 +414,11 @@ class BusinessOfferingServiceTest {
     fun `updateService replaces gallery wholesale and re-numbers positions`() {
         val entity = entityWithGallery(listOf("a" to "nudge/services/a", "b" to "nudge/services/b"))
         `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
-        `when`(serviceRepository.save(any<ServiceEntity>())).thenAnswer { it.arguments[0] }
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
 
         val response = offeringService.updateService(
             7L, "owner@test.com",
-            UpdateServiceRequest(
+            UpdateServiceOfferedRequest(
                 galleryImages = listOf(
                     MediaInput("c", "nudge/services/c"),
                     MediaInput("d", "nudge/services/d")
@@ -433,7 +433,7 @@ class BusinessOfferingServiceTest {
 
     @Test
     fun `deleteService hard-deletes the service`() {
-        val entity = ServiceEntity(
+        val entity = ServiceOffered(
             id = 7L,
             business = businessFixture(),
             title = "X",

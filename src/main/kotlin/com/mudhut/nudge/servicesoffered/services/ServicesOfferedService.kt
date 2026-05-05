@@ -1,16 +1,16 @@
-package com.mudhut.nudge.services.services
+package com.mudhut.nudge.servicesoffered.services
 
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
-import com.mudhut.nudge.services.entities.Service as ServiceEntity
-import com.mudhut.nudge.services.entities.ServiceImage
-import com.mudhut.nudge.services.models.CreateServiceRequest
-import com.mudhut.nudge.services.models.MediaResponse
-import com.mudhut.nudge.services.models.ServiceResponse
-import com.mudhut.nudge.services.models.UpdateServiceRequest
-import com.mudhut.nudge.services.entities.PriceMode
-import com.mudhut.nudge.services.entities.ServiceStatus
-import com.mudhut.nudge.services.repositories.ServiceRepository
+import com.mudhut.nudge.servicesoffered.entities.PriceMode
+import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedImage
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
+import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
+import com.mudhut.nudge.servicesoffered.models.MediaResponse
+import com.mudhut.nudge.servicesoffered.models.ServiceOfferedResponse
+import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
+import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import jakarta.transaction.Transactional
 import org.springframework.data.domain.Page
@@ -19,8 +19,8 @@ import org.springframework.stereotype.Service
 import java.math.BigDecimal
 
 @Service
-class BusinessOfferingService(
-    private val serviceRepository: ServiceRepository,
+class ServicesOfferedService(
+    private val serviceOfferedRepository: ServiceOfferedRepository,
     private val businessService: BusinessService
 ) {
 
@@ -28,13 +28,13 @@ class BusinessOfferingService(
     fun createService(
         businessId: Long,
         userEmail: String,
-        request: CreateServiceRequest
-    ): ServiceResponse {
+        request: CreateServiceOfferedRequest
+    ): ServiceOfferedResponse {
         businessService.requireRole(businessId, userEmail, BusinessRole.MANAGER)
         validatePricing(request.priceMode, request.priceAmount, request.priceCurrency, request.priceUnit)
         val business = businessService.findBusinessEntity(businessId)
 
-        val entity = ServiceEntity(
+        val entity = ServiceOffered(
             business = business,
             title = request.title,
             description = request.description,
@@ -48,7 +48,7 @@ class BusinessOfferingService(
 
         request.galleryImages.forEachIndexed { index, media ->
             entity.galleryImages.add(
-                ServiceImage(
+                ServiceOfferedImage(
                     service = entity,
                     url = media.url,
                     publicId = media.publicId,
@@ -57,7 +57,7 @@ class BusinessOfferingService(
             )
         }
 
-        val saved = serviceRepository.save(entity)
+        val saved = serviceOfferedRepository.save(entity)
         return toResponse(saved)
     }
 
@@ -65,9 +65,9 @@ class BusinessOfferingService(
     fun updateService(
         serviceId: Long,
         userEmail: String,
-        request: UpdateServiceRequest
-    ): ServiceResponse {
-        val entity = serviceRepository.findById(serviceId)
+        request: UpdateServiceOfferedRequest
+    ): ServiceOfferedResponse {
+        val entity = serviceOfferedRepository.findById(serviceId)
             .orElseThrow { BusinessNotFoundException("Service not found with id: $serviceId") }
         businessService.requireRole(entity.business!!.id!!, userEmail, BusinessRole.MANAGER)
 
@@ -96,7 +96,7 @@ class BusinessOfferingService(
             entity.galleryImages.clear()
             incoming.forEachIndexed { idx, media ->
                 entity.galleryImages.add(
-                    ServiceImage(
+                    ServiceOfferedImage(
                         service = entity,
                         url = media.url,
                         publicId = media.publicId,
@@ -106,20 +106,20 @@ class BusinessOfferingService(
             }
         }
 
-        val saved = serviceRepository.save(entity)
+        val saved = serviceOfferedRepository.save(entity)
         return toResponse(saved)
     }
 
     @Transactional
     fun deleteService(serviceId: Long, userEmail: String) {
-        val entity = serviceRepository.findById(serviceId)
+        val entity = serviceOfferedRepository.findById(serviceId)
             .orElseThrow { BusinessNotFoundException("Service not found with id: $serviceId") }
         businessService.requireRole(entity.business!!.id!!, userEmail, BusinessRole.MANAGER)
-        serviceRepository.delete(entity)
+        serviceOfferedRepository.delete(entity)
     }
 
-    fun getService(serviceId: Long, userEmail: String): ServiceResponse {
-        val entity = serviceRepository.findById(serviceId)
+    fun getService(serviceId: Long, userEmail: String): ServiceOfferedResponse {
+        val entity = serviceOfferedRepository.findById(serviceId)
             .orElseThrow { BusinessNotFoundException("Service not found with id: $serviceId") }
         businessService.requireRole(entity.business!!.id!!, userEmail, BusinessRole.STAFF)
         return toResponse(entity)
@@ -129,13 +129,13 @@ class BusinessOfferingService(
         businessId: Long,
         userEmail: String,
         pageable: Pageable,
-        statusFilter: ServiceStatus?
-    ): Page<ServiceResponse> {
+        statusFilter: ServiceOfferedStatus?
+    ): Page<ServiceOfferedResponse> {
         businessService.requireRole(businessId, userEmail, BusinessRole.STAFF)
         val page = if (statusFilter == null) {
-            serviceRepository.findAllByBusinessId(businessId, pageable)
+            serviceOfferedRepository.findAllByBusinessId(businessId, pageable)
         } else {
-            serviceRepository.findAllByBusinessIdAndStatus(businessId, statusFilter, pageable)
+            serviceOfferedRepository.findAllByBusinessIdAndStatus(businessId, statusFilter, pageable)
         }
         return page.map { toResponse(it) }
     }
@@ -175,8 +175,8 @@ class BusinessOfferingService(
         }
     }
 
-    private fun toResponse(entity: ServiceEntity): ServiceResponse {
-        return ServiceResponse(
+    private fun toResponse(entity: ServiceOffered): ServiceOfferedResponse {
+        return ServiceOfferedResponse(
             id = entity.id!!,
             businessId = entity.business!!.id!!,
             title = entity.title!!,

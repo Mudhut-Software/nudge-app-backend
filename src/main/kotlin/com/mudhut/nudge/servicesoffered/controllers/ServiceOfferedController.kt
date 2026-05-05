@@ -1,10 +1,10 @@
-package com.mudhut.nudge.services.controllers
+package com.mudhut.nudge.servicesoffered.controllers
 
-import com.mudhut.nudge.services.entities.ServiceStatus
-import com.mudhut.nudge.services.models.CreateServiceRequest
-import com.mudhut.nudge.services.models.ServiceResponse
-import com.mudhut.nudge.services.models.UpdateServiceRequest
-import com.mudhut.nudge.services.services.BusinessOfferingService
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
+import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
+import com.mudhut.nudge.servicesoffered.models.ServiceOfferedResponse
+import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
+import com.mudhut.nudge.servicesoffered.services.ServicesOfferedService
 import jakarta.validation.Valid
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -25,46 +25,46 @@ import org.springframework.web.bind.annotation.RestController
 
 @RestController
 @RequestMapping("/api/v1")
-class ServiceController(
-    private val offeringService: BusinessOfferingService
+class ServiceOfferedController(
+    private val servicesOfferedService: ServicesOfferedService
 ) {
 
     @PostMapping("/businesses/{businessId}/services")
     fun create(
         @PathVariable businessId: Long,
-        @Valid @RequestBody request: CreateServiceRequest,
+        @Valid @RequestBody request: CreateServiceOfferedRequest,
         authentication: Authentication
-    ): ResponseEntity<ServiceResponse> {
-        val response = offeringService.createService(businessId, authentication.name, request)
+    ): ResponseEntity<ServiceOfferedResponse> {
+        val response = servicesOfferedService.createService(businessId, authentication.name, request)
         return ResponseEntity.status(HttpStatus.CREATED).body(response)
     }
 
     @GetMapping("/businesses/{businessId}/services")
     fun list(
         @PathVariable businessId: Long,
-        @RequestParam(required = false) status: ServiceStatus?,
+        @RequestParam(required = false) status: ServiceOfferedStatus?,
         @PageableDefault(size = 20, sort = ["createdAt"], direction = Sort.Direction.DESC)
         pageable: Pageable,
         authentication: Authentication
-    ): Page<ServiceResponse> {
-        return offeringService.listServices(businessId, authentication.name, pageable, status)
+    ): Page<ServiceOfferedResponse> {
+        return servicesOfferedService.listServices(businessId, authentication.name, pageable, status)
     }
 
     @GetMapping("/services/{id}")
     fun get(
         @PathVariable id: Long,
         authentication: Authentication
-    ): ServiceResponse {
-        return offeringService.getService(id, authentication.name)
+    ): ServiceOfferedResponse {
+        return servicesOfferedService.getService(id, authentication.name)
     }
 
     @PatchMapping("/services/{id}")
     fun update(
         @PathVariable id: Long,
-        @Valid @RequestBody request: UpdateServiceRequest,
+        @Valid @RequestBody request: UpdateServiceOfferedRequest,
         authentication: Authentication
-    ): ServiceResponse {
-        return offeringService.updateService(id, authentication.name, request)
+    ): ServiceOfferedResponse {
+        return servicesOfferedService.updateService(id, authentication.name, request)
     }
 
     @DeleteMapping("/services/{id}")
@@ -72,7 +72,7 @@ class ServiceController(
         @PathVariable id: Long,
         authentication: Authentication
     ): ResponseEntity<Unit> {
-        offeringService.deleteService(id, authentication.name)
+        servicesOfferedService.deleteService(id, authentication.name)
         return ResponseEntity.noContent().build()
     }
 }

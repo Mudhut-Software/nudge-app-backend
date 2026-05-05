@@ -1,6 +1,6 @@
-package com.mudhut.nudge.services.models
+package com.mudhut.nudge.servicesoffered.models
 
-data class ServiceImageResponse(
+data class ServiceOfferedImageResponse(
     val id: Long,
     val url: String,
     val publicId: String,
