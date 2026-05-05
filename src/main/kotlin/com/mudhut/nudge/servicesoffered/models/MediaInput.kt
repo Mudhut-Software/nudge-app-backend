@@ -10,7 +10,7 @@ data class MediaInput(
     @field:NotBlank
     @field:Pattern(
         regexp = "^nudge/(images|videos)/.+",
-        message = "publicId must start with nudge/images/ or nudge/videos/"
+        message = "publicId is not valid"
     )
     val publicId: String
 )
