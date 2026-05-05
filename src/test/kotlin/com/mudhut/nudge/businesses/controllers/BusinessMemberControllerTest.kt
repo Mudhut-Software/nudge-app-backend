@@ -5,6 +5,8 @@ import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.models.BusinessMemberResponse
 import com.mudhut.nudge.businesses.models.UpdateMemberRoleRequest
 import com.mudhut.nudge.businesses.services.BusinessMemberService
+import com.mudhut.nudge.config.JsonAccessDeniedHandler
+import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
 import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
@@ -24,7 +26,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers
 import java.time.LocalDateTime
 
 @WebMvcTest(BusinessMemberController::class)
-@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class)
+@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class, JsonAuthenticationEntryPoint::class, JsonAccessDeniedHandler::class)
 @AutoConfigureMockMvc
 class BusinessMemberControllerTest {
 

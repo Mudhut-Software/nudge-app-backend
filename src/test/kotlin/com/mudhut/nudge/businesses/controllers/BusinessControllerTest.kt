@@ -9,6 +9,8 @@ import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessPhoneNumber
 import com.mudhut.nudge.businesses.services.BusinessPhoneNumberService
 import com.mudhut.nudge.businesses.services.BusinessService
+import com.mudhut.nudge.config.JsonAccessDeniedHandler
+import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
 import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
@@ -26,7 +28,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers
 
 @WebMvcTest(BusinessController::class)
-@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class)
+@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class, JsonAuthenticationEntryPoint::class, JsonAccessDeniedHandler::class)
 @AutoConfigureMockMvc
 class BusinessControllerTest {
 

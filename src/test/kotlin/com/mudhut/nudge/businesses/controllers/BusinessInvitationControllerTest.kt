@@ -6,6 +6,8 @@ import com.mudhut.nudge.businesses.entities.InvitationStatus
 import com.mudhut.nudge.businesses.models.InvitationResponse
 import com.mudhut.nudge.businesses.models.InviteMemberRequest
 import com.mudhut.nudge.businesses.services.BusinessInvitationService
+import com.mudhut.nudge.config.JsonAccessDeniedHandler
+import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
 import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
@@ -25,7 +27,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers
 import java.time.LocalDateTime
 
 @WebMvcTest(BusinessInvitationController::class)
-@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class)
+@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class, JsonAuthenticationEntryPoint::class, JsonAccessDeniedHandler::class)
 @AutoConfigureMockMvc
 class BusinessInvitationControllerTest {
 
