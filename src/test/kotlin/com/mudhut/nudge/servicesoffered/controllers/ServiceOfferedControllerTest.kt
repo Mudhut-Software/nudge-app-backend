@@ -1,6 +1,8 @@
 package com.mudhut.nudge.servicesoffered.controllers
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.mudhut.nudge.config.JsonAccessDeniedHandler
+import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
 import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
@@ -37,7 +39,7 @@ import java.math.BigDecimal
 import java.time.LocalDateTime
 
 @WebMvcTest(ServiceOfferedController::class)
-@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class)
+@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class, JsonAuthenticationEntryPoint::class, JsonAccessDeniedHandler::class)
 @AutoConfigureMockMvc
 class ServiceOfferedControllerTest {
 
