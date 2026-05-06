@@ -482,11 +482,12 @@ class ServicesOfferedServiceTest {
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now(),
         )
-        entity.galleryImages.add(
-            ServiceOfferedImage(service = entity, url = "g1", publicId = "nudge/images/g1", position = 0)
-        )
+        // Insert out of position order so the .sortedBy { it.position } in deleteService is load-bearing.
         entity.galleryImages.add(
             ServiceOfferedImage(service = entity, url = "g2", publicId = "nudge/images/g2", position = 1)
+        )
+        entity.galleryImages.add(
+            ServiceOfferedImage(service = entity, url = "g1", publicId = "nudge/images/g1", position = 0)
         )
         `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
 

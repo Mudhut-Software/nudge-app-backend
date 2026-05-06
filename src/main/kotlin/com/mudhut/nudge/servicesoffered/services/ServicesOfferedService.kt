@@ -121,7 +121,7 @@ class ServicesOfferedService(
 
         val orphaned = buildList {
             entity.coverImagePublicId?.let { add(it) }
-            addAll(entity.galleryImages.mapNotNull { it.publicId })
+            addAll(entity.galleryImages.sortedBy { it.position }.mapNotNull { it.publicId })
         }
         if (orphaned.isNotEmpty()) {
             pendingMediaDeletionRepository.saveAll(
