@@ -3,6 +3,7 @@ package com.mudhut.nudge.servicesoffered.services
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
+import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedImage
@@ -10,11 +11,14 @@ import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
 import com.mudhut.nudge.servicesoffered.models.MediaInput
 import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
+import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentCaptor
+import org.mockito.Captor
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.`when`
@@ -35,6 +39,12 @@ class ServicesOfferedServiceTest {
 
     @Mock
     private lateinit var businessService: BusinessService
+
+    @Mock
+    private lateinit var pendingMediaDeletionRepository: PendingMediaDeletionRepository
+
+    @Captor
+    private lateinit var pendingDeletionCaptor: ArgumentCaptor<List<PendingMediaDeletion>>
 
     @InjectMocks
     private lateinit var offeringService: ServicesOfferedService
@@ -458,5 +468,35 @@ class ServicesOfferedServiceTest {
         assertThrows(com.mudhut.nudge.utils.exceptions.BusinessNotFoundException::class.java) {
             offeringService.deleteService(999L, "owner@test.com")
         }
+    }
+
+    @Test
+    fun `deleteService enqueues cover and every gallery publicId`() {
+        val entity = ServiceOffered(
+            id = 7L,
+            business = businessFixture(),
+            title = "X",
+            coverImageUrl = "u",
+            coverImagePublicId = "nudge/images/cover-7",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now(),
+        )
+        entity.galleryImages.add(
+            ServiceOfferedImage(service = entity, url = "g1", publicId = "nudge/images/g1", position = 0)
+        )
+        entity.galleryImages.add(
+            ServiceOfferedImage(service = entity, url = "g2", publicId = "nudge/images/g2", position = 1)
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+
+        offeringService.deleteService(7L, "owner@test.com")
+
+        verify(serviceRepository).delete(entity)
+        verify(pendingMediaDeletionRepository).saveAll(pendingDeletionCaptor.capture())
+
+        val publicIds = pendingDeletionCaptor.value.map { it.publicId }
+        assertEquals(listOf("nudge/images/cover-7", "nudge/images/g1", "nudge/images/g2"), publicIds)
+        assertTrue(pendingDeletionCaptor.value.all { it.status == PendingMediaDeletion.Status.PENDING })
     }
 }

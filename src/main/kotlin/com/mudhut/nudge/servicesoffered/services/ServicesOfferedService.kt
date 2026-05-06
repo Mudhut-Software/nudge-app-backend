@@ -2,6 +2,7 @@ package com.mudhut.nudge.servicesoffered.services
 
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
+import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedImage
@@ -10,6 +11,7 @@ import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
 import com.mudhut.nudge.servicesoffered.models.MediaResponse
 import com.mudhut.nudge.servicesoffered.models.ServiceOfferedResponse
 import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
+import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import jakarta.transaction.Transactional
@@ -21,7 +23,8 @@ import java.math.BigDecimal
 @Service
 class ServicesOfferedService(
     private val serviceOfferedRepository: ServiceOfferedRepository,
-    private val businessService: BusinessService
+    private val businessService: BusinessService,
+    private val pendingMediaDeletionRepository: PendingMediaDeletionRepository,
 ) {
 
     @Transactional
@@ -115,6 +118,17 @@ class ServicesOfferedService(
         val entity = serviceOfferedRepository.findById(serviceId)
             .orElseThrow { BusinessNotFoundException("Service not found with id: $serviceId") }
         businessService.requireRole(entity.business!!.id!!, userEmail, BusinessRole.MANAGER)
+
+        val orphaned = buildList {
+            entity.coverImagePublicId?.let { add(it) }
+            addAll(entity.galleryImages.mapNotNull { it.publicId })
+        }
+        if (orphaned.isNotEmpty()) {
+            pendingMediaDeletionRepository.saveAll(
+                orphaned.map { PendingMediaDeletion(publicId = it) }
+            )
+        }
+
         serviceOfferedRepository.delete(entity)
     }
 
