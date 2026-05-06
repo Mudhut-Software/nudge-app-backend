@@ -11,6 +11,7 @@ import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -78,5 +79,31 @@ class MediaServiceTest {
         }
         // Cloudinary should not have been touched.
         verify(uploader, org.mockito.Mockito.never()).destroy(any<String>(), any<Map<String, Any>>())
+    }
+
+    @Test
+    fun `destroy passes resource_type=video for a nudge slash videos publicId`() {
+        whenever(cloudinary.uploader()).thenReturn(uploader)
+        whenever(uploader.destroy(eq("nudge/videos/clip"), any<Map<String, Any>>()))
+            .thenReturn(mapOf("result" to "ok"))
+
+        mediaService.destroy("nudge/videos/clip")
+
+        val captor = argumentCaptor<Map<String, Any>>()
+        verify(uploader).destroy(eq("nudge/videos/clip"), captor.capture())
+        assertEquals("video", captor.firstValue["resource_type"])
+    }
+
+    @Test
+    fun `destroy passes resource_type=image for a nudge slash images publicId`() {
+        whenever(cloudinary.uploader()).thenReturn(uploader)
+        whenever(uploader.destroy(eq("nudge/images/photo"), any<Map<String, Any>>()))
+            .thenReturn(mapOf("result" to "ok"))
+
+        mediaService.destroy("nudge/images/photo")
+
+        val captor = argumentCaptor<Map<String, Any>>()
+        verify(uploader).destroy(eq("nudge/images/photo"), captor.capture())
+        assertEquals("image", captor.firstValue["resource_type"])
     }
 }

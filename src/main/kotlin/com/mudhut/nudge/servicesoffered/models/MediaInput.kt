@@ -9,7 +9,7 @@ data class MediaInput(
 
     @field:NotBlank
     @field:Pattern(
-        regexp = "^nudge/(images|videos)/.+",
+        regexp = MediaInputConstants.PUBLIC_ID_PATTERN,
         message = "publicId is not valid"
     )
     val publicId: String

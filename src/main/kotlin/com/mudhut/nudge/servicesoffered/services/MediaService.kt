@@ -1,6 +1,7 @@
 package com.mudhut.nudge.servicesoffered.services
 
 import com.cloudinary.Cloudinary
+import com.mudhut.nudge.servicesoffered.models.MediaInputConstants
 import com.mudhut.nudge.utils.exceptions.MediaDeletionException
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -11,7 +12,7 @@ class MediaService(
 ) {
     private val logger = LoggerFactory.getLogger(MediaService::class.java)
 
-    private val publicIdPattern = Regex("^nudge/(images|videos)/.+")
+    private val publicIdPattern = Regex(MediaInputConstants.PUBLIC_ID_PATTERN)
 
     /**
      * Deletes the asset identified by [publicId] from Cloudinary.
@@ -25,8 +26,9 @@ class MediaService(
             "Refusing to delete publicId '$publicId': outside the allowed media-type roots"
         }
 
+        val resourceType = if (publicId.startsWith("nudge/videos/")) "video" else "image"
         val response: Map<*, *> = try {
-            cloudinary.uploader().destroy(publicId, mapOf<String, Any>())
+            cloudinary.uploader().destroy(publicId, mapOf<String, Any>("resource_type" to resourceType))
         } catch (e: Exception) {
             throw MediaDeletionException("Cloudinary destroy threw for '$publicId': ${e.message}")
         }
