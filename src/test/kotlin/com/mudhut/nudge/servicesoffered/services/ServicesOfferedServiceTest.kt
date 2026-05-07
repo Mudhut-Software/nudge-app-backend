@@ -521,6 +521,31 @@ class ServicesOfferedServiceTest {
     }
 
     @Test
+    fun `updateService does NOT enqueue when the cover patch carries the same publicId`() {
+        val entity = ServiceOffered(
+            id = 7L,
+            business = businessFixture(),
+            title = "X",
+            coverImageUrl = "u",
+            coverImagePublicId = "nudge/images/cover",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now(),
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceOfferedRequest(
+                coverImage = MediaInput(url = "u-new-tag", publicId = "nudge/images/cover")
+            )
+        )
+
+        verify(pendingMediaDeletionRepository, org.mockito.Mockito.never()).save(any<PendingMediaDeletion>())
+    }
+
+    @Test
     fun `deleteService enqueues cover and every gallery publicId`() {
         val entity = ServiceOffered(
             id = 7L,
