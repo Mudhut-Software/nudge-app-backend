@@ -85,9 +85,13 @@ class ServicesOfferedService(
 
         request.title?.let { entity.title = it }
         request.description?.let { entity.description = it }
-        request.coverImage?.let {
-            entity.coverImageUrl = it.url
-            entity.coverImagePublicId = it.publicId
+        request.coverImage?.let { incoming ->
+            val previousPublicId = entity.coverImagePublicId
+            if (previousPublicId != null && previousPublicId != incoming.publicId) {
+                pendingMediaDeletionRepository.save(PendingMediaDeletion(publicId = previousPublicId))
+            }
+            entity.coverImageUrl = incoming.url
+            entity.coverImagePublicId = incoming.publicId
         }
         entity.priceMode = newMode
         entity.priceAmount = newAmount

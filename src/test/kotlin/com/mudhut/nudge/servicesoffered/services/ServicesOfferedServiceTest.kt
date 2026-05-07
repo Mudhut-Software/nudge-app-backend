@@ -471,6 +471,56 @@ class ServicesOfferedServiceTest {
     }
 
     @Test
+    fun `updateService enqueues the previous cover publicId when the cover is replaced`() {
+        val entity = ServiceOffered(
+            id = 7L,
+            business = businessFixture(),
+            title = "X",
+            coverImageUrl = "old-url",
+            coverImagePublicId = "nudge/images/old-cover",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now(),
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceOfferedRequest(
+                coverImage = MediaInput(url = "new-url", publicId = "nudge/images/new-cover")
+            )
+        )
+
+        verify(pendingMediaDeletionRepository).save(org.mockito.kotlin.argThat<PendingMediaDeletion> {
+            publicId == "nudge/images/old-cover"
+        })
+    }
+
+    @Test
+    fun `updateService does NOT enqueue when the cover is not changed`() {
+        val entity = ServiceOffered(
+            id = 7L,
+            business = businessFixture(),
+            title = "X",
+            coverImageUrl = "u",
+            coverImagePublicId = "nudge/images/cover",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now(),
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceOfferedRequest(title = "Renamed")
+        )
+
+        verify(pendingMediaDeletionRepository, org.mockito.Mockito.never()).save(any<PendingMediaDeletion>())
+    }
+
+    @Test
     fun `deleteService enqueues cover and every gallery publicId`() {
         val entity = ServiceOffered(
             id = 7L,
