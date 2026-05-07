@@ -90,4 +90,43 @@ class MediaCleanupJobTest {
         verify(mediaService, never()).destroy(any())
         verify(pendingRepository, never()).save(any())
     }
+
+    @Test
+    fun `drain parks the row immediately on IllegalArgumentException without consuming retries`() {
+        val row = pending(1L, "nudge/badprefix/x", attempts = 0)
+        whenever(pendingRepository.findAllByStatus(PendingMediaDeletion.Status.PENDING)).thenReturn(listOf(row))
+        whenever(mediaService.destroy(eq("nudge/badprefix/x")))
+            .thenThrow(IllegalArgumentException("Refusing to delete publicId 'nudge/badprefix/x'"))
+
+        job.drain()
+
+        val captor = argumentCaptor<PendingMediaDeletion>()
+        verify(pendingRepository).save(captor.capture())
+        assertEquals(PendingMediaDeletion.Status.FAILED, captor.firstValue.status)
+        assertEquals(1, captor.firstValue.attempts)
+        assertNotNull(captor.firstValue.lastAttemptAt)
+        assertTrue(captor.firstValue.lastError!!.contains("Refusing to delete"))
+    }
+
+    @Test
+    fun `drain continues processing other rows when one row throws`() {
+        val poison = pending(1L, "nudge/badprefix/x")
+        val good = pending(2L, "nudge/images/good")
+        whenever(pendingRepository.findAllByStatus(PendingMediaDeletion.Status.PENDING))
+            .thenReturn(listOf(poison, good))
+        whenever(mediaService.destroy(eq("nudge/badprefix/x")))
+            .thenThrow(IllegalArgumentException("bad prefix"))
+        // mediaService.destroy("nudge/images/good") returns normally (default Mockito void mock).
+
+        job.drain()
+
+        // Both rows should have been saved — the poison-pill must not abort the loop.
+        verify(pendingRepository, org.mockito.Mockito.times(2)).save(any<PendingMediaDeletion>())
+        // Specifically the good row should be marked COMPLETED.
+        val captor = argumentCaptor<PendingMediaDeletion>()
+        verify(pendingRepository, org.mockito.Mockito.times(2)).save(captor.capture())
+        val saved = captor.allValues
+        assertEquals(PendingMediaDeletion.Status.FAILED, saved.find { it.publicId == "nudge/badprefix/x" }!!.status)
+        assertEquals(PendingMediaDeletion.Status.COMPLETED, saved.find { it.publicId == "nudge/images/good" }!!.status)
+    }
 }

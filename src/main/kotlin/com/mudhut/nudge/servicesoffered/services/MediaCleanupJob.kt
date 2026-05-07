@@ -2,7 +2,6 @@ package com.mudhut.nudge.servicesoffered.services
 
 import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
 import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
-import com.mudhut.nudge.utils.exceptions.MediaDeletionException
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
@@ -43,7 +42,16 @@ class MediaCleanupJob(
                 row.lastError = null
                 pendingRepository.save(row)
                 completed++
-            } catch (e: MediaDeletionException) {
+            } catch (e: IllegalArgumentException) {
+                // Malformed publicId — will never succeed on retry, park immediately.
+                row.attempts += 1
+                row.lastAttemptAt = LocalDateTime.now()
+                row.lastError = e.message
+                row.status = PendingMediaDeletion.Status.FAILED
+                pendingRepository.save(row)
+                parked++
+            } catch (e: Exception) {
+                // MediaDeletionException or any other unexpected throwable — count toward retries.
                 row.attempts += 1
                 row.lastAttemptAt = LocalDateTime.now()
                 row.lastError = e.message
