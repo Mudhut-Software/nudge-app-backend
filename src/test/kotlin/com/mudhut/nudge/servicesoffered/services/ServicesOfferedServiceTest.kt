@@ -3,6 +3,7 @@ package com.mudhut.nudge.servicesoffered.services
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
+import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedImage
@@ -10,11 +11,14 @@ import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
 import com.mudhut.nudge.servicesoffered.models.MediaInput
 import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
+import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentCaptor
+import org.mockito.Captor
 import org.mockito.InjectMocks
 import org.mockito.Mock
 import org.mockito.Mockito.`when`
@@ -35,6 +39,12 @@ class ServicesOfferedServiceTest {
 
     @Mock
     private lateinit var businessService: BusinessService
+
+    @Mock
+    private lateinit var pendingMediaDeletionRepository: PendingMediaDeletionRepository
+
+    @Captor
+    private lateinit var pendingDeletionCaptor: ArgumentCaptor<List<PendingMediaDeletion>>
 
     @InjectMocks
     private lateinit var offeringService: ServicesOfferedService
@@ -458,5 +468,159 @@ class ServicesOfferedServiceTest {
         assertThrows(com.mudhut.nudge.utils.exceptions.BusinessNotFoundException::class.java) {
             offeringService.deleteService(999L, "owner@test.com")
         }
+    }
+
+    @Test
+    fun `updateService enqueues the previous cover publicId when the cover is replaced`() {
+        val entity = ServiceOffered(
+            id = 7L,
+            business = businessFixture(),
+            title = "X",
+            coverImageUrl = "old-url",
+            coverImagePublicId = "nudge/images/old-cover",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now(),
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceOfferedRequest(
+                coverImage = MediaInput(url = "new-url", publicId = "nudge/images/new-cover")
+            )
+        )
+
+        verify(pendingMediaDeletionRepository).save(org.mockito.kotlin.argThat<PendingMediaDeletion> {
+            publicId == "nudge/images/old-cover"
+        })
+    }
+
+    @Test
+    fun `updateService does NOT enqueue when the cover is not changed`() {
+        val entity = ServiceOffered(
+            id = 7L,
+            business = businessFixture(),
+            title = "X",
+            coverImageUrl = "u",
+            coverImagePublicId = "nudge/images/cover",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now(),
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceOfferedRequest(title = "Renamed")
+        )
+
+        verify(pendingMediaDeletionRepository, org.mockito.Mockito.never()).save(any<PendingMediaDeletion>())
+    }
+
+    @Test
+    fun `updateService does NOT enqueue when the cover patch carries the same publicId`() {
+        val entity = ServiceOffered(
+            id = 7L,
+            business = businessFixture(),
+            title = "X",
+            coverImageUrl = "u",
+            coverImagePublicId = "nudge/images/cover",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now(),
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceOfferedRequest(
+                coverImage = MediaInput(url = "u-new-tag", publicId = "nudge/images/cover")
+            )
+        )
+
+        verify(pendingMediaDeletionRepository, org.mockito.Mockito.never()).save(any<PendingMediaDeletion>())
+    }
+
+    @Test
+    fun `deleteService enqueues cover and every gallery publicId`() {
+        val entity = ServiceOffered(
+            id = 7L,
+            business = businessFixture(),
+            title = "X",
+            coverImageUrl = "u",
+            coverImagePublicId = "nudge/images/cover-7",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now(),
+        )
+        // Insert out of position order so the .sortedBy { it.position } in deleteService is load-bearing.
+        entity.galleryImages.add(
+            ServiceOfferedImage(service = entity, url = "g2", publicId = "nudge/images/g2", position = 1)
+        )
+        entity.galleryImages.add(
+            ServiceOfferedImage(service = entity, url = "g1", publicId = "nudge/images/g1", position = 0)
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+
+        offeringService.deleteService(7L, "owner@test.com")
+
+        verify(serviceRepository).delete(entity)
+        verify(pendingMediaDeletionRepository).saveAll(pendingDeletionCaptor.capture())
+
+        val publicIds = pendingDeletionCaptor.value.map { it.publicId }
+        assertEquals(listOf("nudge/images/cover-7", "nudge/images/g1", "nudge/images/g2"), publicIds)
+        assertTrue(pendingDeletionCaptor.value.all { it.status == PendingMediaDeletion.Status.PENDING })
+    }
+
+    @Test
+    fun `updateService enqueues only gallery items dropped by the diff`() {
+        val entity = entityWithGallery(
+            listOf(
+                "old-a-url" to "nudge/images/a",
+                "old-b-url" to "nudge/images/b",
+            )
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        // Replace gallery: keep "a", drop "b", add "c".
+        offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceOfferedRequest(
+                galleryImages = listOf(
+                    MediaInput("a-new-url", "nudge/images/a"),
+                    MediaInput("c-url", "nudge/images/c"),
+                )
+            )
+        )
+
+        verify(pendingMediaDeletionRepository).saveAll(pendingDeletionCaptor.capture())
+        val publicIds = pendingDeletionCaptor.value.map { it.publicId }
+        assertEquals(listOf("nudge/images/b"), publicIds)
+    }
+
+    @Test
+    fun `updateService enqueues all gallery items when the gallery is cleared`() {
+        val entity = entityWithGallery(
+            listOf(
+                "x-url" to "nudge/images/x",
+                "y-url" to "nudge/images/y",
+            )
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceOfferedRequest(galleryImages = emptyList())
+        )
+
+        verify(pendingMediaDeletionRepository).saveAll(pendingDeletionCaptor.capture())
+        val publicIds = pendingDeletionCaptor.value.map { it.publicId }
+        assertEquals(listOf("nudge/images/x", "nudge/images/y"), publicIds)
     }
 }
