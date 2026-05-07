@@ -575,4 +575,52 @@ class ServicesOfferedServiceTest {
         assertEquals(listOf("nudge/images/cover-7", "nudge/images/g1", "nudge/images/g2"), publicIds)
         assertTrue(pendingDeletionCaptor.value.all { it.status == PendingMediaDeletion.Status.PENDING })
     }
+
+    @Test
+    fun `updateService enqueues only gallery items dropped by the diff`() {
+        val entity = entityWithGallery(
+            listOf(
+                "old-a-url" to "nudge/images/a",
+                "old-b-url" to "nudge/images/b",
+            )
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        // Replace gallery: keep "a", drop "b", add "c".
+        offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceOfferedRequest(
+                galleryImages = listOf(
+                    MediaInput("a-new-url", "nudge/images/a"),
+                    MediaInput("c-url", "nudge/images/c"),
+                )
+            )
+        )
+
+        verify(pendingMediaDeletionRepository).saveAll(pendingDeletionCaptor.capture())
+        val publicIds = pendingDeletionCaptor.value.map { it.publicId }
+        assertEquals(listOf("nudge/images/b"), publicIds)
+    }
+
+    @Test
+    fun `updateService enqueues all gallery items when the gallery is cleared`() {
+        val entity = entityWithGallery(
+            listOf(
+                "x-url" to "nudge/images/x",
+                "y-url" to "nudge/images/y",
+            )
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        offeringService.updateService(
+            7L, "owner@test.com",
+            UpdateServiceOfferedRequest(galleryImages = emptyList())
+        )
+
+        verify(pendingMediaDeletionRepository).saveAll(pendingDeletionCaptor.capture())
+        val publicIds = pendingDeletionCaptor.value.map { it.publicId }
+        assertEquals(listOf("nudge/images/x", "nudge/images/y"), publicIds)
+    }
 }

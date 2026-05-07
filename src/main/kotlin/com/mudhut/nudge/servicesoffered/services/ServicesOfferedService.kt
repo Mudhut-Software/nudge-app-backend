@@ -100,6 +100,17 @@ class ServicesOfferedService(
         request.status?.let { entity.status = it }
 
         request.galleryImages?.let { incoming ->
+            val previousPublicIds = entity.galleryImages
+                .sortedBy { it.position }
+                .mapNotNull { it.publicId }
+            val incomingPublicIds = incoming.map { it.publicId }.toSet()
+            val orphaned = previousPublicIds.filterNot { it in incomingPublicIds }
+            if (orphaned.isNotEmpty()) {
+                pendingMediaDeletionRepository.saveAll(
+                    orphaned.map { PendingMediaDeletion(publicId = it) }
+                )
+            }
+
             entity.galleryImages.clear()
             incoming.forEachIndexed { idx, media ->
                 entity.galleryImages.add(
