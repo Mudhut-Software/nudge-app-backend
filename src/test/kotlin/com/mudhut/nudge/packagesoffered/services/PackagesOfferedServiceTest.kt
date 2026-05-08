@@ -22,6 +22,9 @@ import org.mockito.Mockito.`when`
 import org.mockito.Mockito.any
 import org.mockito.Mockito.verify
 import org.mockito.junit.jupiter.MockitoExtension
+import org.springframework.data.domain.PageImpl
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
 import java.math.BigDecimal
 import java.time.LocalDateTime
 
@@ -175,6 +178,40 @@ class PackagesOfferedServiceTest {
         assertThrows(IllegalArgumentException::class.java) {
             packagesService.createPackage(1L, "owner@test.com", request)
         }
+    }
+
+    @Test
+    fun `listPackages returns paginated packages for a business`() {
+        val business = businessFixture()
+        val pkg = PackageOffered(
+            id = 1L,
+            business = business,
+            title = "A",
+            priceAmount = BigDecimal("100.00"),
+            priceCurrency = "UGX",
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now(),
+        )
+        val pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt"))
+        `when`(packageRepository.findAllByBusinessId(1L, pageable))
+            .thenReturn(PageImpl(listOf(pkg), pageable, 1))
+
+        val page = packagesService.listPackages(1L, "owner@test.com", pageable, null)
+
+        verify(businessService).requireRole(1L, "owner@test.com", BusinessRole.STAFF)
+        assertEquals(1, page.totalElements)
+        assertEquals("A", page.content[0].title)
+    }
+
+    @Test
+    fun `listPackages filters by status when provided`() {
+        val pageable = PageRequest.of(0, 20)
+        `when`(packageRepository.findAllByBusinessIdAndStatus(1L, PackageOfferedStatus.ACTIVE, pageable))
+            .thenReturn(PageImpl(emptyList(), pageable, 0))
+
+        val page = packagesService.listPackages(1L, "owner@test.com", pageable, PackageOfferedStatus.ACTIVE)
+
+        assertEquals(0, page.totalElements)
     }
 
     @Test

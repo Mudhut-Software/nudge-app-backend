@@ -16,6 +16,8 @@ import com.mudhut.nudge.servicesoffered.models.MediaResponse
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import jakarta.transaction.Transactional
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import java.time.LocalDate
 
@@ -67,6 +69,21 @@ class PackagesOfferedService(
 
         val saved = packageRepository.save(pkg)
         return toResponse(saved)
+    }
+
+    fun listPackages(
+        businessId: Long,
+        userEmail: String,
+        pageable: Pageable,
+        statusFilter: PackageOfferedStatus?,
+    ): Page<PackageOfferedResponse> {
+        businessService.requireRole(businessId, userEmail, BusinessRole.STAFF)
+        val page = if (statusFilter == null) {
+            packageRepository.findAllByBusinessId(businessId, pageable)
+        } else {
+            packageRepository.findAllByBusinessIdAndStatus(businessId, statusFilter, pageable)
+        }
+        return page.map { toResponse(it) }
     }
 
     private fun validateServiceIdsAndWindow(
