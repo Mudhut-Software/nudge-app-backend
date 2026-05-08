@@ -373,6 +373,76 @@ class PackagesOfferedServiceTest {
     }
 
     @Test
+    fun `isCurrentlyActive is true when ACTIVE and within window`() {
+        val pkg = packageFixture(
+            status = PackageOfferedStatus.ACTIVE,
+            validFrom = LocalDate.now().minusDays(1),
+            validUntil = LocalDate.now().plusDays(1),
+        )
+        `when`(packageRepository.findById(7L)).thenReturn(Optional.of(pkg))
+
+        val response = packagesService.getPackage(7L, "owner@test.com")
+
+        assertTrue(response.isCurrentlyActive)
+    }
+
+    @Test
+    fun `isCurrentlyActive is true when ACTIVE and no window`() {
+        val pkg = packageFixture(
+            status = PackageOfferedStatus.ACTIVE,
+            validFrom = null,
+            validUntil = null,
+        )
+        `when`(packageRepository.findById(7L)).thenReturn(Optional.of(pkg))
+
+        val response = packagesService.getPackage(7L, "owner@test.com")
+
+        assertTrue(response.isCurrentlyActive)
+    }
+
+    @Test
+    fun `isCurrentlyActive is false when ACTIVE but window has not started`() {
+        val pkg = packageFixture(
+            status = PackageOfferedStatus.ACTIVE,
+            validFrom = LocalDate.now().plusDays(7),
+            validUntil = LocalDate.now().plusDays(14),
+        )
+        `when`(packageRepository.findById(7L)).thenReturn(Optional.of(pkg))
+
+        val response = packagesService.getPackage(7L, "owner@test.com")
+
+        assertFalse(response.isCurrentlyActive)
+    }
+
+    @Test
+    fun `isCurrentlyActive is false when ACTIVE but window has expired`() {
+        val pkg = packageFixture(
+            status = PackageOfferedStatus.ACTIVE,
+            validFrom = LocalDate.now().minusDays(14),
+            validUntil = LocalDate.now().minusDays(1),
+        )
+        `when`(packageRepository.findById(7L)).thenReturn(Optional.of(pkg))
+
+        val response = packagesService.getPackage(7L, "owner@test.com")
+
+        assertFalse(response.isCurrentlyActive)
+    }
+
+    @Test
+    fun `isCurrentlyActive is false when INACTIVE regardless of window`() {
+        val pkg = packageFixture(
+            status = PackageOfferedStatus.INACTIVE,
+            validFrom = LocalDate.now().minusDays(1),
+            validUntil = LocalDate.now().plusDays(1),
+        )
+        `when`(packageRepository.findById(7L)).thenReturn(Optional.of(pkg))
+
+        val response = packagesService.getPackage(7L, "owner@test.com")
+
+        assertFalse(response.isCurrentlyActive)
+    }
+
+    @Test
     fun `getPackage returns the package when caller is a member`() {
         val business = businessFixture()
         val pkg = PackageOffered(
