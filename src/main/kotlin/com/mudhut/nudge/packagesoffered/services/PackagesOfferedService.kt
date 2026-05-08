@@ -37,6 +37,13 @@ class PackagesOfferedService(
         val business = businessService.findBusinessEntity(businessId)
 
         val services = serviceRepository.findAllById(request.serviceIds)
+        validateServiceIdsAndWindow(
+            businessId = businessId,
+            serviceIds = request.serviceIds,
+            services = services,
+            validFrom = request.validFrom,
+            validUntil = request.validUntil,
+        )
 
         val pkg = PackageOffered(
             business = business,
@@ -60,6 +67,30 @@ class PackagesOfferedService(
 
         val saved = packageRepository.save(pkg)
         return toResponse(saved)
+    }
+
+    private fun validateServiceIdsAndWindow(
+        businessId: Long,
+        serviceIds: List<Long>,
+        services: List<ServiceOffered>,
+        validFrom: LocalDate?,
+        validUntil: LocalDate?,
+    ) {
+        require(serviceIds.isNotEmpty()) { "At least one service is required" }
+        require(serviceIds.size == serviceIds.toSet().size) {
+            "Duplicate serviceIds are not allowed"
+        }
+        require(services.size == serviceIds.toSet().size) {
+            "One or more serviceIds do not exist"
+        }
+        require(services.all { it.business?.id == businessId }) {
+            "All services must belong to the same business as the package"
+        }
+        if (validFrom != null && validUntil != null) {
+            require(!validFrom.isAfter(validUntil)) {
+                "validFrom must be on or before validUntil"
+            }
+        }
     }
 
     private fun isCurrentlyActive(

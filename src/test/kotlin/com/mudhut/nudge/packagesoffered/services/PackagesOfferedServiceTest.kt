@@ -12,7 +12,9 @@ import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import java.time.LocalDate
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.InjectMocks
 import org.mockito.Mock
@@ -101,5 +103,97 @@ class PackagesOfferedServiceTest {
         assertEquals(1, response.items.size)
         assertEquals(10L, response.items[0].service.id)
         assertEquals(0, response.items[0].position)
+    }
+
+    @Test
+    fun `createPackage rejects empty serviceIds`() {
+        val business = businessFixture()
+        `when`(businessService.findBusinessEntity(1L)).thenReturn(business)
+        `when`(serviceRepository.findAllById(emptyList<Long>())).thenReturn(emptyList())
+        val request = CreatePackageOfferedRequest(
+            title = "X",
+            serviceIds = emptyList(),
+            priceAmount = BigDecimal("100.00"),
+            priceCurrency = "UGX",
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            packagesService.createPackage(1L, "owner@test.com", request)
+        }
+    }
+
+    @Test
+    fun `createPackage rejects duplicate serviceIds in the request`() {
+        val business = businessFixture()
+        val service = serviceFixture(id = 10L, business = business)
+        `when`(businessService.findBusinessEntity(1L)).thenReturn(business)
+        `when`(serviceRepository.findAllById(listOf(10L, 10L))).thenReturn(listOf(service))
+        val request = CreatePackageOfferedRequest(
+            title = "X",
+            serviceIds = listOf(10L, 10L),
+            priceAmount = BigDecimal("100.00"),
+            priceCurrency = "UGX",
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            packagesService.createPackage(1L, "owner@test.com", request)
+        }
+    }
+
+    @Test
+    fun `createPackage rejects when a serviceId does not exist`() {
+        val business = businessFixture()
+        val service = serviceFixture(id = 10L, business = business)
+        `when`(businessService.findBusinessEntity(1L)).thenReturn(business)
+        `when`(serviceRepository.findAllById(listOf(10L, 99L)))
+            .thenReturn(listOf(service))   // 99L missing
+
+        val request = CreatePackageOfferedRequest(
+            title = "X",
+            serviceIds = listOf(10L, 99L),
+            priceAmount = BigDecimal("100.00"),
+            priceCurrency = "UGX",
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            packagesService.createPackage(1L, "owner@test.com", request)
+        }
+    }
+
+    @Test
+    fun `createPackage rejects services from a different business`() {
+        val targetBusiness = businessFixture(id = 1L)
+        val otherBusiness = Business(id = 2L, name = "Other Biz")
+        val foreign = serviceFixture(id = 10L, business = otherBusiness)
+
+        `when`(businessService.findBusinessEntity(1L)).thenReturn(targetBusiness)
+        `when`(serviceRepository.findAllById(listOf(10L))).thenReturn(listOf(foreign))
+
+        val request = CreatePackageOfferedRequest(
+            title = "X",
+            serviceIds = listOf(10L),
+            priceAmount = BigDecimal("100.00"),
+            priceCurrency = "UGX",
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            packagesService.createPackage(1L, "owner@test.com", request)
+        }
+    }
+
+    @Test
+    fun `createPackage rejects when validFrom is after validUntil`() {
+        val business = businessFixture()
+        val service = serviceFixture(id = 10L, business = business)
+        `when`(businessService.findBusinessEntity(1L)).thenReturn(business)
+        `when`(serviceRepository.findAllById(listOf(10L))).thenReturn(listOf(service))
+
+        val request = CreatePackageOfferedRequest(
+            title = "X",
+            serviceIds = listOf(10L),
+            priceAmount = BigDecimal("100.00"),
+            priceCurrency = "UGX",
+            validFrom = LocalDate.of(2026, 12, 20),
+            validUntil = LocalDate.of(2026, 12, 1),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            packagesService.createPackage(1L, "owner@test.com", request)
+        }
     }
 }
