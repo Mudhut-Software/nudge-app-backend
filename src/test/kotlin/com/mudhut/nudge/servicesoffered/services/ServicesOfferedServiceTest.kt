@@ -11,6 +11,7 @@ import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
 import com.mudhut.nudge.servicesoffered.models.MediaInput
 import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
+import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedItemRepository
 import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import org.junit.jupiter.api.Assertions.*
@@ -42,6 +43,9 @@ class ServicesOfferedServiceTest {
 
     @Mock
     private lateinit var pendingMediaDeletionRepository: PendingMediaDeletionRepository
+
+    @Mock
+    private lateinit var packageOfferedItemRepository: PackageOfferedItemRepository
 
     @Captor
     private lateinit var pendingDeletionCaptor: ArgumentCaptor<List<PendingMediaDeletion>>
@@ -458,6 +462,26 @@ class ServicesOfferedServiceTest {
         offeringService.deleteService(7L, "owner@test.com")
 
         verify(businessService).requireRole(1L, "owner@test.com", BusinessRole.MANAGER)
+        verify(serviceRepository).delete(entity)
+    }
+
+    @Test
+    fun `deleteService also deletes package_offered_items rows for the service`() {
+        val entity = ServiceOffered(
+            id = 7L,
+            business = businessFixture(),
+            title = "X",
+            coverImageUrl = "u",
+            coverImagePublicId = "nudge/images/u",
+            priceMode = PriceMode.QUOTE,
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now()
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+
+        offeringService.deleteService(7L, "owner@test.com")
+
+        verify(packageOfferedItemRepository).deleteAllByServiceId(7L)
         verify(serviceRepository).delete(entity)
     }
 
