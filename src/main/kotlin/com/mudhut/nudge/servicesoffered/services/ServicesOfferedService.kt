@@ -11,6 +11,7 @@ import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
 import com.mudhut.nudge.servicesoffered.models.MediaResponse
 import com.mudhut.nudge.servicesoffered.models.ServiceOfferedResponse
 import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
+import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedItemRepository
 import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
@@ -25,6 +26,7 @@ class ServicesOfferedService(
     private val serviceOfferedRepository: ServiceOfferedRepository,
     private val businessService: BusinessService,
     private val pendingMediaDeletionRepository: PendingMediaDeletionRepository,
+    private val packageOfferedItemRepository: PackageOfferedItemRepository,
 ) {
 
     @Transactional
@@ -143,6 +145,12 @@ class ServicesOfferedService(
                 orphaned.map { PendingMediaDeletion(publicId = it) }
             )
         }
+
+        // Application-layer cascade: clean up package memberships before
+        // the service row goes away. No migration tooling yet, so this
+        // stands in for a DB-level ON DELETE CASCADE on
+        // package_offered_items.service_id.
+        packageOfferedItemRepository.deleteAllByServiceId(serviceId)
 
         serviceOfferedRepository.delete(entity)
     }
