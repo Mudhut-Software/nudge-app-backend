@@ -99,7 +99,26 @@ class PackagesOfferedService(
         request.validUntil?.let { pkg.validUntil = it }
         request.status?.let { pkg.status = it }
 
-        // serviceIds replace handled in Task 7
+        request.serviceIds?.let { incoming ->
+            val services = serviceRepository.findAllById(incoming)
+            validateServiceIdsAndWindow(
+                businessId = pkg.business!!.id!!,
+                serviceIds = incoming,
+                services = services,
+                validFrom = newValidFrom,
+                validUntil = newValidUntil,
+            )
+            pkg.items.clear()
+            services.forEachIndexed { idx, s ->
+                pkg.items.add(
+                    PackageOfferedItem(
+                        packageOffered = pkg,
+                        service = s,
+                        position = idx,
+                    )
+                )
+            }
+        }
 
         val saved = packageRepository.save(pkg)
         return toResponse(saved)

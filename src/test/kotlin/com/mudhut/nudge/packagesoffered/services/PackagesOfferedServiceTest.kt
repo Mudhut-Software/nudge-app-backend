@@ -305,6 +305,54 @@ class PackagesOfferedServiceTest {
     }
 
     @Test
+    fun `updatePackage replaces serviceIds wholesale and renumbers positions`() {
+        val business = businessFixture()
+        val pkg = packageFixture(business = business)
+        // Existing items: [10L position 0]
+        pkg.items.add(
+            com.mudhut.nudge.packagesoffered.entities.PackageOfferedItem(
+                packageOffered = pkg,
+                service = serviceFixture(id = 10L, business = business),
+                position = 0,
+            )
+        )
+
+        val newServiceA = serviceFixture(id = 20L, business = business)
+        val newServiceB = serviceFixture(id = 30L, business = business)
+        `when`(packageRepository.findById(7L)).thenReturn(Optional.of(pkg))
+        `when`(serviceRepository.findAllById(listOf(20L, 30L)))
+            .thenReturn(listOf(newServiceA, newServiceB))
+        `when`(packageRepository.save(any<PackageOffered>())).thenAnswer { it.arguments[0] }
+
+        val response = packagesService.updatePackage(
+            7L, "owner@test.com",
+            UpdatePackageOfferedRequest(serviceIds = listOf(20L, 30L)),
+        )
+
+        assertEquals(2, response.items.size)
+        assertEquals(listOf(20L, 30L), response.items.map { it.service.id })
+        assertEquals(listOf(0, 1), response.items.map { it.position })
+    }
+
+    @Test
+    fun `updatePackage rejects serviceIds replacement with cross-business service`() {
+        val target = businessFixture(id = 1L)
+        val other = Business(id = 2L, name = "Other")
+        val pkg = packageFixture(business = target)
+        val foreign = serviceFixture(id = 20L, business = other)
+
+        `when`(packageRepository.findById(7L)).thenReturn(Optional.of(pkg))
+        `when`(serviceRepository.findAllById(listOf(20L))).thenReturn(listOf(foreign))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            packagesService.updatePackage(
+                7L, "owner@test.com",
+                UpdatePackageOfferedRequest(serviceIds = listOf(20L)),
+            )
+        }
+    }
+
+    @Test
     fun `getPackage returns the package when caller is a member`() {
         val business = businessFixture()
         val pkg = PackageOffered(
