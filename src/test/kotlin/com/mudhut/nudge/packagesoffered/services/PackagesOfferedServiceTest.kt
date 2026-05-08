@@ -5,7 +5,9 @@ import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
 import com.mudhut.nudge.packagesoffered.entities.PackageOffered
 import com.mudhut.nudge.packagesoffered.entities.PackageOfferedStatus
+import com.mudhut.nudge.packagesoffered.entities.PackageOfferedTag
 import com.mudhut.nudge.packagesoffered.models.CreatePackageOfferedRequest
+import com.mudhut.nudge.packagesoffered.models.UpdatePackageOfferedRequest
 import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedItemRepository
 import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedRepository
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
@@ -214,6 +216,92 @@ class PackagesOfferedServiceTest {
         val page = packagesService.listPackages(1L, "owner@test.com", pageable, PackageOfferedStatus.ACTIVE)
 
         assertEquals(0, page.totalElements)
+    }
+
+    private fun packageFixture(
+        id: Long = 7L,
+        business: Business = businessFixture(),
+        title: String = "Old title",
+        tag: PackageOfferedTag? = null,
+        validFrom: LocalDate? = null,
+        validUntil: LocalDate? = null,
+        status: PackageOfferedStatus = PackageOfferedStatus.ACTIVE,
+    ) = PackageOffered(
+        id = id,
+        business = business,
+        title = title,
+        priceAmount = BigDecimal("100.00"),
+        priceCurrency = "UGX",
+        tag = tag,
+        validFrom = validFrom,
+        validUntil = validUntil,
+        status = status,
+        createdAt = LocalDateTime.now(),
+        updatedAt = LocalDateTime.now(),
+    )
+
+    @Test
+    fun `updatePackage patches the title only`() {
+        val pkg = packageFixture()
+        `when`(packageRepository.findById(7L)).thenReturn(Optional.of(pkg))
+        `when`(packageRepository.save(any<PackageOffered>())).thenAnswer { it.arguments[0] }
+
+        val response = packagesService.updatePackage(
+            packageId = 7L,
+            userEmail = "owner@test.com",
+            request = UpdatePackageOfferedRequest(title = "New title"),
+        )
+
+        verify(businessService).requireRole(1L, "owner@test.com", BusinessRole.MANAGER)
+        assertEquals("New title", response.title)
+        assertEquals(BigDecimal("100.00"), response.priceAmount)
+    }
+
+    @Test
+    fun `updatePackage toggles status to INACTIVE`() {
+        val pkg = packageFixture(status = PackageOfferedStatus.ACTIVE)
+        `when`(packageRepository.findById(7L)).thenReturn(Optional.of(pkg))
+        `when`(packageRepository.save(any<PackageOffered>())).thenAnswer { it.arguments[0] }
+
+        val response = packagesService.updatePackage(
+            7L, "owner@test.com",
+            UpdatePackageOfferedRequest(status = PackageOfferedStatus.INACTIVE),
+        )
+
+        assertEquals(PackageOfferedStatus.INACTIVE, response.status)
+        assertFalse(response.isCurrentlyActive)
+    }
+
+    @Test
+    fun `updatePackage sets a tag from null`() {
+        val pkg = packageFixture(tag = null)
+        `when`(packageRepository.findById(7L)).thenReturn(Optional.of(pkg))
+        `when`(packageRepository.save(any<PackageOffered>())).thenAnswer { it.arguments[0] }
+
+        val response = packagesService.updatePackage(
+            7L, "owner@test.com",
+            UpdatePackageOfferedRequest(tag = PackageOfferedTag.HOLIDAY_OFFER),
+        )
+
+        assertEquals(PackageOfferedTag.HOLIDAY_OFFER, response.tag)
+    }
+
+    @Test
+    fun `updatePackage leaves tag alone when payload tag is null`() {
+        // Documented v1 limitation: Kotlin/Jackson can't tell "absent" from
+        // "explicit null", so null = no-change. Untagging via PATCH is
+        // intentionally unsupported in v1; delete + recreate, or wait for
+        // a future DELETE /packages/{id}/tag endpoint.
+        val pkg = packageFixture(tag = PackageOfferedTag.WEEKEND_DEAL)
+        `when`(packageRepository.findById(7L)).thenReturn(Optional.of(pkg))
+        `when`(packageRepository.save(any<PackageOffered>())).thenAnswer { it.arguments[0] }
+
+        val response = packagesService.updatePackage(
+            7L, "owner@test.com",
+            UpdatePackageOfferedRequest(tag = null),
+        )
+
+        assertEquals(PackageOfferedTag.WEEKEND_DEAL, response.tag)
     }
 
     @Test

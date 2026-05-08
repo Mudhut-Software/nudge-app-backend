@@ -9,6 +9,7 @@ import com.mudhut.nudge.packagesoffered.models.CreatePackageOfferedRequest
 import com.mudhut.nudge.packagesoffered.models.PackageOfferedItemResponse
 import com.mudhut.nudge.packagesoffered.models.PackageOfferedResponse
 import com.mudhut.nudge.packagesoffered.models.ServiceSummary
+import com.mudhut.nudge.packagesoffered.models.UpdatePackageOfferedRequest
 import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedItemRepository
 import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedRepository
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
@@ -66,6 +67,39 @@ class PackagesOfferedService(
                 )
             )
         }
+
+        val saved = packageRepository.save(pkg)
+        return toResponse(saved)
+    }
+
+    @Transactional
+    fun updatePackage(
+        packageId: Long,
+        userEmail: String,
+        request: UpdatePackageOfferedRequest,
+    ): PackageOfferedResponse {
+        val pkg = packageRepository.findById(packageId)
+            .orElseThrow { BusinessNotFoundException("Package not found with id: $packageId") }
+        businessService.requireRole(pkg.business!!.id!!, userEmail, BusinessRole.MANAGER)
+
+        // Window cross-field check on the resulting state
+        val newValidFrom = request.validFrom ?: pkg.validFrom
+        val newValidUntil = request.validUntil ?: pkg.validUntil
+        if (newValidFrom != null && newValidUntil != null) {
+            require(!newValidFrom.isAfter(newValidUntil)) {
+                "validFrom must be on or before validUntil"
+            }
+        }
+
+        request.title?.let { pkg.title = it }
+        request.priceAmount?.let { pkg.priceAmount = it }
+        request.priceCurrency?.let { pkg.priceCurrency = it }
+        request.tag?.let { pkg.tag = it }   // null means no-change (see KDoc)
+        request.validFrom?.let { pkg.validFrom = it }
+        request.validUntil?.let { pkg.validUntil = it }
+        request.status?.let { pkg.status = it }
+
+        // serviceIds replace handled in Task 7
 
         val saved = packageRepository.save(pkg)
         return toResponse(saved)
