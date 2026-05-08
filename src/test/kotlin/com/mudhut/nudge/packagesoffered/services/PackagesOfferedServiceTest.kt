@@ -22,11 +22,13 @@ import org.mockito.Mockito.`when`
 import org.mockito.Mockito.any
 import org.mockito.Mockito.verify
 import org.mockito.junit.jupiter.MockitoExtension
+import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import java.math.BigDecimal
 import java.time.LocalDateTime
+import java.util.Optional
 
 @ExtendWith(MockitoExtension::class)
 class PackagesOfferedServiceTest {
@@ -212,6 +214,36 @@ class PackagesOfferedServiceTest {
         val page = packagesService.listPackages(1L, "owner@test.com", pageable, PackageOfferedStatus.ACTIVE)
 
         assertEquals(0, page.totalElements)
+    }
+
+    @Test
+    fun `getPackage returns the package when caller is a member`() {
+        val business = businessFixture()
+        val pkg = PackageOffered(
+            id = 7L,
+            business = business,
+            title = "Combo",
+            priceAmount = BigDecimal("200.00"),
+            priceCurrency = "UGX",
+            createdAt = LocalDateTime.now(),
+            updatedAt = LocalDateTime.now(),
+        )
+        `when`(packageRepository.findById(7L)).thenReturn(Optional.of(pkg))
+
+        val response = packagesService.getPackage(7L, "owner@test.com")
+
+        verify(businessService).requireRole(1L, "owner@test.com", BusinessRole.STAFF)
+        assertEquals(7L, response.id)
+        assertEquals("Combo", response.title)
+    }
+
+    @Test
+    fun `getPackage throws when the package does not exist`() {
+        `when`(packageRepository.findById(999L)).thenReturn(Optional.empty())
+
+        assertThrows(BusinessNotFoundException::class.java) {
+            packagesService.getPackage(999L, "owner@test.com")
+        }
     }
 
     @Test

@@ -71,6 +71,13 @@ class PackagesOfferedService(
         return toResponse(saved)
     }
 
+    fun getPackage(packageId: Long, userEmail: String): PackageOfferedResponse {
+        val pkg = packageRepository.findById(packageId)
+            .orElseThrow { BusinessNotFoundException("Package not found with id: $packageId") }
+        businessService.requireRole(pkg.business!!.id!!, userEmail, BusinessRole.STAFF)
+        return toResponse(pkg)
+    }
+
     fun listPackages(
         businessId: Long,
         userEmail: String,
