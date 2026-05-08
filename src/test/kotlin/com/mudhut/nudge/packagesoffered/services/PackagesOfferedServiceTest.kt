@@ -353,6 +353,26 @@ class PackagesOfferedServiceTest {
     }
 
     @Test
+    fun `deletePackage hard-deletes the package`() {
+        val pkg = packageFixture()
+        `when`(packageRepository.findById(7L)).thenReturn(Optional.of(pkg))
+
+        packagesService.deletePackage(7L, "owner@test.com")
+
+        verify(businessService).requireRole(1L, "owner@test.com", BusinessRole.MANAGER)
+        verify(packageRepository).delete(pkg)
+    }
+
+    @Test
+    fun `deletePackage throws when not found`() {
+        `when`(packageRepository.findById(999L)).thenReturn(Optional.empty())
+
+        assertThrows(BusinessNotFoundException::class.java) {
+            packagesService.deletePackage(999L, "owner@test.com")
+        }
+    }
+
+    @Test
     fun `getPackage returns the package when caller is a member`() {
         val business = businessFixture()
         val pkg = PackageOffered(

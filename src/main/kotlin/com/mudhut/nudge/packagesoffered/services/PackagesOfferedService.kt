@@ -124,6 +124,14 @@ class PackagesOfferedService(
         return toResponse(saved)
     }
 
+    @Transactional
+    fun deletePackage(packageId: Long, userEmail: String) {
+        val pkg = packageRepository.findById(packageId)
+            .orElseThrow { BusinessNotFoundException("Package not found with id: $packageId") }
+        businessService.requireRole(pkg.business!!.id!!, userEmail, BusinessRole.MANAGER)
+        packageRepository.delete(pkg)
+    }
+
     fun getPackage(packageId: Long, userEmail: String): PackageOfferedResponse {
         val pkg = packageRepository.findById(packageId)
             .orElseThrow { BusinessNotFoundException("Package not found with id: $packageId") }
