@@ -12,6 +12,7 @@ import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedItemRepositor
 import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedRepository
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -110,6 +111,7 @@ class PackagesOfferedServiceTest {
         assertEquals(1, response.items.size)
         assertEquals(10L, response.items[0].service.id)
         assertEquals(0, response.items[0].position)
+        assertEquals(ServiceOfferedStatus.ACTIVE, response.items[0].service.status)
     }
 
     @Test

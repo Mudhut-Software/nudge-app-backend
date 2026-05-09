@@ -227,6 +227,7 @@ class PackagesOfferedService(
                 url = s.coverImageUrl!!,
                 publicId = s.coverImagePublicId!!,
             ),
+            status = s.status,
         )
     }
 }
