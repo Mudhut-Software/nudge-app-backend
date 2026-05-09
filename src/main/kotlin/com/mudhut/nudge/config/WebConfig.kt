@@ -10,7 +10,7 @@ class WebConfig(
     @Value("\${cors.allowed-origins:http://localhost:3000}")
     private val allowedOrigins: String,
 
-    @Value("\${cors.allowed-methods:GET,POST,PUT,DELETE,OPTIONS}")
+    @Value("\${cors.allowed-methods:GET,POST,PUT,PATCH,DELETE,OPTIONS}")
     private val allowedMethods: String,
 
     @Value("\${cors.allowed-headers:Authorization,Content-Type,X-Requested-With,Accept}")
