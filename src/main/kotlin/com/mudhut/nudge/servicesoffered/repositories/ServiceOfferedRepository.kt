@@ -15,4 +15,19 @@ interface ServiceOfferedRepository : JpaRepository<ServiceOffered, Long> {
         status: ServiceOfferedStatus,
         pageable: Pageable
     ): Page<ServiceOffered>
+
+    fun findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(
+        businessId: Long,
+        status: ServiceOfferedStatus,
+    ): ServiceOffered?
+
+    fun countByBusinessIdAndStatus(
+        businessId: Long,
+        status: ServiceOfferedStatus,
+    ): Long
+
+    fun findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(
+        businessId: Long,
+        status: ServiceOfferedStatus,
+    ): List<ServiceOffered>
 }
