@@ -187,6 +187,17 @@ class GlobalExceptionHandler {
         )
     }
 
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException::class)
+    fun handleMissingParam(
+        ex: org.springframework.web.bind.MissingServletRequestParameterException,
+    ): ResponseEntity<ErrorResponse> {
+        logger.warn("Missing request parameter: {}", ex.parameterName)
+        return ResponseEntity(
+            ErrorResponse(ERROR_CODE_REQUEST, "Required parameter '${ex.parameterName}' is missing"),
+            HttpStatus.BAD_REQUEST,
+        )
+    }
+
     @ExceptionHandler(BusinessNotFoundException::class)
     fun handleBusinessNotFoundException(ex: BusinessNotFoundException): ResponseEntity<ErrorResponse> {
         logger.warn("Business not found: {}", ex.message)

@@ -64,6 +64,8 @@ class SecurityConfig(
                         HttpMethod.DELETE,
                         "/api/v1/categories/{id}"
                     ).hasAnyRole("SUPER_ADMIN", "ADMIN")
+                    .requestMatchers(HttpMethod.GET, "/api/v1/businesses/public/**").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/v1/categories", "/api/v1/categories/**").permitAll()
                     .anyRequest().authenticated()
             }
             .headers { headers ->

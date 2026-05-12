@@ -10,6 +10,7 @@ import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
 import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
 import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
+import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
@@ -20,13 +21,11 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.context.annotation.Import
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
-import org.springframework.http.HttpStatus
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
-import org.springframework.web.server.ResponseStatusException
 
 @WebMvcTest(PublicBusinessController::class)
 @Import(
@@ -134,7 +133,7 @@ class PublicBusinessControllerTest {
     @Test
     fun `GET businesses public detail returns 404 when service throws`() {
         whenever(publicBrowseService.detail(404L))
-            .thenThrow(ResponseStatusException(HttpStatus.NOT_FOUND, "Business not found"))
+            .thenThrow(BusinessNotFoundException("Business not found"))
 
         mockMvc.perform(get("/api/v1/businesses/public/404"))
             .andExpect(status().isNotFound)

@@ -22,7 +22,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
-import org.springframework.web.server.ResponseStatusException
+import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import java.math.BigDecimal
 import java.util.Optional
 
@@ -215,8 +215,7 @@ class PublicBrowseServiceTest {
     fun `detail throws 404 when business not found`() {
         whenever(businessRepository.findById(404)).thenReturn(Optional.empty())
 
-        val ex = assertThrows(ResponseStatusException::class.java) { sut.detail(404) }
-        assertEquals(404, ex.statusCode.value())
+        assertThrows(BusinessNotFoundException::class.java) { sut.detail(404) }
     }
 
     @Test
@@ -228,8 +227,7 @@ class PublicBrowseServiceTest {
         whenever(packageRepository.findTop20CurrentlyActiveByBusinessIdOrderByCreatedAtDesc(eq(50), any()))
             .thenReturn(emptyList())
 
-        val ex = assertThrows(ResponseStatusException::class.java) { sut.detail(50) }
-        assertEquals(404, ex.statusCode.value())
+        assertThrows(BusinessNotFoundException::class.java) { sut.detail(50) }
     }
 
     @Test

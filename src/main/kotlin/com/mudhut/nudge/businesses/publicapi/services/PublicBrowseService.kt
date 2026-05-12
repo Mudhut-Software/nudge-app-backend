@@ -12,11 +12,10 @@ import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedRepository
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
+import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
-import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
-import org.springframework.web.server.ResponseStatusException
 import java.time.LocalDate
 
 private const val LANE_SIZE = 10
@@ -53,7 +52,7 @@ class PublicBrowseService(
 
     fun detail(id: Long): PublicBusinessDetail {
         val biz = businessRepository.findById(id)
-            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "Business not found") }
+            .orElseThrow { BusinessNotFoundException("Business not found") }
         val today = LocalDate.now()
 
         val activeServices = serviceRepository
@@ -62,7 +61,7 @@ class PublicBrowseService(
             .findTop20CurrentlyActiveByBusinessIdOrderByCreatedAtDesc(biz.id!!, today)
 
         if (activeServices.isEmpty() && currentlyActivePackages.isEmpty()) {
-            throw ResponseStatusException(HttpStatus.NOT_FOUND, "Business not found")
+            throw BusinessNotFoundException("Business not found")
         }
 
         return PublicBusinessDetail(
