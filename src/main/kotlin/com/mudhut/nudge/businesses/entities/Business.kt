@@ -34,6 +34,12 @@ class Business(
 
     var logoUrl: String? = null,
 
+    @Column(name = "cover_image_url")
+    var coverImageUrl: String? = null,
+
+    @Column(name = "cover_image_public_id")
+    var coverImagePublicId: String? = null,
+
     var address: String? = null,
 
     var latitude: Double? = null,
