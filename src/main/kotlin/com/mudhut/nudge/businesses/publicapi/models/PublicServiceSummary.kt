@@ -12,4 +12,5 @@ data class PublicServiceSummary(
     val priceCurrency: String?,
     val priceUnit: String?,
     val coverImageUrl: String,
+    val galleryImageUrls: List<String>,
 )
