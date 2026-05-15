@@ -111,6 +111,9 @@ class PublicBrowseService(
         priceCurrency = s.priceCurrency,
         priceUnit = s.priceUnit,
         coverImageUrl = s.coverImageUrl!!,
+        galleryImageUrls = s.galleryImages
+            .sortedBy { it.position }
+            .mapNotNull { it.url },
     )
 
     private fun toPackageSummary(p: PackageOffered): PublicPackageSummary = PublicPackageSummary(
