@@ -198,6 +198,17 @@ class GlobalExceptionHandler {
         )
     }
 
+    @ExceptionHandler(InvalidStateTransitionException::class)
+    fun handleInvalidStateTransition(
+        ex: InvalidStateTransitionException,
+    ): ResponseEntity<ErrorResponse> {
+        logger.warn("Invalid request state transition: {} -> {}", ex.from, ex.to)
+        return ResponseEntity(
+            ErrorResponse("INVALID_TRANSITION", ex.message ?: "Invalid state transition"),
+            HttpStatus.CONFLICT,
+        )
+    }
+
     @ExceptionHandler(BusinessNotFoundException::class)
     fun handleBusinessNotFoundException(ex: BusinessNotFoundException): ResponseEntity<ErrorResponse> {
         logger.warn("Business not found: {}", ex.message)
