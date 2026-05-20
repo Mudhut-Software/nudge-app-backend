@@ -198,6 +198,79 @@ class ServiceRequestService(
         return page.map { toResponse(it) }
     }
 
+    @Transactional
+    fun duplicate(email: String, id: Long): com.mudhut.nudge.servicerequests.models.DuplicateResponse {
+        val customer = requireUser(email)
+        val original = requireOwned(id, customer)
+        val business = original.business!!
+
+        val serviceIds = original.items.mapNotNull { it.service?.id }
+        val packageIds = original.items.mapNotNull { it.packageOffered?.id }
+        val services = if (serviceIds.isNotEmpty()) serviceRepo.findAllById(serviceIds) else emptyList()
+        val packages = if (packageIds.isNotEmpty()) packageRepo.findAllById(packageIds) else emptyList()
+
+        val today = LocalDate.now()
+        val availableServiceIds = services
+            .filter { it.business?.id == business.id && it.status == ServiceOfferedStatus.ACTIVE }
+            .mapNotNull { it.id }
+            .toSet()
+        val availablePackageIds = packages
+            .filter {
+                it.business?.id == business.id &&
+                    it.status == PackageOfferedStatus.ACTIVE &&
+                    (it.validFrom == null || !today.isBefore(it.validFrom)) &&
+                    (it.validUntil == null || !today.isAfter(it.validUntil))
+            }
+            .mapNotNull { it.id }
+            .toSet()
+
+        val unavailableTitles = original.items
+            .filter { item ->
+                val sid = item.service?.id
+                val pid = item.packageOffered?.id
+                (sid != null && sid !in availableServiceIds) ||
+                    (pid != null && pid !in availablePackageIds)
+            }
+            .map { item ->
+                item.snapshotTitle
+                    ?: item.service?.title
+                    ?: item.packageOffered?.title
+                    ?: "(unknown)"
+            }
+
+        val draft = ServiceRequest(
+            customer = customer,
+            business = business,
+            status = ServiceRequestStatus.DRAFT,
+        )
+
+        val servicesById = services.associateBy { it.id }
+        val packagesById = packages.associateBy { it.id }
+
+        original.items.forEachIndexed { _, item ->
+            val sid = item.service?.id
+            val pid = item.packageOffered?.id
+            val survivingService = sid?.let { if (it in availableServiceIds) servicesById[it] else null }
+            val survivingPackage = pid?.let { if (it in availablePackageIds) packagesById[it] else null }
+            if (survivingService != null || survivingPackage != null) {
+                draft.items.add(
+                    ServiceRequestItem(
+                        request = draft,
+                        service = survivingService,
+                        packageOffered = survivingPackage,
+                        position = draft.items.size,
+                    )
+                )
+            }
+        }
+
+        val saved = repo.save(draft)
+        return com.mudhut.nudge.servicerequests.models.DuplicateResponse(
+            request = toResponse(saved),
+            unavailableItems = unavailableTitles,
+        )
+    }
+
     private fun requireUser(email: String): User =
         userRepo.findByEmail(email).orElseThrow { EntityNotFoundException("User not found") }
 
