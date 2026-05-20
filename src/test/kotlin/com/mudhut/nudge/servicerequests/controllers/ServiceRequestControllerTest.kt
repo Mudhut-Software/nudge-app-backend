@@ -184,4 +184,27 @@ class ServiceRequestControllerTest {
         mockMvc.perform(delete("/api/v1/requests/1"))
             .andExpect(status().isNoContent)
     }
+
+    @Test
+    fun `POST duplicate returns 401 anonymous`() {
+        mockMvc.perform(post("/api/v1/requests/1/duplicate"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `POST duplicate returns 201 with the new DRAFT and unavailable list`() {
+        whenever(service.duplicate(eq("alice@example.com"), eq(1L)))
+            .thenReturn(
+                com.mudhut.nudge.servicerequests.models.DuplicateResponse(
+                    request = sampleResponse(id = 99L),
+                    unavailableItems = listOf("Sofa Cleaning"),
+                )
+            )
+        mockMvc.perform(post("/api/v1/requests/1/duplicate"))
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.request.id").value(99))
+            .andExpect(jsonPath("$.request.status").value("DRAFT"))
+            .andExpect(jsonPath("$.unavailableItems[0]").value("Sofa Cleaning"))
+    }
 }
