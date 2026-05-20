@@ -109,3 +109,8 @@ data class AttachmentResponse(
 )
 
 data class UnreadCountResponse(val count: Long)
+
+data class DuplicateResponse(
+    val request: ServiceRequestResponse,
+    val unavailableItems: List<String>,
+)
