@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
@@ -465,6 +466,124 @@ class ServiceRequestServiceTest {
 
         assertThrows(BusinessNotFoundException::class.java) {
             sut.get(alice.email!!, 1L)
+        }
+    }
+
+    // --- duplicate ---
+
+    @Test
+    fun `duplicate clones items that are still ACTIVE`() {
+        val alice = user()
+        val biz = business()
+        val svcActive = service(id = 100L, biz = biz)
+        val original = ServiceRequest(
+            id = 1L,
+            customer = alice,
+            business = biz,
+            status = ServiceRequestStatus.COMPLETED,
+        )
+        original.items.add(
+            com.mudhut.nudge.servicerequests.entities.ServiceRequestItem(
+                request = original,
+                service = svcActive,
+                position = 0,
+                snapshotTitle = "Deep Clean",
+            )
+        )
+
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(original))
+        whenever(serviceRepo.findAllById(listOf(100L))).thenReturn(listOf(svcActive))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.duplicate(alice.email!!, 1L)
+
+        assertEquals(ServiceRequestStatus.DRAFT, response.request.status)
+        assertEquals(1, response.request.items.size)
+        assertEquals(100L, response.request.items[0].serviceId)
+        assertTrue(response.unavailableItems.isEmpty())
+        assertNull(response.request.requestedDate)
+        assertNull(response.request.serviceLocation)
+        assertNull(response.request.note)
+        assertTrue(response.request.attachments.isEmpty())
+    }
+
+    @Test
+    fun `duplicate skips inactive services and names them in unavailableItems`() {
+        val alice = user()
+        val biz = business()
+        val svcActive = service(id = 100L, biz = biz)
+        val svcInactive = service(id = 101L, biz = biz, status = ServiceOfferedStatus.INACTIVE)
+        val original = ServiceRequest(
+            id = 1L,
+            customer = alice,
+            business = biz,
+            status = ServiceRequestStatus.COMPLETED,
+        )
+        original.items.addAll(
+            listOf(
+                com.mudhut.nudge.servicerequests.entities.ServiceRequestItem(
+                    request = original, service = svcActive, position = 0,
+                    snapshotTitle = "Deep Clean",
+                ),
+                com.mudhut.nudge.servicerequests.entities.ServiceRequestItem(
+                    request = original, service = svcInactive, position = 1,
+                    snapshotTitle = "Carpet Cleaning",
+                ),
+            )
+        )
+
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(original))
+        whenever(serviceRepo.findAllById(listOf(100L, 101L))).thenReturn(listOf(svcActive, svcInactive))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.duplicate(alice.email!!, 1L)
+
+        assertEquals(1, response.request.items.size)
+        assertEquals(100L, response.request.items[0].serviceId)
+        assertEquals(listOf("Carpet Cleaning"), response.unavailableItems)
+    }
+
+    @Test
+    fun `duplicate returns a 0-item DRAFT when every original item is gone`() {
+        val alice = user()
+        val biz = business()
+        val svcInactive = service(id = 200L, biz = biz, status = ServiceOfferedStatus.INACTIVE)
+        val original = ServiceRequest(
+            id = 1L,
+            customer = alice,
+            business = biz,
+            status = ServiceRequestStatus.COMPLETED,
+        )
+        original.items.add(
+            com.mudhut.nudge.servicerequests.entities.ServiceRequestItem(
+                request = original, service = svcInactive, position = 0,
+                snapshotTitle = "Carpet Cleaning",
+            )
+        )
+
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(original))
+        whenever(serviceRepo.findAllById(listOf(200L))).thenReturn(listOf(svcInactive))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.duplicate(alice.email!!, 1L)
+
+        assertEquals(0, response.request.items.size)
+        assertEquals(listOf("Carpet Cleaning"), response.unavailableItems)
+    }
+
+    @Test
+    fun `duplicate of another customer's request throws 404`() {
+        val alice = user(id = 1L, email = "alice@example.com")
+        val bob = user(id = 2L, email = "bob@example.com")
+        val req = ServiceRequest(id = 1L, customer = bob, business = business(), status = ServiceRequestStatus.COMPLETED)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+
+        assertThrows(BusinessNotFoundException::class.java) {
+            sut.duplicate(alice.email!!, 1L)
         }
     }
 }

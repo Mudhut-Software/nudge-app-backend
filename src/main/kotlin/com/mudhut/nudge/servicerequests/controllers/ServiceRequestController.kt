@@ -88,4 +88,13 @@ class ServiceRequestController(
         service.delete(authentication.name, id)
         return ResponseEntity.noContent().build()
     }
+
+    @PostMapping("/{id}/duplicate")
+    fun duplicate(
+        @PathVariable id: Long,
+        authentication: Authentication,
+    ): ResponseEntity<com.mudhut.nudge.servicerequests.models.DuplicateResponse> {
+        val response = service.duplicate(authentication.name, id)
+        return ResponseEntity.status(HttpStatus.CREATED).body(response)
+    }
 }
