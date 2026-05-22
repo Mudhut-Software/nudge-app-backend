@@ -32,6 +32,19 @@ import java.math.BigDecimal
 private const val DEMO_PASSWORD = "password123"
 private const val DEMO_CURRENCY = "UGX"
 
+// Unsplash placeholder covers per business category. ServiceOffered's
+// cover_image_url + cover_image_public_id columns are NOT NULL, so the
+// seeder always supplies a category-themed image so the demo looks decent.
+private val COVER_BY_CATEGORY: Map<String, Pair<String, String>> = mapOf(
+    "Cleaning" to ("https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=800&q=80" to "seed/cleaning"),
+    "Catering" to ("https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=800&q=80" to "seed/catering"),
+    "Beauty & Wellness" to ("https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800&q=80" to "seed/beauty"),
+    "Events & Photography" to ("https://images.unsplash.com/photo-1452587925148-ce544e77e70d?w=800&q=80" to "seed/photography"),
+    "Pet Care" to ("https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=800&q=80" to "seed/petcare"),
+)
+private val DEFAULT_COVER =
+    "https://images.unsplash.com/photo-1556745757-8d76bdb6984b?w=800&q=80" to "seed/default"
+
 /**
  * Idempotent dev-only seeder. Runs on application start when the `dev` profile is active
  * AND no categories exist yet. Populates a small but diverse demo dataset:
@@ -239,14 +252,15 @@ class DevDataSeeder(
                 )
             )
 
+            val (coverUrl, coverPublicId) = COVER_BY_CATEGORY[spec.category] ?: DEFAULT_COVER
             val servicesByTitle = spec.services.associateBy({ it.title }) { svc ->
                 serviceRepo.save(
                     ServiceOffered(
                         business = savedBiz,
                         title = svc.title,
                         description = svc.description,
-                        coverImageUrl = null,
-                        coverImagePublicId = null,
+                        coverImageUrl = coverUrl,
+                        coverImagePublicId = coverPublicId,
                         priceMode = svc.priceMode,
                         priceAmount = svc.priceAmount,
                         priceCurrency = if (svc.priceMode == PriceMode.QUOTE) null else DEMO_CURRENCY,
