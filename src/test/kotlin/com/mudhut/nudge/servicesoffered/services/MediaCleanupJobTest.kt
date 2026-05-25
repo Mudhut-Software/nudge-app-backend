@@ -11,6 +11,7 @@ import org.mockito.Mock
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
@@ -53,8 +54,9 @@ class MediaCleanupJobTest {
     fun `drain bumps attempts and stays PENDING on a transient failure`() {
         val row = pending(1L, "nudge/images/a", attempts = 0)
         whenever(pendingRepository.findAllByStatus(PendingMediaDeletion.Status.PENDING)).thenReturn(listOf(row))
-        whenever(mediaService.destroy(eq("nudge/images/a")))
-            .thenThrow(MediaDeletionException("transient: connection refused"))
+        whenever(pendingRepository.save(any<PendingMediaDeletion>())).thenAnswer { it.arguments[0] }
+        doThrow(MediaDeletionException("transient: connection refused"))
+            .whenever(mediaService).destroy(eq("nudge/images/a"))
 
         job.drain()
 
@@ -70,8 +72,9 @@ class MediaCleanupJobTest {
     fun `drain parks the row as FAILED after 5 attempts`() {
         val row = pending(1L, "nudge/images/a", attempts = 4)
         whenever(pendingRepository.findAllByStatus(PendingMediaDeletion.Status.PENDING)).thenReturn(listOf(row))
-        whenever(mediaService.destroy(eq("nudge/images/a")))
-            .thenThrow(MediaDeletionException("still failing"))
+        whenever(pendingRepository.save(any<PendingMediaDeletion>())).thenAnswer { it.arguments[0] }
+        doThrow(MediaDeletionException("still failing"))
+            .whenever(mediaService).destroy(eq("nudge/images/a"))
 
         job.drain()
 
@@ -95,8 +98,8 @@ class MediaCleanupJobTest {
     fun `drain parks the row immediately on IllegalArgumentException without consuming retries`() {
         val row = pending(1L, "nudge/badprefix/x", attempts = 0)
         whenever(pendingRepository.findAllByStatus(PendingMediaDeletion.Status.PENDING)).thenReturn(listOf(row))
-        whenever(mediaService.destroy(eq("nudge/badprefix/x")))
-            .thenThrow(IllegalArgumentException("Refusing to delete publicId 'nudge/badprefix/x'"))
+        doThrow(IllegalArgumentException("Refusing to delete publicId 'nudge/badprefix/x'"))
+            .whenever(mediaService).destroy(eq("nudge/badprefix/x"))
 
         job.drain()
 
@@ -114,8 +117,8 @@ class MediaCleanupJobTest {
         val good = pending(2L, "nudge/images/good")
         whenever(pendingRepository.findAllByStatus(PendingMediaDeletion.Status.PENDING))
             .thenReturn(listOf(poison, good))
-        whenever(mediaService.destroy(eq("nudge/badprefix/x")))
-            .thenThrow(IllegalArgumentException("bad prefix"))
+        doThrow(IllegalArgumentException("bad prefix"))
+            .whenever(mediaService).destroy(eq("nudge/badprefix/x"))
         // mediaService.destroy("nudge/images/good") returns normally (default Mockito void mock).
 
         job.drain()
