@@ -11,13 +11,13 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
-import org.mockito.ArgumentCaptor
 import org.mockito.Mock
-import org.mockito.Mockito.never
-import org.mockito.Mockito.verify
-import org.mockito.Mockito.`when`
 import org.mockito.junit.jupiter.MockitoExtension
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import org.springframework.dao.DataIntegrityViolationException
 import java.time.Instant
 
@@ -37,14 +37,15 @@ class AccessTokenBlocklistServiceTest {
     fun `revoke saves a row when the token is not yet expired`() {
         val expiresAt = Instant.now().plusSeconds(60)
         val userRef = User(id = 7L)
-        `when`(repo.existsByJti("jti-1")).thenReturn(false)
-        `when`(userRepository.getReferenceById(7L)).thenReturn(userRef)
+        whenever(repo.existsByJti("jti-1")).thenReturn(false)
+        whenever(userRepository.getReferenceById(7L)).thenReturn(userRef)
+        whenever(repo.save(any<RevokedAccessToken>())).thenAnswer { it.arguments[0] }
 
         service.revoke("jti-1", userId = 7L, expiresAt = expiresAt)
 
-        val captor = ArgumentCaptor.forClass(RevokedAccessToken::class.java)
+        val captor = argumentCaptor<RevokedAccessToken>()
         verify(repo).save(captor.capture())
-        val saved = captor.value
+        val saved = captor.firstValue
         assertEquals("jti-1", saved.jti)
         assertEquals(7L, saved.user?.id)
         assertEquals(expiresAt, saved.expiresAt)
@@ -63,7 +64,7 @@ class AccessTokenBlocklistServiceTest {
     @Test
     fun `revoke is idempotent when the jti is already blocklisted`() {
         val expiresAt = Instant.now().plusSeconds(60)
-        `when`(repo.existsByJti("jti-3")).thenReturn(true)
+        whenever(repo.existsByJti("jti-3")).thenReturn(true)
 
         service.revoke("jti-3", userId = 7L, expiresAt = expiresAt)
 
@@ -74,9 +75,9 @@ class AccessTokenBlocklistServiceTest {
     fun `revoke swallows DataIntegrityViolationException from a concurrent insert`() {
         val expiresAt = Instant.now().plusSeconds(60)
         val userRef = User(id = 7L)
-        `when`(repo.existsByJti("jti-race")).thenReturn(false)
-        `when`(userRepository.getReferenceById(7L)).thenReturn(userRef)
-        `when`(repo.save(any<RevokedAccessToken>()))
+        whenever(repo.existsByJti("jti-race")).thenReturn(false)
+        whenever(userRepository.getReferenceById(7L)).thenReturn(userRef)
+        whenever(repo.save(any<RevokedAccessToken>()))
             .thenThrow(DataIntegrityViolationException("uq_revoked_access_tokens_jti"))
 
         // Should not throw — concurrent insert is the desired end state.
@@ -85,19 +86,19 @@ class AccessTokenBlocklistServiceTest {
 
     @Test
     fun `isRevoked returns true when the jti is blocklisted`() {
-        `when`(repo.existsByJti("jti-4")).thenReturn(true)
+        whenever(repo.existsByJti("jti-4")).thenReturn(true)
         assertTrue(service.isRevoked("jti-4"))
     }
 
     @Test
     fun `isRevoked returns false when the jti is not blocklisted`() {
-        `when`(repo.existsByJti("jti-5")).thenReturn(false)
+        whenever(repo.existsByJti("jti-5")).thenReturn(false)
         assertFalse(service.isRevoked("jti-5"))
     }
 
     @Test
     fun `purgeExpired delegates to deleteAllByExpiresAtBefore with now`() {
-        `when`(repo.deleteAllByExpiresAtBefore(any())).thenReturn(3)
+        whenever(repo.deleteAllByExpiresAtBefore(any())).thenReturn(3)
         val deleted = service.purgeExpired()
         assertEquals(3, deleted)
         verify(repo).deleteAllByExpiresAtBefore(any())
