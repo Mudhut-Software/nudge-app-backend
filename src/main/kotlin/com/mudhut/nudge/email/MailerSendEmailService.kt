@@ -6,17 +6,31 @@ import com.mailersend.sdk.exceptions.MailerSendException
 import com.mudhut.nudge.config.EnvConfig
 import org.springframework.stereotype.Service
 
+private const val FROM_NAME = "name"
+private const val FROM_ADDRESS = "mudhutsoftware@gmail.com"
+
 @Service
 class MailerSendEmailService(
     private val envConfig: EnvConfig
 ) : IEmailService {
 
     override fun sendEmail(to: String, subject: String, content: String) {
+        send(to, subject) { setPlain(content) }
+    }
+
+    override fun sendHtmlEmail(to: String, subject: String, htmlContent: String, textContent: String) {
+        send(to, subject) {
+            setHtml(htmlContent)
+            setPlain(textContent)
+        }
+    }
+
+    private inline fun send(to: String, subject: String, configure: Email.() -> Unit) {
         val email = Email().apply {
-            setFrom("name", "mudhutsoftware@gmail.com")
-            addRecipient("name", to)
+            setFrom(FROM_NAME, FROM_ADDRESS)
+            addRecipient(FROM_NAME, to)
             setSubject(subject)
-            setPlain(content)
+            configure()
         }
 
         val ms = MailerSend()
