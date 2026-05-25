@@ -1,6 +1,7 @@
 package com.mudhut.nudge.businesses.publicapi.services
 
 import com.mudhut.nudge.businesses.entities.Business
+import com.mudhut.nudge.businesses.publicapi.models.BusinessSort
 import com.mudhut.nudge.businesses.publicapi.models.ExploreLane
 import com.mudhut.nudge.businesses.publicapi.models.PublicBusinessDetail
 import com.mudhut.nudge.businesses.publicapi.models.PublicBusinessSummary
@@ -14,6 +15,7 @@ import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import org.springframework.data.domain.Page
+import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import java.time.LocalDate
@@ -44,10 +46,43 @@ class PublicBrowseService(
             .sortedBy { it.categoryName }
     }
 
-    fun byCategory(categoryId: Long, pageable: Pageable): Page<PublicBusinessSummary> {
-        return businessRepository
-            .findPublicByCategory(categoryId, pageable)
+    fun list(
+        categoryId: Long?,
+        sort: BusinessSort,
+        lat: Double?,
+        lng: Double?,
+        pageable: Pageable,
+    ): Page<PublicBusinessSummary> = when (sort) {
+        BusinessSort.NEWEST -> businessRepository
+            .findPublicQualifiedNewest(categoryId, pageable)
             .map { toSummary(it) }
+
+        BusinessSort.POPULAR -> businessRepository
+            .findPublicQualifiedPopular(categoryId, pageable)
+            .map { toSummary(it) }
+
+        BusinessSort.NEAREST -> nearestPage(categoryId, lat, lng, pageable)
+    }
+
+    private fun nearestPage(
+        categoryId: Long?,
+        lat: Double?,
+        lng: Double?,
+        pageable: Pageable,
+    ): Page<PublicBusinessSummary> {
+        require(lat != null && lng != null) { "sort=nearest requires lat and lng" }
+
+        val page = businessRepository.findPublicQualifiedNearest(categoryId, lat, lng, pageable)
+        if (page.isEmpty) return PageImpl(emptyList(), pageable, page.totalElements)
+
+        val distancesById = page.content.associate { it.id to it.distanceKm }
+        val byId = businessRepository.findAllById(distancesById.keys).associateBy { it.id!! }
+
+        val summaries = page.content.mapNotNull { row ->
+            byId[row.id]?.let { biz -> toSummary(biz, distancesById[row.id]) }
+        }
+
+        return PageImpl(summaries, pageable, page.totalElements)
     }
 
     fun detail(id: Long): PublicBusinessDetail {
@@ -81,7 +116,7 @@ class PublicBrowseService(
         )
     }
 
-    private fun toSummary(biz: Business): PublicBusinessSummary {
+    private fun toSummary(biz: Business, distanceKm: Double? = null): PublicBusinessSummary {
         val firstActive = serviceRepository
             .findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(biz.id!!, ServiceOfferedStatus.ACTIVE)
         return PublicBusinessSummary(
@@ -95,6 +130,7 @@ class PublicBrowseService(
                 .countByBusinessIdAndStatus(biz.id!!, ServiceOfferedStatus.ACTIVE).toInt(),
             packageCount = packageRepository
                 .countCurrentlyActiveByBusinessId(biz.id!!, LocalDate.now()).toInt(),
+            distanceKm = distanceKm,
         )
     }
 

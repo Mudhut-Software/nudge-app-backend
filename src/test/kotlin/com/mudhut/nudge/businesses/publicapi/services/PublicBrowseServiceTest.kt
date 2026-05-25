@@ -3,7 +3,9 @@ package com.mudhut.nudge.businesses.publicapi.services
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessCategory
 import com.mudhut.nudge.businesses.entities.BusinessStatus
+import com.mudhut.nudge.businesses.publicapi.models.BusinessSort
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
+import com.mudhut.nudge.businesses.repositories.BusinessWithDistance
 import com.mudhut.nudge.packagesoffered.entities.PackageOffered
 import com.mudhut.nudge.packagesoffered.entities.PackageOfferedItem
 import com.mudhut.nudge.packagesoffered.entities.PackageOfferedStatus
@@ -12,7 +14,9 @@ import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
+import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -22,7 +26,6 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
-import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import java.math.BigDecimal
 import java.util.Optional
 
@@ -83,6 +86,19 @@ class PublicBrowseServiceTest {
         priceUnit = null,
         status = status,
     )
+
+    private fun businessWithDistance(id: Long, distanceKm: Double): BusinessWithDistance =
+        object : BusinessWithDistance {
+            override val id = id
+            override val distanceKm = distanceKm
+        }
+
+    private fun stubSummaryHelpers(bizId: Long, coverFromService: String? = null) {
+        whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(bizId), eq(ServiceOfferedStatus.ACTIVE)))
+            .thenReturn(coverFromService?.let { service(id = bizId * 10, biz = business(bizId), coverUrl = it) })
+        whenever(serviceRepository.countByBusinessIdAndStatus(eq(bizId), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
+        whenever(packageRepository.countCurrentlyActiveByBusinessId(eq(bizId), any())).thenReturn(0L)
+    }
 
     @Test
     fun `lanes groups qualified businesses by category and caps at 10 per lane`() {
@@ -145,20 +161,72 @@ class PublicBrowseServiceTest {
     }
 
     @Test
-    fun `byCategory delegates to findPublicByCategory`() {
+    fun `list with sort=NEWEST and category delegates to findPublicQualifiedNewest`() {
         val biz = business(id = 7, categoryId = 1, categoryName = "Catering")
-        whenever(businessRepository.findPublicByCategory(eq(1L), any())).thenReturn(PageImpl(listOf(biz)))
-        whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(7), any()))
-            .thenReturn(service(id = 70, biz = biz))
-        whenever(serviceRepository.countByBusinessIdAndStatus(eq(7), any())).thenReturn(2L)
-        whenever(packageRepository.countCurrentlyActiveByBusinessId(eq(7), any())).thenReturn(1L)
+        whenever(businessRepository.findPublicQualifiedNewest(eq(1L), any())).thenReturn(PageImpl(listOf(biz)))
+        stubSummaryHelpers(7)
 
-        val page = sut.byCategory(1L, Pageable.ofSize(20))
+        val page = sut.list(1L, BusinessSort.NEWEST, null, null, Pageable.ofSize(20))
 
         assertEquals(1, page.totalElements)
         assertEquals(7L, page.content.single().id)
-        assertEquals(2, page.content.single().serviceCount)
-        assertEquals(1, page.content.single().packageCount)
+        assertNull(page.content.single().distanceKm)
+    }
+
+    @Test
+    fun `list with sort=POPULAR delegates to findPublicQualifiedPopular`() {
+        val biz = business(id = 8)
+        whenever(businessRepository.findPublicQualifiedPopular(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
+        stubSummaryHelpers(8)
+
+        val page = sut.list(null, BusinessSort.POPULAR, null, null, Pageable.ofSize(20))
+
+        assertEquals(8L, page.content.single().id)
+        assertNull(page.content.single().distanceKm)
+    }
+
+    @Test
+    fun `list with sort=NEAREST returns distanceKm and preserves DB ordering`() {
+        val far = business(id = 20)
+        val near = business(id = 10)
+        whenever(businessRepository.findPublicQualifiedNearest(eq(null), eq(0.0), eq(0.0), any()))
+            .thenReturn(
+                PageImpl(
+                    listOf(
+                        businessWithDistance(10L, 1.5),
+                        businessWithDistance(20L, 9.8),
+                    )
+                )
+            )
+        whenever(businessRepository.findAllById(setOf(10L, 20L))).thenReturn(listOf(far, near))
+        stubSummaryHelpers(10)
+        stubSummaryHelpers(20)
+
+        val page = sut.list(null, BusinessSort.NEAREST, 0.0, 0.0, Pageable.ofSize(20))
+
+        assertEquals(listOf(10L, 20L), page.content.map { it.id })
+        assertEquals(1.5, page.content[0].distanceKm)
+        assertEquals(9.8, page.content[1].distanceKm)
+    }
+
+    @Test
+    fun `list with sort=NEAREST without lat or lng throws IllegalArgumentException`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.list(null, BusinessSort.NEAREST, null, null, Pageable.ofSize(20))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.list(null, BusinessSort.NEAREST, 0.0, null, Pageable.ofSize(20))
+        }
+    }
+
+    @Test
+    fun `list with sort=NEAREST returns empty page when no qualified businesses`() {
+        whenever(businessRepository.findPublicQualifiedNearest(eq(null), eq(0.0), eq(0.0), any()))
+            .thenReturn(PageImpl(emptyList()))
+
+        val page = sut.list(null, BusinessSort.NEAREST, 0.0, 0.0, Pageable.ofSize(20))
+
+        assertTrue(page.content.isEmpty())
     }
 
     @Test
