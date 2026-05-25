@@ -2,7 +2,6 @@ package com.mudhut.nudge.businesses.publicapi.controllers
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.mudhut.nudge.businesses.publicapi.models.BusinessSort
-import com.mudhut.nudge.businesses.publicapi.models.ExploreLane
 import com.mudhut.nudge.businesses.publicapi.models.PublicBusinessDetail
 import com.mudhut.nudge.businesses.publicapi.models.PublicBusinessSummary
 import com.mudhut.nudge.businesses.publicapi.services.PublicBrowseService
@@ -56,25 +55,6 @@ class PublicBusinessControllerTest {
         address = "Kampala", coverImageUrl = "x",
         serviceCount = 1, packageCount = 0, distanceKm = distanceKm,
     )
-
-    @Test
-    fun `GET lanes returns 200 anonymously`() {
-        whenever(publicBrowseService.lanes()).thenReturn(
-            listOf(
-                ExploreLane(
-                    categoryId = 1L,
-                    categoryName = "Catering",
-                    businesses = listOf(summary())
-                )
-            )
-        )
-
-        mockMvc.perform(get("/api/v1/businesses/public/explore/lanes"))
-            .andExpect(status().isOk)
-            .andExpect(jsonPath("$.length()").value(1))
-            .andExpect(jsonPath("$[0].categoryName").value("Catering"))
-            .andExpect(jsonPath("$[0].businesses[0].id").value(10))
-    }
 
     @Test
     fun `GET list defaults sort to POPULAR when omitted`() {

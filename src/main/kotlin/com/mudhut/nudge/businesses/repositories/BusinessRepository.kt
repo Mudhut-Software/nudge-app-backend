@@ -21,35 +21,6 @@ interface BusinessRepository : JpaRepository<Business, Long> {
         """
         SELECT b FROM Business b
         WHERE b.status = com.mudhut.nudge.businesses.entities.BusinessStatus.ACTIVE
-          AND b.category.id = :categoryId
-          AND EXISTS (
-            SELECT 1 FROM ServiceOffered s
-            WHERE s.business = b
-              AND s.status = com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus.ACTIVE
-          )
-        ORDER BY b.createdAt DESC
-        """
-    )
-    fun findPublicByCategory(@Param("categoryId") categoryId: Long, pageable: Pageable): Page<Business>
-
-    @Query(
-        """
-        SELECT b FROM Business b
-        WHERE b.status = com.mudhut.nudge.businesses.entities.BusinessStatus.ACTIVE
-          AND EXISTS (
-            SELECT 1 FROM ServiceOffered s
-            WHERE s.business = b
-              AND s.status = com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus.ACTIVE
-          )
-        ORDER BY b.createdAt DESC
-        """
-    )
-    fun findAllPublicQualified(): List<Business>
-
-    @Query(
-        """
-        SELECT b FROM Business b
-        WHERE b.status = com.mudhut.nudge.businesses.entities.BusinessStatus.ACTIVE
           AND (:categoryId IS NULL OR b.category.id = :categoryId)
           AND EXISTS (
             SELECT 1 FROM ServiceOffered s

@@ -2,7 +2,6 @@ package com.mudhut.nudge.businesses.publicapi.services
 
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.publicapi.models.BusinessSort
-import com.mudhut.nudge.businesses.publicapi.models.ExploreLane
 import com.mudhut.nudge.businesses.publicapi.models.PublicBusinessDetail
 import com.mudhut.nudge.businesses.publicapi.models.PublicBusinessSummary
 import com.mudhut.nudge.businesses.publicapi.models.PublicPackageSummary
@@ -20,31 +19,12 @@ import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import java.time.LocalDate
 
-private const val LANE_SIZE = 10
-
 @Service
 class PublicBrowseService(
     private val businessRepository: BusinessRepository,
     private val serviceRepository: ServiceOfferedRepository,
     private val packageRepository: PackageOfferedRepository,
 ) {
-
-    fun lanes(): List<ExploreLane> {
-        val qualified = businessRepository.findAllPublicQualified()
-        if (qualified.isEmpty()) return emptyList()
-
-        return qualified
-            .groupBy { it.category!!.id!! to it.category!!.name!! }
-            .map { (key, list) ->
-                val (categoryId, categoryName) = key
-                ExploreLane(
-                    categoryId = categoryId,
-                    categoryName = categoryName,
-                    businesses = list.take(LANE_SIZE).map { toSummary(it) },
-                )
-            }
-            .sortedBy { it.categoryName }
-    }
 
     fun list(
         categoryId: Long?,
