@@ -10,5 +10,8 @@ data class BusinessMemberResponse(
     val businessId: Long,
     val role: BusinessRole,
     val isActive: Boolean,
-    val joinedAt: LocalDateTime?
+    val joinedAt: LocalDateTime?,
+    val businessName: String = "",
+    val businessLogoUrl: String? = null,
+    val businessCategoryName: String? = null,
 )
