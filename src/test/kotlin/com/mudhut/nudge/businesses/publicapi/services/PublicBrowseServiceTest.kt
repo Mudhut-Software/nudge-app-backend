@@ -101,47 +101,16 @@ class PublicBrowseServiceTest {
     }
 
     @Test
-    fun `lanes groups qualified businesses by category and caps at 10 per lane`() {
-        val cateringBusinesses = (1L..12L).map { business(id = it, categoryId = 1, categoryName = "Catering") }
-        val pharmacy = business(id = 100, categoryId = 2, categoryName = "Pharmacy")
-
-        whenever(businessRepository.findAllPublicQualified()).thenReturn(cateringBusinesses + pharmacy)
-        whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(any(), eq(ServiceOfferedStatus.ACTIVE)))
-            .thenAnswer { service(id = 999, biz = cateringBusinesses[0]) }
-        whenever(serviceRepository.countByBusinessIdAndStatus(any(), eq(ServiceOfferedStatus.ACTIVE)))
-            .thenReturn(3L)
-        whenever(packageRepository.countCurrentlyActiveByBusinessId(any(), any())).thenReturn(0L)
-
-        val lanes = sut.lanes()
-
-        assertEquals(2, lanes.size)
-        val cateringLane = lanes.first { it.categoryName == "Catering" }
-        assertEquals(10, cateringLane.businesses.size)
-        val pharmacyLane = lanes.first { it.categoryName == "Pharmacy" }
-        assertEquals(1, pharmacyLane.businesses.size)
-    }
-
-    @Test
-    fun `lanes omits categories with zero qualified businesses`() {
-        whenever(businessRepository.findAllPublicQualified()).thenReturn(emptyList())
-
-        val lanes = sut.lanes()
-
-        assertTrue(lanes.isEmpty())
-    }
-
-    @Test
     fun `summary cover falls back to first active service when business cover is null`() {
         val biz = business(id = 5, coverImageUrl = null)
         val firstActiveService = service(id = 50, biz = biz, coverUrl = "https://cdn/svc-50.jpg")
-        whenever(businessRepository.findAllPublicQualified()).thenReturn(listOf(biz))
+        whenever(businessRepository.findPublicQualifiedNewest(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
         whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(firstActiveService)
         whenever(serviceRepository.countByBusinessIdAndStatus(eq(5), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
         whenever(packageRepository.countCurrentlyActiveByBusinessId(eq(5), any())).thenReturn(0L)
 
-        val lanes = sut.lanes()
-        val summary = lanes.single().businesses.single()
+        val summary = sut.list(null, BusinessSort.NEWEST, null, null, Pageable.ofSize(20)).content.single()
 
         assertEquals("https://cdn/svc-50.jpg", summary.coverImageUrl)
     }
@@ -149,13 +118,13 @@ class PublicBrowseServiceTest {
     @Test
     fun `summary cover prefers business coverImageUrl when set`() {
         val biz = business(id = 5, coverImageUrl = "https://cdn/biz-5.jpg")
-        whenever(businessRepository.findAllPublicQualified()).thenReturn(listOf(biz))
+        whenever(businessRepository.findPublicQualifiedNewest(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
         whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(service(id = 50, biz = biz, coverUrl = "https://cdn/svc-50.jpg"))
         whenever(serviceRepository.countByBusinessIdAndStatus(eq(5), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
         whenever(packageRepository.countCurrentlyActiveByBusinessId(eq(5), any())).thenReturn(0L)
 
-        val summary = sut.lanes().single().businesses.single()
+        val summary = sut.list(null, BusinessSort.NEWEST, null, null, Pageable.ofSize(20)).content.single()
 
         assertEquals("https://cdn/biz-5.jpg", summary.coverImageUrl)
     }

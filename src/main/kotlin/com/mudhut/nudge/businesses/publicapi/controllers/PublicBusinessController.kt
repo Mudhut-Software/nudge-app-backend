@@ -1,7 +1,6 @@
 package com.mudhut.nudge.businesses.publicapi.controllers
 
 import com.mudhut.nudge.businesses.publicapi.models.BusinessSort
-import com.mudhut.nudge.businesses.publicapi.models.ExploreLane
 import com.mudhut.nudge.businesses.publicapi.models.PublicBusinessDetail
 import com.mudhut.nudge.businesses.publicapi.models.PublicBusinessSummary
 import com.mudhut.nudge.businesses.publicapi.services.PublicBrowseService
@@ -20,9 +19,6 @@ import org.springframework.web.bind.annotation.RestController
 class PublicBusinessController(
     private val publicBrowseService: PublicBrowseService,
 ) {
-
-    @GetMapping("/explore/lanes")
-    fun lanes(): List<ExploreLane> = publicBrowseService.lanes()
 
     @GetMapping
     fun list(
