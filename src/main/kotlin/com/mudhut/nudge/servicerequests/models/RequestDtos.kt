@@ -44,6 +44,27 @@ data class RequestItemInput(
 
     @field:Positive
     val packageId: Long? = null,
+
+    @field:Valid
+    val addonInputs: List<ServiceRequestItemAddonInput> = emptyList(),
+)
+
+data class ServiceRequestItemAddonInput(
+    @field:Positive
+    val addonId: Long?,
+
+    @field:jakarta.validation.constraints.Min(0)
+    val quantity: Int = 1,
+)
+
+data class ServiceRequestItemAddonResponse(
+    val id: Long,
+    val addonId: Long?,
+    val title: String,
+    val priceDelta: java.math.BigDecimal?,
+    val priceUnit: String?,
+    val quantity: Int,
+    val position: Int,
 )
 
 data class AttachmentInput(
@@ -98,6 +119,7 @@ data class ServiceRequestItemResponse(
     val priceCurrency: String?,
     val coverImageUrl: String?,
     val position: Int,
+    val addons: List<ServiceRequestItemAddonResponse> = emptyList(),
 )
 
 data class AttachmentResponse(
