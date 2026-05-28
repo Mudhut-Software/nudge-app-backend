@@ -2,6 +2,7 @@ package com.mudhut.nudge.servicesoffered.services
 
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestItemAddonRepository
 import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
 import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
@@ -22,6 +23,7 @@ class ServiceAddonService(
     private val addonRepo: ServiceAddonRepository,
     private val serviceRepo: ServiceOfferedRepository,
     private val pendingMediaDeletionRepo: PendingMediaDeletionRepository,
+    private val requestItemAddonRepo: ServiceRequestItemAddonRepository,
     private val businessService: BusinessService,
 ) {
 
@@ -115,6 +117,7 @@ class ServiceAddonService(
         existing.coverImagePublicId?.takeIf { it.isNotBlank() }?.let {
             pendingMediaDeletionRepo.save(PendingMediaDeletion(publicId = it))
         }
+        requestItemAddonRepo.nullifyAddonReference(addonId)
         addonRepo.delete(existing)
     }
 

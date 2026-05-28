@@ -3,6 +3,7 @@ package com.mudhut.nudge.servicesoffered.services
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestItemAddonRepository
 import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
@@ -32,6 +33,7 @@ class ServiceAddonServiceTest {
     private val addonRepo: ServiceAddonRepository = mock()
     private val serviceRepo: ServiceOfferedRepository = mock()
     private val pendingMediaDeletionRepo: PendingMediaDeletionRepository = mock()
+    private val requestItemAddonRepo: ServiceRequestItemAddonRepository = mock()
     private val businessService: BusinessService = mock()
 
     private lateinit var sut: ServiceAddonService
@@ -51,7 +53,7 @@ class ServiceAddonServiceTest {
 
     @BeforeEach
     fun setUp() {
-        sut = ServiceAddonService(addonRepo, serviceRepo, pendingMediaDeletionRepo, businessService)
+        sut = ServiceAddonService(addonRepo, serviceRepo, pendingMediaDeletionRepo, requestItemAddonRepo, businessService)
         whenever(serviceRepo.findById(10L)).thenReturn(Optional.of(service))
         whenever(addonRepo.save(any())).thenAnswer {
             (it.arguments[0] as ServiceAddon).apply { if (id == null) id = 99L }
@@ -148,6 +150,18 @@ class ServiceAddonServiceTest {
 
         verify(pendingMediaDeletionRepo).save(any())
         verify(addonRepo).delete(existing)
+    }
+
+    @Test
+    fun `delete nullifies snapshot references before removing the addon`() {
+        val existing = ServiceAddon(id = 5L, service = service, title = "X", position = 0)
+        whenever(addonRepo.findById(5L)).thenReturn(Optional.of(existing))
+
+        sut.delete(10L, 5L, email)
+
+        val order = org.mockito.kotlin.inOrder(requestItemAddonRepo, addonRepo)
+        order.verify(requestItemAddonRepo).nullifyAddonReference(5L)
+        order.verify(addonRepo).delete(existing)
     }
 
     @Test
