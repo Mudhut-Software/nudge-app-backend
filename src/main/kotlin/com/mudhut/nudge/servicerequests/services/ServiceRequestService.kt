@@ -8,20 +8,26 @@ import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedRepository
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestAttachment
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemAddon
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.models.AttachmentResponse
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
 import com.mudhut.nudge.servicerequests.models.RequestItemInput
+import com.mudhut.nudge.servicerequests.models.ServiceRequestItemAddonResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestItemResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
 import com.mudhut.nudge.servicerequests.models.UpdateRequestPayload
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
+import com.mudhut.nudge.servicesoffered.entities.PriceMode
+import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
+import com.mudhut.nudge.servicesoffered.repositories.ServiceAddonRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.repositories.UserRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
+import com.mudhut.nudge.utils.exceptions.ServiceAddonNotFoundException
 import jakarta.persistence.EntityNotFoundException
 import jakarta.transaction.Transactional
 import org.springframework.data.domain.Page
@@ -39,6 +45,7 @@ class ServiceRequestService(
     private val businessRepo: BusinessRepository,
     private val serviceRepo: ServiceOfferedRepository,
     private val packageRepo: PackageOfferedRepository,
+    private val addonRepo: ServiceAddonRepository,
 ) {
 
     @Transactional
@@ -56,7 +63,7 @@ class ServiceRequestService(
             status = ServiceRequestStatus.DRAFT,
         )
 
-        attachItems(request, payload.items.map { Pair(it.serviceId, it.packageId) }, biz)
+        attachItems(request, payload.items, biz)
 
         val saved = repo.save(request)
         return toResponse(saved)
@@ -75,7 +82,7 @@ class ServiceRequestService(
             require(items.isNotEmpty()) { "items must not be empty" }
             items.forEach(::requireXorItem)
             request.items.clear()
-            attachItems(request, items.map { Pair(it.serviceId, it.packageId) }, request.business!!)
+            attachItems(request, items, request.business!!)
         }
         payload.requestedDate?.let { request.requestedDate = it }
         payload.serviceLocation?.let { request.serviceLocation = it }
@@ -132,6 +139,18 @@ class ServiceRequestService(
                 }
                 else -> error("Unreachable — item must reference a service or package")
             }
+
+            item.addons.forEach { snap ->
+                val live = snap.addon
+                if (live != null) {
+                    snap.snapshotTitle = live.title
+                    snap.snapshotPriceDelta = live.priceDelta
+                    snap.snapshotPriceUnit = live.priceUnit
+                }
+            }
+            // Defensive prune: any snapshot row that lost its live ref *and* has no snapshot title was
+            // orphaned in a delete race; drop it (orphanRemoval handles persistence).
+            item.addons.removeAll { it.addon == null && it.snapshotTitle == null }
         }
 
         request.status = ServiceRequestStatus.PENDING
@@ -293,11 +312,11 @@ class ServiceRequestService(
 
     private fun attachItems(
         request: ServiceRequest,
-        items: List<Pair<Long?, Long?>>,
+        items: List<RequestItemInput>,
         business: Business,
     ) {
-        val serviceIds = items.mapNotNull { it.first }
-        val packageIds = items.mapNotNull { it.second }
+        val serviceIds = items.mapNotNull { it.serviceId }
+        val packageIds = items.mapNotNull { it.packageId }
         val services = if (serviceIds.isNotEmpty()) serviceRepo.findAllById(serviceIds) else emptyList()
         val packages = if (packageIds.isNotEmpty()) packageRepo.findAllById(packageIds) else emptyList()
 
@@ -320,15 +339,56 @@ class ServiceRequestService(
         val byServiceId = services.associateBy { it.id }
         val byPackageId = packages.associateBy { it.id }
 
-        items.forEachIndexed { idx, (sid, pid) ->
-            request.items.add(
-                ServiceRequestItem(
-                    request = request,
-                    service = sid?.let { byServiceId[it] ?: error("Service $it not found") },
-                    packageOffered = pid?.let { byPackageId[it] ?: error("Package $it not found") },
-                    position = idx,
-                )
+        // Bulk-load addons referenced by any item:
+        val addonIds = items.flatMap { it.addonInputs.mapNotNull { ai -> ai.addonId } }.distinct()
+        val addonsById: Map<Long?, ServiceAddon> = if (addonIds.isNotEmpty()) {
+            val loaded = addonRepo.findAllById(addonIds)
+            val missing = addonIds - loaded.mapNotNull { it.id }.toSet()
+            if (missing.isNotEmpty()) {
+                throw ServiceAddonNotFoundException("Addon(s) not found: $missing")
+            }
+            loaded.associateBy { it.id }
+        } else emptyMap()
+
+        items.forEachIndexed { idx, input ->
+            val svc = input.serviceId?.let { byServiceId[it] ?: error("Service $it not found") }
+            val pkg = input.packageId?.let { byPackageId[it] ?: error("Package $it not found") }
+
+            if (input.addonInputs.isNotEmpty()) {
+                require(svc != null) { "Addons can only attach to service items, not packages" }
+                require(svc.priceMode != PriceMode.QUOTE) {
+                    "Addons are not allowed on QUOTE-mode services"
+                }
+            }
+
+            val item = ServiceRequestItem(
+                request = request,
+                service = svc,
+                packageOffered = pkg,
+                position = idx,
             )
+
+            input.addonInputs.forEachIndexed { aIdx, ai ->
+                val addonId = ai.addonId
+                    ?: throw ServiceAddonNotFoundException("addonId is required")
+                val ad = addonsById[addonId]
+                    ?: throw ServiceAddonNotFoundException("Addon $addonId not found")
+                require(ad.service?.id == svc!!.id) {
+                    "Addon ${ad.id} does not belong to service ${svc.id}"
+                }
+                val max = ad.maxQuantity ?: Int.MAX_VALUE
+                val clamped = ai.quantity.coerceIn(1, max)
+                item.addons.add(
+                    ServiceRequestItemAddon(
+                        item = item,
+                        addon = ad,
+                        quantity = clamped,
+                        position = aIdx,
+                    )
+                )
+            }
+
+            request.items.add(item)
         }
     }
 
@@ -362,6 +422,24 @@ class ServiceRequestService(
                         ?: item.packageOffered?.items?.firstOrNull()?.service?.coverImageUrl
                 }
 
+                val addons = item.addons.sortedBy { it.position }.map { a ->
+                    val aTitle = if (isDraft) (a.addon?.title ?: a.snapshotTitle ?: "(unknown)")
+                                 else (a.snapshotTitle ?: a.addon?.title ?: "(unknown)")
+                    val aPriceDelta = if (isDraft) (a.addon?.priceDelta ?: a.snapshotPriceDelta)
+                                      else (a.snapshotPriceDelta ?: a.addon?.priceDelta)
+                    val aPriceUnit = if (isDraft) (a.addon?.priceUnit ?: a.snapshotPriceUnit)
+                                     else (a.snapshotPriceUnit ?: a.addon?.priceUnit)
+                    ServiceRequestItemAddonResponse(
+                        id = a.id ?: 0L,
+                        addonId = a.addon?.id,
+                        title = aTitle,
+                        priceDelta = aPriceDelta,
+                        priceUnit = aPriceUnit,
+                        quantity = a.quantity,
+                        position = a.position,
+                    )
+                }
+
                 ServiceRequestItemResponse(
                     kind = kind,
                     serviceId = item.service?.id,
@@ -371,6 +449,7 @@ class ServiceRequestService(
                     priceCurrency = priceCurrency,
                     coverImageUrl = cover,
                     position = item.position,
+                    addons = addons,
                 )
             }
 
