@@ -227,6 +227,15 @@ class GlobalExceptionHandler {
         )
     }
 
+    @ExceptionHandler(ServiceAddonNotFoundException::class)
+    fun handleServiceAddonNotFoundException(ex: ServiceAddonNotFoundException): ResponseEntity<ErrorResponse> {
+        logger.warn("Service addon not found: {}", ex.message)
+        return ResponseEntity(
+            ErrorResponse(ERROR_CODE_NOT_FOUND, ex.message ?: "Service addon not found"),
+            HttpStatus.NOT_FOUND
+        )
+    }
+
     @ExceptionHandler(BusinessAccessDeniedException::class)
     fun handleBusinessAccessDeniedException(ex: BusinessAccessDeniedException): ResponseEntity<ErrorResponse> {
         logger.warn("Business access denied: {}", ex.message)

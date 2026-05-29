@@ -56,6 +56,15 @@ class ServiceOffered(
     @OrderBy("position ASC")
     var galleryImages: MutableList<ServiceOfferedImage> = mutableListOf(),
 
+    @OneToMany(
+        mappedBy = "service",
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true,
+        fetch = FetchType.LAZY
+    )
+    @OrderBy("position ASC")
+    var addons: MutableList<ServiceAddon> = mutableListOf(),
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     var createdAt: LocalDateTime? = null,
