@@ -49,8 +49,8 @@ private val DEFAULT_COVER =
  * Idempotent dev-only seeder. Runs on application start when the `dev` profile is active
  * AND no categories exist yet. Populates a small but diverse demo dataset:
  *   • 12 top-level service categories
- *   • Two users: a demo customer and a demo provider (all `password123`)
- *   • Five businesses across different categories, all owned by the demo provider
+ *   • A demo customer plus one distinct owner per business (all `password123`)
+ *   • Five businesses across different categories, each owned by its own provider
  *   • Each business has 3–4 ACTIVE services plus one ACTIVE package
  *
  * Skipped silently in other profiles or when data already exists, so re-running the app
@@ -79,11 +79,12 @@ class DevDataSeeder(
         log.info("DevDataSeeder: empty database — seeding demo data…")
 
         val categories = seedCategories()
-        val (customer, provider) = seedUsers()
-        seedBusinesses(provider, categories)
+        val customer = seedCustomer()
+        val owners = seedBusinesses(categories)
 
-        log.info("DevDataSeeder: done. Customer = {} / {}; Provider = {} / {}.",
-            customer.email, DEMO_PASSWORD, provider.email, DEMO_PASSWORD)
+        log.info("DevDataSeeder: done. Customer = {} / {}.", customer.email, DEMO_PASSWORD)
+        log.info("DevDataSeeder: {} business owners (all / {}): {}",
+            owners.size, DEMO_PASSWORD, owners.joinToString(", ") { it.email!! })
     }
 
     private fun seedCategories(): Map<String, BusinessCategory> {
@@ -97,7 +98,7 @@ class DevDataSeeder(
         return saved.associateBy { it.name!! }
     }
 
-    private fun seedUsers(): Pair<User, User> {
+    private fun seedCustomer(): User {
         val customer = userRepo.save(
             User(
                 username = "Demo Customer",
@@ -110,11 +111,17 @@ class DevDataSeeder(
                 isPhoneVerified = false,
             )
         )
-        val provider = userRepo.save(
+        log.info("DevDataSeeder: seeded demo customer.")
+        return customer
+    }
+
+    /** Creates the per-business owner user from the spec's owner fields. */
+    private fun seedOwner(spec: BusinessSpec): User =
+        userRepo.save(
             User(
-                username = "Demo Provider",
-                email = "provider@nudge.local",
-                phoneNumber = "+256700000002",
+                username = spec.ownerName,
+                email = spec.ownerEmail,
+                phoneNumber = spec.ownerPhone,
                 password = passwordEncoder.encode(DEMO_PASSWORD),
                 role = UserRole.BASIC_USER,
                 isActive = true,
@@ -122,15 +129,15 @@ class DevDataSeeder(
                 isPhoneVerified = false,
             )
         )
-        log.info("DevDataSeeder: seeded 2 users.")
-        return customer to provider
-    }
 
-    private fun seedBusinesses(provider: User, categories: Map<String, BusinessCategory>) {
+    private fun seedBusinesses(categories: Map<String, BusinessCategory>): List<User> {
         val specs: List<BusinessSpec> = listOf(
             BusinessSpec(
                 name = "SparkleClean Pro",
                 category = "Cleaning",
+                ownerName = "Sarah Nakato",
+                ownerEmail = "sarah@sparkleclean.local",
+                ownerPhone = "+256781000001",
                 description = "Trusted home and office cleaning teams across Kampala.",
                 address = "Plot 24, Kololo Hill Drive, Kampala",
                 latitude = 0.34780, longitude = 32.59010,
@@ -150,6 +157,9 @@ class DevDataSeeder(
             BusinessSpec(
                 name = "Kampala Catering Co.",
                 category = "Catering",
+                ownerName = "David Okello",
+                ownerEmail = "david@kampalacatering.local",
+                ownerPhone = "+256781000002",
                 description = "Boutique catering for weddings, corporate lunches, and birthdays.",
                 address = "Nakawa Business Park, Kampala",
                 latitude = 0.32700, longitude = 32.58000,
@@ -168,6 +178,9 @@ class DevDataSeeder(
             BusinessSpec(
                 name = "Acacia Glow Spa",
                 category = "Beauty & Wellness",
+                ownerName = "Grace Atim",
+                ownerEmail = "grace@acaciaglow.local",
+                ownerPhone = "+256781000003",
                 description = "Calm, plant-filled spa for facials, massage, and nail care.",
                 address = "Bugolobi Mall, Kampala",
                 latitude = 0.34900, longitude = 32.57500,
@@ -186,6 +199,9 @@ class DevDataSeeder(
             BusinessSpec(
                 name = "Highland Photo Studio",
                 category = "Events & Photography",
+                ownerName = "Brian Mugisha",
+                ownerEmail = "brian@highlandphoto.local",
+                ownerPhone = "+256781000004",
                 description = "Editorial-style photo + video for weddings and family portraits.",
                 address = "Kira Road, Kampala",
                 latitude = 0.36000, longitude = 32.61000,
@@ -204,6 +220,9 @@ class DevDataSeeder(
             BusinessSpec(
                 name = "PawPals Kampala",
                 category = "Pet Care",
+                ownerName = "Linda Auma",
+                ownerEmail = "linda@pawpals.local",
+                ownerPhone = "+256781000005",
                 description = "Daily walks, grooming, and at-home vet visits for your pets.",
                 address = "Mengo, Kampala",
                 latitude = 0.33500, longitude = 32.55000,
@@ -221,14 +240,18 @@ class DevDataSeeder(
             ),
         )
 
+        val owners = mutableListOf<User>()
         for (spec in specs) {
             val category = categories[spec.category]
                 ?: error("Seeder: category '${spec.category}' missing for business '${spec.name}'")
 
+            val owner = seedOwner(spec)
+            owners.add(owner)
+
             val biz = Business(
                 name = spec.name,
                 description = spec.description,
-                owner = provider,
+                owner = owner,
                 category = category,
                 email = spec.email,
                 address = spec.address,
@@ -245,7 +268,7 @@ class DevDataSeeder(
 
             businessMemberRepo.save(
                 BusinessMember(
-                    user = provider,
+                    user = owner,
                     business = savedBiz,
                     role = BusinessRole.OWNER,
                     isActive = true,
@@ -297,15 +320,19 @@ class DevDataSeeder(
                 packageRepo.save(saved)
             }
 
-            log.info("DevDataSeeder: seeded business '{}' with {} services and {} packages.",
-                spec.name, spec.services.size, spec.packages.size)
+            log.info("DevDataSeeder: seeded business '{}' (owner {}) with {} services and {} packages.",
+                spec.name, owner.email, spec.services.size, spec.packages.size)
         }
+        return owners
     }
 }
 
 private data class BusinessSpec(
     val name: String,
     val category: String,
+    val ownerName: String,
+    val ownerEmail: String,
+    val ownerPhone: String,
     val description: String,
     val address: String,
     val latitude: Double,
