@@ -29,7 +29,7 @@ import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Component
 import java.math.BigDecimal
 
-private const val DEMO_PASSWORD = "password123"
+private const val DEMO_PASSWORD = "user#password#123"
 private const val DEMO_CURRENCY = "UGX"
 
 // Unsplash placeholder covers per business category. ServiceOffered's
