@@ -5,6 +5,7 @@ import jakarta.persistence.*
 import org.hibernate.annotations.CreationTimestamp
 import org.hibernate.annotations.UpdateTimestamp
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 @Entity
@@ -46,6 +47,19 @@ class ServiceOffered(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     var status: ServiceOfferedStatus = ServiceOfferedStatus.ACTIVE,
+
+    // Promo metadata (collapsed in from PackageOffered): an optional offer tag
+    // and an optional validity window. `isCurrentlyActive` is computed in the
+    // service layer from status + window.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tag")
+    var tag: ServiceOfferedTag? = null,
+
+    @Column(name = "valid_from")
+    var validFrom: LocalDate? = null,
+
+    @Column(name = "valid_until")
+    var validUntil: LocalDate? = null,
 
     @OneToMany(
         mappedBy = "service",
