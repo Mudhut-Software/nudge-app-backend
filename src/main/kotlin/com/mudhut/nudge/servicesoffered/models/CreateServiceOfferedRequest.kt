@@ -1,11 +1,13 @@
 package com.mudhut.nudge.servicesoffered.models
 
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
 import java.math.BigDecimal
+import java.time.LocalDate
 
 data class CreateServiceOfferedRequest(
     @field:NotBlank
@@ -31,5 +33,12 @@ data class CreateServiceOfferedRequest(
 
     @field:Size(max = 5)
     @field:Valid
-    val galleryImages: List<MediaInput> = emptyList()
+    val galleryImages: List<MediaInput> = emptyList(),
+
+    // Optional promo metadata (collapsed in from packages).
+    val tag: ServiceOfferedTag? = null,
+
+    val validFrom: LocalDate? = null,
+
+    val validUntil: LocalDate? = null
 )

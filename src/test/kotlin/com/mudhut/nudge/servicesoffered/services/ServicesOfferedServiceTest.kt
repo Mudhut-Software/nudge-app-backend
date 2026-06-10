@@ -8,6 +8,7 @@ import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedImage
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
 import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
 import com.mudhut.nudge.servicesoffered.models.MediaInput
 import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
@@ -30,6 +31,7 @@ import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import java.math.BigDecimal
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 @ExtendWith(MockitoExtension::class)
@@ -103,6 +105,61 @@ class ServicesOfferedServiceTest {
         assertEquals(ServiceOfferedStatus.ACTIVE, response.status)
         assertEquals("nudge/images/cover", response.coverImage.publicId)
         assertTrue(response.galleryImages.isEmpty())
+    }
+
+    @Test
+    fun `createService persists tag and window and computes isCurrentlyActive`() {
+        val business = businessFixture()
+        `when`(businessService.findBusinessEntity(1L)).thenReturn(business)
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { invocation ->
+            (invocation.arguments[0] as ServiceOffered).apply {
+                id = 77L
+                createdAt = LocalDateTime.now()
+                updatedAt = LocalDateTime.now()
+            }
+        }
+        val today = LocalDate.now()
+        val req = fixedRequest().copy(
+            tag = ServiceOfferedTag.HOLIDAY_OFFER,
+            validFrom = today.minusDays(1),
+            validUntil = today.plusDays(1),
+        )
+
+        val res = offeringService.createService(1L, "owner@test.com", req)
+
+        assertEquals(ServiceOfferedTag.HOLIDAY_OFFER, res.tag)
+        assertEquals(today.minusDays(1), res.validFrom)
+        assertEquals(today.plusDays(1), res.validUntil)
+        assertTrue(res.isCurrentlyActive)
+    }
+
+    @Test
+    fun `createService isCurrentlyActive is false when today is after validUntil`() {
+        val business = businessFixture()
+        `when`(businessService.findBusinessEntity(1L)).thenReturn(business)
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { invocation ->
+            (invocation.arguments[0] as ServiceOffered).apply {
+                id = 78L
+                createdAt = LocalDateTime.now()
+                updatedAt = LocalDateTime.now()
+            }
+        }
+        val today = LocalDate.now()
+        val req = fixedRequest().copy(validFrom = today.minusDays(10), validUntil = today.minusDays(1))
+
+        val res = offeringService.createService(1L, "owner@test.com", req)
+
+        assertFalse(res.isCurrentlyActive)
+    }
+
+    @Test
+    fun `createService rejects validUntil before validFrom`() {
+        val today = LocalDate.now()
+        val req = fixedRequest().copy(validFrom = today, validUntil = today.minusDays(1))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            offeringService.createService(1L, "owner@test.com", req)
+        }
     }
 
     private fun perUnitRequest() = fixedRequest().copy(
