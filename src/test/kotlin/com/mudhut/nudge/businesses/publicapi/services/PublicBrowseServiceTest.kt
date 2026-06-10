@@ -13,6 +13,7 @@ import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedRepository
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -196,6 +197,30 @@ class PublicBrowseServiceTest {
         val page = sut.list(null, BusinessSort.NEAREST, 0.0, 0.0, Pageable.ofSize(20))
 
         assertTrue(page.content.isEmpty())
+    }
+
+    @Test
+    fun `detail surfaces service promo fields tag and window`() {
+        val biz = business(id = 12)
+        val today = java.time.LocalDate.now()
+        val svc = service(id = 120, biz = biz, title = "Holiday Bundle").apply {
+            tag = ServiceOfferedTag.HOLIDAY_OFFER
+            validFrom = today.minusDays(1)
+            validUntil = today.plusDays(30)
+        }
+
+        whenever(businessRepository.findById(12)).thenReturn(Optional.of(biz))
+        whenever(serviceRepository.findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(eq(12), eq(ServiceOfferedStatus.ACTIVE)))
+            .thenReturn(listOf(svc))
+        whenever(packageRepository.findTop20CurrentlyActiveByBusinessIdOrderByCreatedAtDesc(eq(12), any()))
+            .thenReturn(emptyList())
+
+        val detail = sut.detail(12)
+
+        val summary = detail.services.first()
+        assertEquals(ServiceOfferedTag.HOLIDAY_OFFER, summary.tag)
+        assertEquals(today.minusDays(1), summary.validFrom)
+        assertEquals(today.plusDays(30), summary.validUntil)
     }
 
     @Test

@@ -130,6 +130,9 @@ class PublicBrowseService(
         galleryImageUrls = s.galleryImages
             .sortedBy { it.position }
             .mapNotNull { it.url },
+        tag = s.tag,
+        validFrom = s.validFrom,
+        validUntil = s.validUntil,
         addons = s.addons.sortedBy { it.position }.map { a ->
             com.mudhut.nudge.servicesoffered.models.PublicServiceAddon(
                 id = a.id!!,
