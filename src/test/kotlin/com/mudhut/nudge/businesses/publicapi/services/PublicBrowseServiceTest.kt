@@ -6,10 +6,6 @@ import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.publicapi.models.BusinessSort
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.businesses.repositories.BusinessWithDistance
-import com.mudhut.nudge.packagesoffered.entities.PackageOffered
-import com.mudhut.nudge.packagesoffered.entities.PackageOfferedItem
-import com.mudhut.nudge.packagesoffered.entities.PackageOfferedStatus
-import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedRepository
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
@@ -34,12 +30,10 @@ class PublicBrowseServiceTest {
 
     private val businessRepository: BusinessRepository = mock()
     private val serviceRepository: ServiceOfferedRepository = mock()
-    private val packageRepository: PackageOfferedRepository = mock()
 
     private val sut = PublicBrowseService(
         businessRepository,
         serviceRepository,
-        packageRepository,
     )
 
     private fun category(id: Long, name: String) = BusinessCategory(id = id, name = name)
@@ -98,7 +92,6 @@ class PublicBrowseServiceTest {
         whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(bizId), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(coverFromService?.let { service(id = bizId * 10, biz = business(bizId), coverUrl = it) })
         whenever(serviceRepository.countByBusinessIdAndStatus(eq(bizId), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
-        whenever(packageRepository.countCurrentlyActiveByBusinessId(eq(bizId), any())).thenReturn(0L)
     }
 
     @Test
@@ -109,7 +102,6 @@ class PublicBrowseServiceTest {
         whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(firstActiveService)
         whenever(serviceRepository.countByBusinessIdAndStatus(eq(5), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
-        whenever(packageRepository.countCurrentlyActiveByBusinessId(eq(5), any())).thenReturn(0L)
 
         val summary = sut.list(null, BusinessSort.NEWEST, null, null, Pageable.ofSize(20)).content.single()
 
@@ -123,7 +115,6 @@ class PublicBrowseServiceTest {
         whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(service(id = 50, biz = biz, coverUrl = "https://cdn/svc-50.jpg"))
         whenever(serviceRepository.countByBusinessIdAndStatus(eq(5), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
-        whenever(packageRepository.countCurrentlyActiveByBusinessId(eq(5), any())).thenReturn(0L)
 
         val summary = sut.list(null, BusinessSort.NEWEST, null, null, Pageable.ofSize(20)).content.single()
 
@@ -212,8 +203,6 @@ class PublicBrowseServiceTest {
         whenever(businessRepository.findById(12)).thenReturn(Optional.of(biz))
         whenever(serviceRepository.findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(eq(12), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(listOf(svc))
-        whenever(packageRepository.findTop20CurrentlyActiveByBusinessIdOrderByCreatedAtDesc(eq(12), any()))
-            .thenReturn(emptyList())
 
         val detail = sut.detail(12)
 
@@ -232,45 +221,10 @@ class PublicBrowseServiceTest {
         whenever(businessRepository.findById(9)).thenReturn(Optional.of(biz))
         whenever(serviceRepository.findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(eq(9), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(listOf(newer, older))
-        whenever(packageRepository.findTop20CurrentlyActiveByBusinessIdOrderByCreatedAtDesc(eq(9), any()))
-            .thenReturn(emptyList())
 
         val detail = sut.detail(9)
 
         assertEquals(listOf(91L, 92L), detail.services.map { it.id })
-        assertEquals(emptyList<Long>(), detail.packages.map { it.id })
-    }
-
-    @Test
-    fun `detail filters packages to active items only`() {
-        val biz = business(id = 11)
-        val activeService = service(id = 110, biz = biz)
-        val inactiveService = service(id = 111, biz = biz, status = ServiceOfferedStatus.INACTIVE)
-
-        val pkg = PackageOffered(
-            id = 200L,
-            business = biz,
-            title = "Combo",
-            priceAmount = BigDecimal("250000.00"),
-            priceCurrency = "UGX",
-            tag = null,
-            validFrom = null,
-            validUntil = null,
-            status = PackageOfferedStatus.ACTIVE,
-        )
-        pkg.items.add(PackageOfferedItem(packageOffered = pkg, service = activeService, position = 0))
-        pkg.items.add(PackageOfferedItem(packageOffered = pkg, service = inactiveService, position = 1))
-
-        whenever(businessRepository.findById(11)).thenReturn(Optional.of(biz))
-        whenever(serviceRepository.findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(eq(11), eq(ServiceOfferedStatus.ACTIVE)))
-            .thenReturn(listOf(activeService))
-        whenever(packageRepository.findTop20CurrentlyActiveByBusinessIdOrderByCreatedAtDesc(eq(11), any()))
-            .thenReturn(listOf(pkg))
-
-        val detail = sut.detail(11)
-
-        val pkgItems = detail.packages.single().items
-        assertEquals(listOf(110L), pkgItems.map { it.id })
     }
 
     @Test
@@ -281,42 +235,12 @@ class PublicBrowseServiceTest {
     }
 
     @Test
-    fun `detail throws 404 when business has no active services and no currently-active packages`() {
+    fun `detail throws 404 when business has no active services`() {
         val biz = business(id = 50)
         whenever(businessRepository.findById(50)).thenReturn(Optional.of(biz))
         whenever(serviceRepository.findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(eq(50), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(emptyList())
-        whenever(packageRepository.findTop20CurrentlyActiveByBusinessIdOrderByCreatedAtDesc(eq(50), any()))
-            .thenReturn(emptyList())
 
         assertThrows(BusinessNotFoundException::class.java) { sut.detail(50) }
-    }
-
-    @Test
-    fun `detail allows business with currently-active packages but no active services`() {
-        val biz = business(id = 60)
-        val activeService = service(id = 600, biz = biz)
-        val pkg = PackageOffered(
-            id = 700L,
-            business = biz,
-            title = "P",
-            priceAmount = BigDecimal("100.00"),
-            priceCurrency = "UGX",
-            tag = null, validFrom = null, validUntil = null,
-            status = PackageOfferedStatus.ACTIVE,
-        )
-        pkg.items.add(PackageOfferedItem(packageOffered = pkg, service = activeService, position = 0))
-
-        whenever(businessRepository.findById(60)).thenReturn(Optional.of(biz))
-        whenever(serviceRepository.findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(eq(60), eq(ServiceOfferedStatus.ACTIVE)))
-            .thenReturn(emptyList())
-        whenever(packageRepository.findTop20CurrentlyActiveByBusinessIdOrderByCreatedAtDesc(eq(60), any()))
-            .thenReturn(listOf(pkg))
-
-        val detail = sut.detail(60)
-
-        assertEquals(60L, detail.id)
-        assertTrue(detail.services.isEmpty())
-        assertEquals(700L, detail.packages.single().id)
     }
 }

@@ -53,7 +53,7 @@ class PublicBusinessControllerTest {
     private fun summary(id: Long = 10L, distanceKm: Double? = null) = PublicBusinessSummary(
         id = id, name = "Elite", categoryId = 1L, categoryName = "Catering",
         address = "Kampala", coverImageUrl = "x",
-        serviceCount = 1, packageCount = 0, distanceKm = distanceKm,
+        serviceCount = 1, distanceKm = distanceKm,
     )
 
     @Test
@@ -114,7 +114,6 @@ class PublicBusinessControllerTest {
                 serviceAreas = listOf("Kampala"),
                 coverImageUrl = "https://cdn/cover.jpg",
                 services = emptyList(),
-                packages = emptyList(),
             )
         )
 

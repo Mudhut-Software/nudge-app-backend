@@ -8,6 +8,5 @@ data class PublicBusinessSummary(
     val address: String?,
     val coverImageUrl: String?,
     val serviceCount: Int,
-    val packageCount: Int,
     val distanceKm: Double? = null,
 )
