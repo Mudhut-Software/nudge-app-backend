@@ -9,10 +9,9 @@ import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.repositories.BusinessCategoryRepository
 import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
-import com.mudhut.nudge.packagesoffered.entities.PackageOffered
-import com.mudhut.nudge.packagesoffered.entities.PackageOfferedItem
-import com.mudhut.nudge.packagesoffered.entities.PackageOfferedStatus
-import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedRepository
+import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
+import java.time.LocalDate
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
@@ -51,7 +50,7 @@ private val DEFAULT_COVER =
  *   • 12 top-level service categories
  *   • A demo customer plus one distinct owner per business (all `password123`)
  *   • Five businesses across different categories, each owned by its own provider
- *   • Each business has 3–4 ACTIVE services plus one ACTIVE package
+ *   • Each business has 3–4 ACTIVE services plus one tagged bundle service (with addons)
  *
  * Skipped silently in other profiles or when data already exists, so re-running the app
  * never duplicates rows.
@@ -64,7 +63,6 @@ class DevDataSeeder(
     private val businessRepo: BusinessRepository,
     private val businessMemberRepo: BusinessMemberRepository,
     private val serviceRepo: ServiceOfferedRepository,
-    private val packageRepo: PackageOfferedRepository,
     private val passwordEncoder: PasswordEncoder,
 ) : ApplicationRunner {
 
@@ -150,8 +148,8 @@ class DevDataSeeder(
                     ServiceSpec("Laundry Service", "Wash, dry, fold — picked up and dropped off.", PriceMode.FIXED, BigDecimal("60000"), null),
                     ServiceSpec("Office Move-out Clean", "Full deep clean for office spaces up to 200m².", PriceMode.FIXED, BigDecimal("200000"), null),
                 ),
-                packages = listOf(
-                    PackageSpec("Sparkle Home Bundle", BigDecimal("350000"), listOf("Deep House Cleaning", "Carpet Cleaning", "Laundry Service")),
+                bundles = listOf(
+                    BundleSpec("Sparkle Home Bundle", BigDecimal("350000"), listOf("Deep House Cleaning", "Carpet Cleaning", "Laundry Service")),
                 ),
             ),
             BusinessSpec(
@@ -171,8 +169,8 @@ class DevDataSeeder(
                     ServiceSpec("Birthday Party Buffet", "Themed buffet for parties of 20 guests.", PriceMode.FIXED, BigDecimal("180000"), null),
                     ServiceSpec("Wedding Catering", "Bespoke wedding menu — get a custom quote.", PriceMode.QUOTE, null, null),
                 ),
-                packages = listOf(
-                    PackageSpec("Birthday All-In Package", BigDecimal("320000"), listOf("Birthday Party Buffet", "Corporate Lunch")),
+                bundles = listOf(
+                    BundleSpec("Birthday All-In Package", BigDecimal("320000"), listOf("Birthday Party Buffet", "Corporate Lunch")),
                 ),
             ),
             BusinessSpec(
@@ -192,8 +190,8 @@ class DevDataSeeder(
                     ServiceSpec("Manicure & Pedicure", "Classic mani-pedi with gel options.", PriceMode.FIXED, BigDecimal("60000"), null),
                     ServiceSpec("Hair Styling", "Wash, blow-dry, and styling.", PriceMode.FIXED, BigDecimal("80000"), null),
                 ),
-                packages = listOf(
-                    PackageSpec("Bridal Glow Day", BigDecimal("220000"), listOf("Full Body Massage", "Manicure & Pedicure", "Hair Styling")),
+                bundles = listOf(
+                    BundleSpec("Bridal Glow Day", BigDecimal("220000"), listOf("Full Body Massage", "Manicure & Pedicure", "Hair Styling")),
                 ),
             ),
             BusinessSpec(
@@ -213,8 +211,8 @@ class DevDataSeeder(
                     ServiceSpec("Event Photography", "Full-day event coverage with edited gallery.", PriceMode.FIXED, BigDecimal("500000"), null),
                     ServiceSpec("Drone Aerial Video", "Cinematic drone reel for outdoor venues.", PriceMode.FIXED, BigDecimal("350000"), null),
                 ),
-                packages = listOf(
-                    PackageSpec("Wedding Coverage Pack", BigDecimal("900000"), listOf("Event Photography", "Drone Aerial Video", "Portrait Session")),
+                bundles = listOf(
+                    BundleSpec("Wedding Coverage Pack", BigDecimal("900000"), listOf("Event Photography", "Drone Aerial Video", "Portrait Session")),
                 ),
             ),
             BusinessSpec(
@@ -234,8 +232,8 @@ class DevDataSeeder(
                     ServiceSpec("Pet Grooming", "Bath, brush, and nail trim for dogs and cats.", PriceMode.FIXED, BigDecimal("70000"), null),
                     ServiceSpec("Home Vet Check", "Routine wellness check at your home.", PriceMode.FIXED, BigDecimal("90000"), null),
                 ),
-                packages = listOf(
-                    PackageSpec("Premium Pet Care Bundle", BigDecimal("160000"), listOf("Pet Grooming", "Home Vet Check", "Dog Walking")),
+                bundles = listOf(
+                    BundleSpec("Premium Pet Care Bundle", BigDecimal("160000"), listOf("Pet Grooming", "Home Vet Check", "Dog Walking")),
                 ),
             ),
         )
@@ -276,7 +274,7 @@ class DevDataSeeder(
             )
 
             val (coverUrl, coverPublicId) = COVER_BY_CATEGORY[spec.category] ?: DEFAULT_COVER
-            val servicesByTitle = spec.services.associateBy({ it.title }) { svc ->
+            spec.services.forEach { svc ->
                 serviceRepo.save(
                     ServiceOffered(
                         business = savedBiz,
@@ -293,35 +291,42 @@ class DevDataSeeder(
                 )
             }
 
-            for (pkg in spec.packages) {
-                val saved = packageRepo.save(
-                    PackageOffered(
-                        business = savedBiz,
-                        title = pkg.title,
-                        priceAmount = pkg.priceAmount,
-                        priceCurrency = DEMO_CURRENCY,
-                        tag = null,
-                        validFrom = null,
-                        validUntil = null,
-                        status = PackageOfferedStatus.ACTIVE,
-                    )
+            // Former "packages" are now tagged, FIXED-price services whose included
+            // items are default-selected addons (priceDelta 0). Demonstrates the
+            // promo tag + validity window and the addon model in one shot.
+            val today = LocalDate.now()
+            for (bundle in spec.bundles) {
+                val bundleService = ServiceOffered(
+                    business = savedBiz,
+                    title = bundle.title,
+                    description = "Bundle offer — included items below, plus optional add-ons.",
+                    coverImageUrl = coverUrl,
+                    coverImagePublicId = coverPublicId,
+                    priceMode = PriceMode.FIXED,
+                    priceAmount = bundle.priceAmount,
+                    priceCurrency = DEMO_CURRENCY,
+                    priceUnit = null,
+                    status = ServiceOfferedStatus.ACTIVE,
+                    tag = ServiceOfferedTag.HOLIDAY_OFFER,
+                    validFrom = today.minusDays(1),
+                    validUntil = today.plusDays(30),
                 )
-                pkg.serviceTitles.forEachIndexed { idx, title ->
-                    val service = servicesByTitle[title]
-                        ?: error("Seeder: package '${pkg.title}' references unknown service '$title'")
-                    saved.items.add(
-                        PackageOfferedItem(
-                            packageOffered = saved,
-                            service = service,
+                bundle.includedItems.forEachIndexed { idx, itemTitle ->
+                    bundleService.addons.add(
+                        ServiceAddon(
+                            service = bundleService,
+                            title = itemTitle,
+                            priceDelta = BigDecimal.ZERO,
+                            defaultSelected = true,
                             position = idx,
                         )
                     )
                 }
-                packageRepo.save(saved)
+                serviceRepo.save(bundleService)
             }
 
-            log.info("DevDataSeeder: seeded business '{}' (owner {}) with {} services and {} packages.",
-                spec.name, owner.email, spec.services.size, spec.packages.size)
+            log.info("DevDataSeeder: seeded business '{}' (owner {}) with {} services and {} bundle services.",
+                spec.name, owner.email, spec.services.size, spec.bundles.size)
         }
         return owners
     }
@@ -341,7 +346,7 @@ private data class BusinessSpec(
     val email: String,
     val phone: String,
     val services: List<ServiceSpec>,
-    val packages: List<PackageSpec>,
+    val bundles: List<BundleSpec>,
 )
 
 private data class ServiceSpec(
@@ -352,8 +357,8 @@ private data class ServiceSpec(
     val priceUnit: String?,
 )
 
-private data class PackageSpec(
+private data class BundleSpec(
     val title: String,
     val priceAmount: BigDecimal,
-    val serviceTitles: List<String>,
+    val includedItems: List<String>,
 )
