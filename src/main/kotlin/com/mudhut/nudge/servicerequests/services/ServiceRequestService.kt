@@ -2,9 +2,6 @@ package com.mudhut.nudge.servicerequests.services
 
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
-import com.mudhut.nudge.packagesoffered.entities.PackageOffered
-import com.mudhut.nudge.packagesoffered.entities.PackageOfferedStatus
-import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedRepository
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestAttachment
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
@@ -20,7 +17,6 @@ import com.mudhut.nudge.servicerequests.models.UpdateRequestPayload
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
-import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceAddonRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
@@ -33,7 +29,6 @@ import jakarta.transaction.Transactional
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
-import java.time.LocalDate
 import java.time.LocalDateTime
 
 private const val MAX_ATTACHMENTS = 8
@@ -44,7 +39,6 @@ class ServiceRequestService(
     private val userRepo: UserRepository,
     private val businessRepo: BusinessRepository,
     private val serviceRepo: ServiceOfferedRepository,
-    private val packageRepo: PackageOfferedRepository,
     private val addonRepo: ServiceAddonRepository,
 ) {
 
@@ -55,7 +49,6 @@ class ServiceRequestService(
             .orElseThrow { BusinessNotFoundException("Business not found") }
 
         require(payload.items.isNotEmpty()) { "items must not be empty" }
-        payload.items.forEach(::requireXorItem)
 
         val request = ServiceRequest(
             customer = customer,
@@ -80,7 +73,6 @@ class ServiceRequestService(
 
         payload.items?.let { items ->
             require(items.isNotEmpty()) { "items must not be empty" }
-            items.forEach(::requireXorItem)
             request.items.clear()
             attachItems(request, items, request.business!!)
         }
@@ -123,22 +115,11 @@ class ServiceRequestService(
         require(!request.serviceLocation.isNullOrBlank()) { "serviceLocation is required" }
 
         request.items.forEach { item ->
-            val source = item.service ?: item.packageOffered
-            when (source) {
-                is ServiceOffered -> {
-                    item.snapshotTitle = source.title
-                    item.snapshotPriceAmount = source.priceAmount
-                    item.snapshotPriceCurrency = source.priceCurrency
-                    item.snapshotCoverUrl = source.coverImageUrl
-                }
-                is PackageOffered -> {
-                    item.snapshotTitle = source.title
-                    item.snapshotPriceAmount = source.priceAmount
-                    item.snapshotPriceCurrency = source.priceCurrency
-                    item.snapshotCoverUrl = source.items.firstOrNull()?.service?.coverImageUrl
-                }
-                else -> error("Unreachable — item must reference a service or package")
-            }
+            val source = item.service!!
+            item.snapshotTitle = source.title
+            item.snapshotPriceAmount = source.priceAmount
+            item.snapshotPriceCurrency = source.priceCurrency
+            item.snapshotCoverUrl = source.coverImageUrl
 
             item.addons.forEach { snap ->
                 val live = snap.addon
@@ -224,36 +205,21 @@ class ServiceRequestService(
         val business = original.business!!
 
         val serviceIds = original.items.mapNotNull { it.service?.id }
-        val packageIds = original.items.mapNotNull { it.packageOffered?.id }
         val services = if (serviceIds.isNotEmpty()) serviceRepo.findAllById(serviceIds) else emptyList()
-        val packages = if (packageIds.isNotEmpty()) packageRepo.findAllById(packageIds) else emptyList()
 
-        val today = LocalDate.now()
         val availableServiceIds = services
             .filter { it.business?.id == business.id && it.status == ServiceOfferedStatus.ACTIVE }
-            .mapNotNull { it.id }
-            .toSet()
-        val availablePackageIds = packages
-            .filter {
-                it.business?.id == business.id &&
-                    it.status == PackageOfferedStatus.ACTIVE &&
-                    (it.validFrom == null || !today.isBefore(it.validFrom)) &&
-                    (it.validUntil == null || !today.isAfter(it.validUntil))
-            }
             .mapNotNull { it.id }
             .toSet()
 
         val unavailableTitles = original.items
             .filter { item ->
                 val sid = item.service?.id
-                val pid = item.packageOffered?.id
-                (sid != null && sid !in availableServiceIds) ||
-                    (pid != null && pid !in availablePackageIds)
+                sid != null && sid !in availableServiceIds
             }
             .map { item ->
                 item.snapshotTitle
                     ?: item.service?.title
-                    ?: item.packageOffered?.title
                     ?: "(unknown)"
             }
 
@@ -264,19 +230,15 @@ class ServiceRequestService(
         )
 
         val servicesById = services.associateBy { it.id }
-        val packagesById = packages.associateBy { it.id }
 
         original.items.forEachIndexed { _, item ->
             val sid = item.service?.id
-            val pid = item.packageOffered?.id
             val survivingService = sid?.let { if (it in availableServiceIds) servicesById[it] else null }
-            val survivingPackage = pid?.let { if (it in availablePackageIds) packagesById[it] else null }
-            if (survivingService != null || survivingPackage != null) {
+            if (survivingService != null) {
                 draft.items.add(
                     ServiceRequestItem(
                         request = draft,
                         service = survivingService,
-                        packageOffered = survivingPackage,
                         position = draft.items.size,
                     )
                 )
@@ -302,42 +264,20 @@ class ServiceRequestService(
         return request
     }
 
-    private fun requireXorItem(input: RequestItemInput) {
-        val hasService = input.serviceId != null
-        val hasPackage = input.packageId != null
-        require(hasService xor hasPackage) {
-            "Each item must reference exactly one of serviceId or packageId"
-        }
-    }
-
     private fun attachItems(
         request: ServiceRequest,
         items: List<RequestItemInput>,
         business: Business,
     ) {
         val serviceIds = items.mapNotNull { it.serviceId }
-        val packageIds = items.mapNotNull { it.packageId }
         val services = if (serviceIds.isNotEmpty()) serviceRepo.findAllById(serviceIds) else emptyList()
-        val packages = if (packageIds.isNotEmpty()) packageRepo.findAllById(packageIds) else emptyList()
 
         services.forEach {
             require(it.business?.id == business.id) { "Service ${it.id} belongs to a different business" }
             require(it.status == ServiceOfferedStatus.ACTIVE) { "Service ${it.id} is not active" }
         }
-        packages.forEach {
-            require(it.business?.id == business.id) { "Package ${it.id} belongs to a different business" }
-            require(it.status == PackageOfferedStatus.ACTIVE) { "Package ${it.id} is not active" }
-        }
-
-        val today = LocalDate.now()
-        packages.forEach {
-            val withinWindow = (it.validFrom == null || !today.isBefore(it.validFrom)) &&
-                (it.validUntil == null || !today.isAfter(it.validUntil))
-            require(withinWindow) { "Package ${it.id} is not currently active" }
-        }
 
         val byServiceId = services.associateBy { it.id }
-        val byPackageId = packages.associateBy { it.id }
 
         // Bulk-load addons referenced by any item:
         val addonIds = items.flatMap { it.addonInputs.mapNotNull { ai -> ai.addonId } }.distinct()
@@ -351,11 +291,11 @@ class ServiceRequestService(
         } else emptyMap()
 
         items.forEachIndexed { idx, input ->
-            val svc = input.serviceId?.let { byServiceId[it] ?: error("Service $it not found") }
-            val pkg = input.packageId?.let { byPackageId[it] ?: error("Package $it not found") }
+            val serviceId = input.serviceId
+                ?: throw IllegalArgumentException("serviceId is required")
+            val svc = byServiceId[serviceId] ?: error("Service $serviceId not found")
 
             if (input.addonInputs.isNotEmpty()) {
-                require(svc != null) { "Addons can only attach to service items, not packages" }
                 require(svc.priceMode != PriceMode.QUOTE) {
                     "Addons are not allowed on QUOTE-mode services"
                 }
@@ -364,7 +304,6 @@ class ServiceRequestService(
             val item = ServiceRequestItem(
                 request = request,
                 service = svc,
-                packageOffered = pkg,
                 position = idx,
             )
 
@@ -373,7 +312,7 @@ class ServiceRequestService(
                     ?: throw ServiceAddonNotFoundException("addonId is required")
                 val ad = addonsById[addonId]
                     ?: throw ServiceAddonNotFoundException("Addon $addonId not found")
-                require(ad.service?.id == svc!!.id) {
+                require(ad.service?.id == svc.id) {
                     "Addon ${ad.id} does not belong to service ${svc.id}"
                 }
                 val max = ad.maxQuantity ?: Int.MAX_VALUE
@@ -397,29 +336,25 @@ class ServiceRequestService(
             .sortedBy { it.position }
             .map { item ->
                 val isDraft = request.status == ServiceRequestStatus.DRAFT
-                val kind = if (item.service != null) "service" else "package"
                 val title = if (isDraft) {
-                    item.service?.title ?: item.packageOffered?.title ?: "(unknown)"
+                    item.service?.title ?: "(unknown)"
                 } else {
-                    item.snapshotTitle ?: item.service?.title ?: item.packageOffered?.title ?: "(unknown)"
+                    item.snapshotTitle ?: item.service?.title ?: "(unknown)"
                 }
                 val priceAmount = if (isDraft) {
-                    item.service?.priceAmount ?: item.packageOffered?.priceAmount
+                    item.service?.priceAmount
                 } else {
-                    item.snapshotPriceAmount ?: item.service?.priceAmount ?: item.packageOffered?.priceAmount
+                    item.snapshotPriceAmount ?: item.service?.priceAmount
                 }
                 val priceCurrency = if (isDraft) {
-                    item.service?.priceCurrency ?: item.packageOffered?.priceCurrency
+                    item.service?.priceCurrency
                 } else {
-                    item.snapshotPriceCurrency ?: item.service?.priceCurrency ?: item.packageOffered?.priceCurrency
+                    item.snapshotPriceCurrency ?: item.service?.priceCurrency
                 }
                 val cover = if (isDraft) {
                     item.service?.coverImageUrl
-                        ?: item.packageOffered?.items?.firstOrNull()?.service?.coverImageUrl
                 } else {
-                    item.snapshotCoverUrl
-                        ?: item.service?.coverImageUrl
-                        ?: item.packageOffered?.items?.firstOrNull()?.service?.coverImageUrl
+                    item.snapshotCoverUrl ?: item.service?.coverImageUrl
                 }
 
                 val addons = item.addons.sortedBy { it.position }.map { a ->
@@ -441,9 +376,7 @@ class ServiceRequestService(
                 }
 
                 ServiceRequestItemResponse(
-                    kind = kind,
                     serviceId = item.service?.id,
-                    packageId = item.packageOffered?.id,
                     title = title,
                     priceAmount = priceAmount,
                     priceCurrency = priceCurrency,

@@ -2,7 +2,6 @@ package com.mudhut.nudge.servicerequests.services
 
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
-import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedRepository
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemAddon
@@ -37,7 +36,6 @@ class ServiceRequestServiceAddonsTest {
     private val userRepo: UserRepository = mock()
     private val businessRepo: BusinessRepository = mock()
     private val serviceRepo: ServiceOfferedRepository = mock()
-    private val packageRepo: PackageOfferedRepository = mock()
     private val addonRepo: ServiceAddonRepository = mock()
 
     private lateinit var sut: ServiceRequestService
@@ -78,7 +76,7 @@ class ServiceRequestServiceAddonsTest {
 
     @BeforeEach
     fun setUp() {
-        sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, packageRepo, addonRepo)
+        sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo)
         whenever(userRepo.findByEmail("c@e")).thenReturn(Optional.of(customer))
         whenever(businessRepo.findById(2L)).thenReturn(Optional.of(biz))
         whenever(serviceRepo.findAllById(listOf(10L))).thenReturn(listOf(service))

@@ -68,8 +68,7 @@ class ServiceRequestControllerTest {
             status = status,
             items = listOf(
                 ServiceRequestItemResponse(
-                    kind = "service",
-                    serviceId = 100L, packageId = null,
+                    serviceId = 100L,
                     title = "Deep Clean", priceAmount = null, priceCurrency = "UGX",
                     coverImageUrl = null, position = 0,
                 )

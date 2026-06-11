@@ -39,11 +39,9 @@ data class UpdateRequestPayload(
 )
 
 data class RequestItemInput(
+    @field:NotNull
     @field:Positive
     val serviceId: Long? = null,
-
-    @field:Positive
-    val packageId: Long? = null,
 
     @field:Valid
     val addonInputs: List<ServiceRequestItemAddonInput> = emptyList(),
@@ -111,9 +109,7 @@ data class ServiceRequestResponse(
 )
 
 data class ServiceRequestItemResponse(
-    val kind: String,
     val serviceId: Long?,
-    val packageId: Long?,
     val title: String,
     val priceAmount: BigDecimal?,
     val priceCurrency: String?,
