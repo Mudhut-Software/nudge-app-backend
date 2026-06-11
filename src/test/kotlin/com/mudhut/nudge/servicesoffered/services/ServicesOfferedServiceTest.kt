@@ -12,7 +12,6 @@ import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
 import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
 import com.mudhut.nudge.servicesoffered.models.MediaInput
 import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
-import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedItemRepository
 import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import org.junit.jupiter.api.Assertions.*
@@ -46,8 +45,6 @@ class ServicesOfferedServiceTest {
     @Mock
     private lateinit var pendingMediaDeletionRepository: PendingMediaDeletionRepository
 
-    @Mock
-    private lateinit var packageOfferedItemRepository: PackageOfferedItemRepository
 
     @Captor
     private lateinit var pendingDeletionCaptor: ArgumentCaptor<List<PendingMediaDeletion>>
@@ -538,7 +535,6 @@ class ServicesOfferedServiceTest {
 
         offeringService.deleteService(7L, "owner@test.com")
 
-        verify(packageOfferedItemRepository).deleteAllByServiceId(7L)
         verify(serviceRepository).delete(entity)
     }
 
