@@ -2,9 +2,11 @@ package com.mudhut.nudge.servicesoffered.models
 
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Size
 import java.math.BigDecimal
+import java.time.LocalDate
 
 data class UpdateServiceOfferedRequest(
     @field:Size(max = 120)
@@ -26,6 +28,14 @@ data class UpdateServiceOfferedRequest(
     val priceUnit: String? = null,
 
     val status: ServiceOfferedStatus? = null,
+
+    // Optional promo metadata. Null means "no change" (mirrors the other
+    // patchable fields); a non-null value is applied.
+    val tag: ServiceOfferedTag? = null,
+
+    val validFrom: LocalDate? = null,
+
+    val validUntil: LocalDate? = null,
 
     @field:Size(max = 5)
     @field:Valid

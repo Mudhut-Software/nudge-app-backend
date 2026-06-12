@@ -66,6 +66,10 @@ class ServiceOfferedControllerTest {
         priceCurrency = "UGX",
         priceUnit = null,
         status = ServiceOfferedStatus.ACTIVE,
+        tag = null,
+        validFrom = null,
+        validUntil = null,
+        isCurrentlyActive = true,
         galleryImages = emptyList(),
         createdAt = LocalDateTime.now(),
         updatedAt = LocalDateTime.now()

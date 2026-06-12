@@ -1,6 +1,5 @@
 package com.mudhut.nudge.servicerequests.entities
 
-import com.mudhut.nudge.packagesoffered.entities.PackageOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import jakarta.persistence.CascadeType
 import jakarta.persistence.Column
@@ -27,13 +26,9 @@ class ServiceRequestItem(
     @JoinColumn(name = "request_id", nullable = false)
     var request: ServiceRequest? = null,
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "service_id")
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "service_id", nullable = false)
     var service: ServiceOffered? = null,
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "package_id")
-    var packageOffered: PackageOffered? = null,
 
     @Column(nullable = false)
     var position: Int = 0,

@@ -4,9 +4,6 @@ import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessCategory
 import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
-import com.mudhut.nudge.packagesoffered.entities.PackageOffered
-import com.mudhut.nudge.packagesoffered.entities.PackageOfferedStatus
-import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedRepository
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.models.AttachmentInput
@@ -43,10 +40,9 @@ class ServiceRequestServiceTest {
     private val userRepo: UserRepository = mock()
     private val businessRepo: BusinessRepository = mock()
     private val serviceRepo: ServiceOfferedRepository = mock()
-    private val packageRepo: PackageOfferedRepository = mock()
     private val addonRepo: com.mudhut.nudge.servicesoffered.repositories.ServiceAddonRepository = mock()
 
-    private val sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, packageRepo, addonRepo)
+    private val sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo)
 
     // --- fixtures ---
 
@@ -88,17 +84,6 @@ class ServiceRequestServiceTest {
             status = status,
         )
 
-    private fun pkg(id: Long, biz: Business) = PackageOffered(
-        id = id,
-        business = biz,
-        title = "Bundle",
-        priceAmount = BigDecimal("700000.00"),
-        priceCurrency = "UGX",
-        tag = null,
-        validFrom = null,
-        validUntil = null,
-        status = PackageOfferedStatus.ACTIVE,
-    )
 
     // --- create ---
 
@@ -121,7 +106,6 @@ class ServiceRequestServiceTest {
         assertEquals(ServiceRequestStatus.DRAFT, response.status)
         assertEquals(1, response.items.size)
         assertEquals(100L, response.items[0].serviceId)
-        assertEquals("service", response.items[0].kind)
     }
 
     @Test
@@ -152,24 +136,6 @@ class ServiceRequestServiceTest {
             sut.create(
                 email = alice.email!!,
                 payload = CreateRequestPayload(businessId = biz.id, items = listOf(RequestItemInput(serviceId = 200L))),
-            )
-        }
-    }
-
-    @Test
-    fun `create rejects an item with both serviceId and packageId set`() {
-        val alice = user()
-        val biz = business()
-        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
-        whenever(businessRepo.findById(biz.id!!)).thenReturn(Optional.of(biz))
-
-        assertThrows(IllegalArgumentException::class.java) {
-            sut.create(
-                email = alice.email!!,
-                payload = CreateRequestPayload(
-                    businessId = biz.id,
-                    items = listOf(RequestItemInput(serviceId = 1L, packageId = 2L)),
-                ),
             )
         }
     }

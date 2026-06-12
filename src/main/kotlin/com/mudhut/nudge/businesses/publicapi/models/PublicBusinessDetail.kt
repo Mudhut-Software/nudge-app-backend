@@ -13,5 +13,4 @@ data class PublicBusinessDetail(
     val serviceAreas: List<String>,
     val coverImageUrl: String?,
     val services: List<PublicServiceSummary>,
-    val packages: List<PublicPackageSummary>,
 )

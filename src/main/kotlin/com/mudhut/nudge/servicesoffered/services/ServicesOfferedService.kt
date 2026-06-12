@@ -11,7 +11,6 @@ import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
 import com.mudhut.nudge.servicesoffered.models.MediaResponse
 import com.mudhut.nudge.servicesoffered.models.ServiceOfferedResponse
 import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
-import com.mudhut.nudge.packagesoffered.repositories.PackageOfferedItemRepository
 import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
@@ -20,13 +19,13 @@ import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
+import java.time.LocalDate
 
 @Service
 class ServicesOfferedService(
     private val serviceOfferedRepository: ServiceOfferedRepository,
     private val businessService: BusinessService,
     private val pendingMediaDeletionRepository: PendingMediaDeletionRepository,
-    private val packageOfferedItemRepository: PackageOfferedItemRepository,
 ) {
 
     @Transactional
@@ -37,6 +36,7 @@ class ServicesOfferedService(
     ): ServiceOfferedResponse {
         businessService.requireRole(businessId, userEmail, BusinessRole.MANAGER)
         validatePricing(request.priceMode, request.priceAmount, request.priceCurrency, request.priceUnit)
+        validateWindow(request.validFrom, request.validUntil)
         val business = businessService.findBusinessEntity(businessId)
 
         val entity = ServiceOffered(
@@ -48,7 +48,10 @@ class ServicesOfferedService(
             priceMode = request.priceMode,
             priceAmount = request.priceAmount,
             priceCurrency = request.priceCurrency,
-            priceUnit = request.priceUnit
+            priceUnit = request.priceUnit,
+            tag = request.tag,
+            validFrom = request.validFrom,
+            validUntil = request.validUntil
         )
 
         request.galleryImages.forEachIndexed { index, media ->
@@ -100,6 +103,10 @@ class ServicesOfferedService(
         entity.priceCurrency = newCurrency
         entity.priceUnit = newUnit
         request.status?.let { entity.status = it }
+        request.tag?.let { entity.tag = it }
+        request.validFrom?.let { entity.validFrom = it }
+        request.validUntil?.let { entity.validUntil = it }
+        validateWindow(entity.validFrom, entity.validUntil)
 
         request.galleryImages?.let { incoming ->
             val previousPublicIds = entity.galleryImages
@@ -146,12 +153,6 @@ class ServicesOfferedService(
             )
         }
 
-        // Application-layer cascade: clean up package memberships before
-        // the service row goes away. No migration tooling yet, so this
-        // stands in for a DB-level ON DELETE CASCADE on
-        // package_offered_items.service_id.
-        packageOfferedItemRepository.deleteAllByServiceId(serviceId)
-
         serviceOfferedRepository.delete(entity)
     }
 
@@ -175,6 +176,26 @@ class ServicesOfferedService(
             serviceOfferedRepository.findAllByBusinessIdAndStatus(businessId, statusFilter, pageable)
         }
         return page.map { toResponse(it) }
+    }
+
+    private fun validateWindow(validFrom: LocalDate?, validUntil: LocalDate?) {
+        if (validFrom != null && validUntil != null) {
+            require(!validFrom.isAfter(validUntil)) {
+                "validFrom must be on or before validUntil"
+            }
+        }
+    }
+
+    private fun isCurrentlyActive(
+        status: ServiceOfferedStatus,
+        validFrom: LocalDate?,
+        validUntil: LocalDate?,
+    ): Boolean {
+        if (status != ServiceOfferedStatus.ACTIVE) return false
+        val today = LocalDate.now()
+        val afterStart = validFrom == null || !today.isBefore(validFrom)
+        val beforeEnd = validUntil == null || !today.isAfter(validUntil)
+        return afterStart && beforeEnd
     }
 
     private val currencyRegex = Regex("^[A-Z]{3}$")
@@ -227,6 +248,10 @@ class ServicesOfferedService(
             priceCurrency = entity.priceCurrency,
             priceUnit = entity.priceUnit,
             status = entity.status,
+            tag = entity.tag,
+            validFrom = entity.validFrom,
+            validUntil = entity.validUntil,
+            isCurrentlyActive = isCurrentlyActive(entity.status, entity.validFrom, entity.validUntil),
             galleryImages = entity.galleryImages
                 .sortedBy { it.position }
                 .map {

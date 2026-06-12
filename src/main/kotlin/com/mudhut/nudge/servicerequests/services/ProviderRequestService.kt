@@ -108,22 +108,16 @@ class ProviderRequestService(
             .sortedBy { it.position }
             .map { item ->
                 ServiceRequestItemResponse(
-                    kind = if (item.service != null) "service" else "package",
                     serviceId = item.service?.id,
-                    packageId = item.packageOffered?.id,
                     title = item.snapshotTitle
                         ?: item.service?.title
-                        ?: item.packageOffered?.title
                         ?: "(unknown)",
                     priceAmount = item.snapshotPriceAmount
-                        ?: item.service?.priceAmount
-                        ?: item.packageOffered?.priceAmount,
+                        ?: item.service?.priceAmount,
                     priceCurrency = item.snapshotPriceCurrency
-                        ?: item.service?.priceCurrency
-                        ?: item.packageOffered?.priceCurrency,
+                        ?: item.service?.priceCurrency,
                     coverImageUrl = item.snapshotCoverUrl
-                        ?: item.service?.coverImageUrl
-                        ?: item.packageOffered?.items?.firstOrNull()?.service?.coverImageUrl,
+                        ?: item.service?.coverImageUrl,
                     position = item.position,
                 )
             }
