@@ -37,11 +37,12 @@ class ServiceRequestServiceAddonsTest {
     private val businessRepo: BusinessRepository = mock()
     private val serviceRepo: ServiceOfferedRepository = mock()
     private val addonRepo: ServiceAddonRepository = mock()
+    private val publisher: org.springframework.context.ApplicationEventPublisher = mock()
 
     private lateinit var sut: ServiceRequestService
 
     private val customer = User(id = 1L, email = "c@e", username = "Cust")
-    private val biz = Business(id = 2L, name = "Biz")
+    private val biz = Business(id = 2L, name = "Biz", owner = User(id = 99L, email = "owner@biz", username = "Owner"))
     private val service = ServiceOffered(
         id = 10L,
         business = biz,
@@ -76,7 +77,7 @@ class ServiceRequestServiceAddonsTest {
 
     @BeforeEach
     fun setUp() {
-        sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo)
+        sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo, publisher)
         whenever(userRepo.findByEmail("c@e")).thenReturn(Optional.of(customer))
         whenever(businessRepo.findById(2L)).thenReturn(Optional.of(biz))
         whenever(serviceRepo.findAllById(listOf(10L))).thenReturn(listOf(service))
