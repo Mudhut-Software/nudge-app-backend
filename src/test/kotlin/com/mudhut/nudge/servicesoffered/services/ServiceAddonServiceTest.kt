@@ -3,11 +3,11 @@ package com.mudhut.nudge.servicesoffered.services
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
-import com.mudhut.nudge.servicerequests.repositories.ServiceRequestItemAddonRepository
 import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
+import com.mudhut.nudge.servicesoffered.events.ServiceAddonDeletedEvent
 import com.mudhut.nudge.servicesoffered.models.CreateServiceAddonRequest
 import com.mudhut.nudge.servicesoffered.models.ReorderAddonsRequest
 import com.mudhut.nudge.servicesoffered.models.UpdateServiceAddonRequest
@@ -21,10 +21,12 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.inOrder
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import org.springframework.context.ApplicationEventPublisher
 import java.math.BigDecimal
 import java.util.Optional
 
@@ -33,8 +35,8 @@ class ServiceAddonServiceTest {
     private val addonRepo: ServiceAddonRepository = mock()
     private val serviceRepo: ServiceOfferedRepository = mock()
     private val pendingMediaDeletionRepo: PendingMediaDeletionRepository = mock()
-    private val requestItemAddonRepo: ServiceRequestItemAddonRepository = mock()
     private val businessService: BusinessService = mock()
+    private val events: ApplicationEventPublisher = mock()
 
     private lateinit var sut: ServiceAddonService
 
@@ -53,7 +55,7 @@ class ServiceAddonServiceTest {
 
     @BeforeEach
     fun setUp() {
-        sut = ServiceAddonService(addonRepo, serviceRepo, pendingMediaDeletionRepo, requestItemAddonRepo, businessService)
+        sut = ServiceAddonService(addonRepo, serviceRepo, pendingMediaDeletionRepo, businessService, events)
         whenever(serviceRepo.findById(10L)).thenReturn(Optional.of(service))
         whenever(addonRepo.save(any())).thenAnswer {
             (it.arguments[0] as ServiceAddon).apply { if (id == null) id = 99L }
@@ -153,15 +155,17 @@ class ServiceAddonServiceTest {
     }
 
     @Test
-    fun `delete nullifies snapshot references before removing the addon`() {
+    fun `delete publishes ServiceAddonDeletedEvent before removing the addon`() {
         val existing = ServiceAddon(id = 5L, service = service, title = "X", position = 0)
         whenever(addonRepo.findById(5L)).thenReturn(Optional.of(existing))
 
         sut.delete(10L, 5L, email)
 
-        val order = org.mockito.kotlin.inOrder(requestItemAddonRepo, addonRepo)
-        order.verify(requestItemAddonRepo).nullifyAddonReference(5L)
+        val captor = argumentCaptor<ServiceAddonDeletedEvent>()
+        val order = inOrder(events, addonRepo)
+        order.verify(events).publishEvent(captor.capture())
         order.verify(addonRepo).delete(existing)
+        assertThat(captor.firstValue.addonId).isEqualTo(5L)
     }
 
     @Test
