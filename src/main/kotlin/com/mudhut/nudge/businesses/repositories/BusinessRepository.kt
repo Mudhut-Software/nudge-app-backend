@@ -52,15 +52,7 @@ interface BusinessRepository : JpaRepository<Business, Long> {
             WHERE s.business = b
               AND s.status = com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus.ACTIVE
           )
-        ORDER BY
-          (SELECT COUNT(r) FROM ServiceRequest r
-            WHERE r.business = b
-              AND r.status IN (
-                com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.CONFIRMED,
-                com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.COMPLETED
-              )
-          ) DESC,
-          b.createdAt DESC
+        ORDER BY b.popularityCount DESC, b.createdAt DESC
         """
     )
     fun findPublicQualifiedPopular(

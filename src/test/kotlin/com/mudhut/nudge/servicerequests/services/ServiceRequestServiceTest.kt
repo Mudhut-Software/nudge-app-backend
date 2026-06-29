@@ -29,6 +29,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import java.math.BigDecimal
 import java.time.LocalDateTime
@@ -41,8 +42,9 @@ class ServiceRequestServiceTest {
     private val businessRepo: BusinessRepository = mock()
     private val serviceRepo: ServiceOfferedRepository = mock()
     private val addonRepo: com.mudhut.nudge.servicesoffered.repositories.ServiceAddonRepository = mock()
+    private val popularityPublisher: RequestPopularityPublisher = mock()
 
-    private val sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo)
+    private val sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo, popularityPublisher)
 
     // --- fixtures ---
 
@@ -385,6 +387,7 @@ class ServiceRequestServiceTest {
         val response = sut.cancel(alice.email!!, 1L, null)
 
         assertEquals(ServiceRequestStatus.CANCELLED, response.status)
+        verify(popularityPublisher).recomputeAndPublish(10L)
     }
 
     @Test
