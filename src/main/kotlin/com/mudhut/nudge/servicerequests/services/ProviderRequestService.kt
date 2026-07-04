@@ -19,6 +19,7 @@ import java.time.LocalDateTime
 class ProviderRequestService(
     private val repo: ServiceRequestRepository,
     private val businessService: BusinessService,
+    private val popularityPublisher: RequestPopularityPublisher,
 ) {
 
     fun list(
@@ -61,7 +62,9 @@ class ProviderRequestService(
 
         request.status = ServiceRequestStatus.CONFIRMED
         request.respondedAt = LocalDateTime.now()
-        return toResponse(repo.save(request))
+        val saved = repo.save(request)
+        popularityPublisher.recomputeAndPublish(businessId)
+        return toResponse(saved)
     }
 
     @Transactional
@@ -91,7 +94,9 @@ class ProviderRequestService(
 
         request.status = ServiceRequestStatus.COMPLETED
         request.completedAt = LocalDateTime.now()
-        return toResponse(repo.save(request))
+        val saved = repo.save(request)
+        popularityPublisher.recomputeAndPublish(businessId)
+        return toResponse(saved)
     }
 
     private fun requireSameBusiness(businessId: Long, requestId: Long): ServiceRequest {

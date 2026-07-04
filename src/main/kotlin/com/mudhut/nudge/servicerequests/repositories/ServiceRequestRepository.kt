@@ -57,4 +57,21 @@ interface ServiceRequestRepository : JpaRepository<ServiceRequest, Long> {
         """
     )
     fun countUnreadByBusiness(@Param("businessId") businessId: Long): Long
+
+    fun countByBusinessIdAndStatusIn(
+        businessId: Long,
+        statuses: Collection<ServiceRequestStatus>,
+    ): Long
+
+    @Query(
+        """
+        SELECT r.business.id AS businessId, COUNT(r) AS count
+        FROM ServiceRequest r
+        WHERE r.status IN :statuses
+        GROUP BY r.business.id
+        """
+    )
+    fun popularityCounts(
+        @Param("statuses") statuses: Collection<ServiceRequestStatus>,
+    ): List<BusinessPopularityCount>
 }

@@ -38,6 +38,7 @@ class ServiceRequestServiceAddonsTest {
     private val serviceRepo: ServiceOfferedRepository = mock()
     private val addonRepo: ServiceAddonRepository = mock()
     private val publisher: org.springframework.context.ApplicationEventPublisher = mock()
+    private val popularityPublisher: RequestPopularityPublisher = mock()
 
     private lateinit var sut: ServiceRequestService
 
@@ -77,7 +78,7 @@ class ServiceRequestServiceAddonsTest {
 
     @BeforeEach
     fun setUp() {
-        sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo, publisher)
+        sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo, publisher, popularityPublisher)
         whenever(userRepo.findByEmail("c@e")).thenReturn(Optional.of(customer))
         whenever(businessRepo.findById(2L)).thenReturn(Optional.of(biz))
         whenever(serviceRepo.findAllById(listOf(10L))).thenReturn(listOf(service))

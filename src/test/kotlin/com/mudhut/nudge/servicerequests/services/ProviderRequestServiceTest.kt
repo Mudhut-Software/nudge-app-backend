@@ -29,7 +29,8 @@ class ProviderRequestServiceTest {
 
     private val repo: ServiceRequestRepository = mock()
     private val businessService: BusinessService = mock()
-    private val sut = ProviderRequestService(repo, businessService)
+    private val popularityPublisher: RequestPopularityPublisher = mock()
+    private val sut = ProviderRequestService(repo, businessService, popularityPublisher)
 
     private fun biz(id: Long = 10L) = Business(
         id = id,
@@ -109,6 +110,7 @@ class ProviderRequestServiceTest {
         val response = sut.accept("owner@example.com", 10L, 100L)
         assertEquals(ServiceRequestStatus.CONFIRMED, response.status)
         assertNotNull(response.respondedAt)
+        verify(popularityPublisher).recomputeAndPublish(10L)
     }
 
     @Test
@@ -132,6 +134,7 @@ class ProviderRequestServiceTest {
         val response = sut.complete("owner@example.com", 10L, 100L)
         assertEquals(ServiceRequestStatus.COMPLETED, response.status)
         assertNotNull(response.completedAt)
+        verify(popularityPublisher).recomputeAndPublish(10L)
     }
 
     @Test

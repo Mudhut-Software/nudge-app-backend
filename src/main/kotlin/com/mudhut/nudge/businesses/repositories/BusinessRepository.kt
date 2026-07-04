@@ -4,9 +4,11 @@ import com.mudhut.nudge.businesses.entities.Business
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import org.springframework.transaction.annotation.Transactional
 
 interface BusinessWithDistance {
     val id: Long
@@ -16,6 +18,11 @@ interface BusinessWithDistance {
 @Repository
 interface BusinessRepository : JpaRepository<Business, Long> {
     fun findByOwnerId(ownerId: Long): List<Business>
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE Business b SET b.popularityCount = :count WHERE b.id = :id")
+    fun updatePopularityCount(@Param("id") id: Long, @Param("count") count: Long): Int
 
     @Query(
         """
@@ -45,15 +52,7 @@ interface BusinessRepository : JpaRepository<Business, Long> {
             WHERE s.business = b
               AND s.status = com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus.ACTIVE
           )
-        ORDER BY
-          (SELECT COUNT(r) FROM ServiceRequest r
-            WHERE r.business = b
-              AND r.status IN (
-                com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.CONFIRMED,
-                com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.COMPLETED
-              )
-          ) DESC,
-          b.createdAt DESC
+        ORDER BY b.popularityCount DESC, b.createdAt DESC
         """
     )
     fun findPublicQualifiedPopular(

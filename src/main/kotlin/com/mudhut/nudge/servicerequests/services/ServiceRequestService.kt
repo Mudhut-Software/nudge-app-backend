@@ -43,6 +43,7 @@ class ServiceRequestService(
     private val serviceRepo: ServiceOfferedRepository,
     private val addonRepo: ServiceAddonRepository,
     private val events: ApplicationEventPublisher,
+    private val popularityPublisher: RequestPopularityPublisher,
 ) {
 
     @Transactional
@@ -174,7 +175,9 @@ class ServiceRequestService(
         request.cancelledAt = LocalDateTime.now()
         @Suppress("UNUSED_PARAMETER", "UNUSED_VARIABLE")
         val ignoredReason = reason
-        return toResponse(repo.save(request))
+        val saved = repo.save(request)
+        request.business?.id?.let { popularityPublisher.recomputeAndPublish(it) }
+        return toResponse(saved)
     }
 
     @Transactional

@@ -46,8 +46,9 @@ class ServiceRequestServiceTest {
     private val serviceRepo: ServiceOfferedRepository = mock()
     private val addonRepo: com.mudhut.nudge.servicesoffered.repositories.ServiceAddonRepository = mock()
     private val publisher: ApplicationEventPublisher = mock()
+    private val popularityPublisher: RequestPopularityPublisher = mock()
 
-    private val sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo, publisher)
+    private val sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo, publisher, popularityPublisher)
 
     // --- fixtures ---
 
@@ -426,6 +427,7 @@ class ServiceRequestServiceTest {
         val response = sut.cancel(alice.email!!, 1L, null)
 
         assertEquals(ServiceRequestStatus.CANCELLED, response.status)
+        verify(popularityPublisher).recomputeAndPublish(10L)
     }
 
     @Test

@@ -57,6 +57,9 @@ class Business(
     @Enumerated(EnumType.STRING)
     var status: BusinessStatus = BusinessStatus.ACTIVE,
 
+    @Column(name = "popularity_count", nullable = false)
+    var popularityCount: Long = 0,
+
     @CreationTimestamp
     var createdAt: LocalDateTime? = null,
 
