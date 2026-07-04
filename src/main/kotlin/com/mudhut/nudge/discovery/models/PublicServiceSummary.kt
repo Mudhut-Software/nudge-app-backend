@@ -1,4 +1,4 @@
-package com.mudhut.nudge.businesses.publicapi.models
+package com.mudhut.nudge.discovery.models
 
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag

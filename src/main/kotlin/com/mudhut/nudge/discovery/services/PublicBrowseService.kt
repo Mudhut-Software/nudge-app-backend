@@ -1,11 +1,12 @@
-package com.mudhut.nudge.businesses.publicapi.services
+package com.mudhut.nudge.discovery.services
 
 import com.mudhut.nudge.businesses.entities.Business
-import com.mudhut.nudge.businesses.publicapi.models.BusinessSort
-import com.mudhut.nudge.businesses.publicapi.models.PublicBusinessDetail
-import com.mudhut.nudge.businesses.publicapi.models.PublicBusinessSummary
-import com.mudhut.nudge.businesses.publicapi.models.PublicServiceSummary
+import com.mudhut.nudge.discovery.models.BusinessSort
+import com.mudhut.nudge.discovery.models.PublicBusinessDetail
+import com.mudhut.nudge.discovery.models.PublicBusinessSummary
+import com.mudhut.nudge.discovery.models.PublicServiceSummary
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
+import com.mudhut.nudge.discovery.repositories.DiscoveryBusinessRepository
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service
 
 @Service
 class PublicBrowseService(
+    private val discoveryRepository: DiscoveryBusinessRepository,
     private val businessRepository: BusinessRepository,
     private val serviceRepository: ServiceOfferedRepository,
 ) {
@@ -28,11 +30,11 @@ class PublicBrowseService(
         lng: Double?,
         pageable: Pageable,
     ): Page<PublicBusinessSummary> = when (sort) {
-        BusinessSort.NEWEST -> businessRepository
+        BusinessSort.NEWEST -> discoveryRepository
             .findPublicQualifiedNewest(categoryId, pageable)
             .map { toSummary(it) }
 
-        BusinessSort.POPULAR -> businessRepository
+        BusinessSort.POPULAR -> discoveryRepository
             .findPublicQualifiedPopular(categoryId, pageable)
             .map { toSummary(it) }
 
@@ -47,7 +49,7 @@ class PublicBrowseService(
     ): Page<PublicBusinessSummary> {
         require(lat != null && lng != null) { "sort=nearest requires lat and lng" }
 
-        val page = businessRepository.findPublicQualifiedNearest(categoryId, lat, lng, pageable)
+        val page = discoveryRepository.findPublicQualifiedNearest(categoryId, lat, lng, pageable)
         if (page.isEmpty) return PageImpl(emptyList(), pageable, page.totalElements)
 
         val distancesById = page.content.associate { it.id to it.distanceKm }
