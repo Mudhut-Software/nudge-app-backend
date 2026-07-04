@@ -2,7 +2,6 @@ package com.mudhut.nudge.servicesoffered.services
 
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
-import com.mudhut.nudge.servicerequests.repositories.ServiceRequestItemAddonRepository
 import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
 import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
@@ -13,9 +12,11 @@ import com.mudhut.nudge.servicesoffered.models.UpdateServiceAddonRequest
 import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceAddonRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
+import com.mudhut.nudge.servicesoffered.events.ServiceAddonDeletedEvent
 import com.mudhut.nudge.utils.exceptions.ServiceAddonNotFoundException
 import jakarta.persistence.EntityNotFoundException
 import jakarta.transaction.Transactional
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 
 @Service
@@ -23,8 +24,8 @@ class ServiceAddonService(
     private val addonRepo: ServiceAddonRepository,
     private val serviceRepo: ServiceOfferedRepository,
     private val pendingMediaDeletionRepo: PendingMediaDeletionRepository,
-    private val requestItemAddonRepo: ServiceRequestItemAddonRepository,
     private val businessService: BusinessService,
+    private val events: ApplicationEventPublisher,
 ) {
 
     fun list(serviceId: Long, userEmail: String): List<ServiceAddonResponse> {
@@ -117,7 +118,7 @@ class ServiceAddonService(
         existing.coverImagePublicId?.takeIf { it.isNotBlank() }?.let {
             pendingMediaDeletionRepo.save(PendingMediaDeletion(publicId = it))
         }
-        requestItemAddonRepo.nullifyAddonReference(addonId)
+        events.publishEvent(ServiceAddonDeletedEvent(addonId))
         addonRepo.delete(existing)
     }
 
