@@ -1,4 +1,4 @@
-package com.mudhut.nudge.businesses.publicapi.models
+package com.mudhut.nudge.discovery.models
 
 data class PublicBusinessSummary(
     val id: Long,

@@ -1,9 +1,9 @@
-package com.mudhut.nudge.businesses.publicapi.controllers
+package com.mudhut.nudge.discovery.controllers
 
-import com.mudhut.nudge.businesses.publicapi.models.BusinessSort
-import com.mudhut.nudge.businesses.publicapi.models.PublicBusinessDetail
-import com.mudhut.nudge.businesses.publicapi.models.PublicBusinessSummary
-import com.mudhut.nudge.businesses.publicapi.services.PublicBrowseService
+import com.mudhut.nudge.discovery.models.BusinessSort
+import com.mudhut.nudge.discovery.models.PublicBusinessDetail
+import com.mudhut.nudge.discovery.models.PublicBusinessSummary
+import com.mudhut.nudge.discovery.services.PublicBrowseService
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable

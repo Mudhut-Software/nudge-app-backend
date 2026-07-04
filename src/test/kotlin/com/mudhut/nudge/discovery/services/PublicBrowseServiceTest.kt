@@ -1,11 +1,12 @@
-package com.mudhut.nudge.businesses.publicapi.services
+package com.mudhut.nudge.discovery.services
 
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessCategory
 import com.mudhut.nudge.businesses.entities.BusinessStatus
-import com.mudhut.nudge.businesses.publicapi.models.BusinessSort
+import com.mudhut.nudge.discovery.models.BusinessSort
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
-import com.mudhut.nudge.businesses.repositories.BusinessWithDistance
+import com.mudhut.nudge.discovery.repositories.DiscoveryBusinessRepository
+import com.mudhut.nudge.discovery.repositories.BusinessWithDistance
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
@@ -28,10 +29,12 @@ import java.util.Optional
 
 class PublicBrowseServiceTest {
 
+    private val discoveryRepository: DiscoveryBusinessRepository = mock()
     private val businessRepository: BusinessRepository = mock()
     private val serviceRepository: ServiceOfferedRepository = mock()
 
     private val sut = PublicBrowseService(
+        discoveryRepository,
         businessRepository,
         serviceRepository,
     )
@@ -98,7 +101,7 @@ class PublicBrowseServiceTest {
     fun `summary cover falls back to first active service when business cover is null`() {
         val biz = business(id = 5, coverImageUrl = null)
         val firstActiveService = service(id = 50, biz = biz, coverUrl = "https://cdn/svc-50.jpg")
-        whenever(businessRepository.findPublicQualifiedNewest(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
+        whenever(discoveryRepository.findPublicQualifiedNewest(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
         whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(firstActiveService)
         whenever(serviceRepository.countByBusinessIdAndStatus(eq(5), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
@@ -111,7 +114,7 @@ class PublicBrowseServiceTest {
     @Test
     fun `summary cover prefers business coverImageUrl when set`() {
         val biz = business(id = 5, coverImageUrl = "https://cdn/biz-5.jpg")
-        whenever(businessRepository.findPublicQualifiedNewest(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
+        whenever(discoveryRepository.findPublicQualifiedNewest(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
         whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(service(id = 50, biz = biz, coverUrl = "https://cdn/svc-50.jpg"))
         whenever(serviceRepository.countByBusinessIdAndStatus(eq(5), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
@@ -124,7 +127,7 @@ class PublicBrowseServiceTest {
     @Test
     fun `list with sort=NEWEST and category delegates to findPublicQualifiedNewest`() {
         val biz = business(id = 7, categoryId = 1, categoryName = "Catering")
-        whenever(businessRepository.findPublicQualifiedNewest(eq(1L), any())).thenReturn(PageImpl(listOf(biz)))
+        whenever(discoveryRepository.findPublicQualifiedNewest(eq(1L), any())).thenReturn(PageImpl(listOf(biz)))
         stubSummaryHelpers(7)
 
         val page = sut.list(1L, BusinessSort.NEWEST, null, null, Pageable.ofSize(20))
@@ -137,7 +140,7 @@ class PublicBrowseServiceTest {
     @Test
     fun `list with sort=POPULAR delegates to findPublicQualifiedPopular`() {
         val biz = business(id = 8)
-        whenever(businessRepository.findPublicQualifiedPopular(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
+        whenever(discoveryRepository.findPublicQualifiedPopular(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
         stubSummaryHelpers(8)
 
         val page = sut.list(null, BusinessSort.POPULAR, null, null, Pageable.ofSize(20))
@@ -150,7 +153,7 @@ class PublicBrowseServiceTest {
     fun `list with sort=NEAREST returns distanceKm and preserves DB ordering`() {
         val far = business(id = 20)
         val near = business(id = 10)
-        whenever(businessRepository.findPublicQualifiedNearest(eq(null), eq(0.0), eq(0.0), any()))
+        whenever(discoveryRepository.findPublicQualifiedNearest(eq(null), eq(0.0), eq(0.0), any()))
             .thenReturn(
                 PageImpl(
                     listOf(
@@ -182,7 +185,7 @@ class PublicBrowseServiceTest {
 
     @Test
     fun `list with sort=NEAREST returns empty page when no qualified businesses`() {
-        whenever(businessRepository.findPublicQualifiedNearest(eq(null), eq(0.0), eq(0.0), any()))
+        whenever(discoveryRepository.findPublicQualifiedNearest(eq(null), eq(0.0), eq(0.0), any()))
             .thenReturn(PageImpl(emptyList()))
 
         val page = sut.list(null, BusinessSort.NEAREST, 0.0, 0.0, Pageable.ofSize(20))

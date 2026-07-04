@@ -1,10 +1,10 @@
-package com.mudhut.nudge.businesses.publicapi.controllers
+package com.mudhut.nudge.discovery.controllers
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.mudhut.nudge.businesses.publicapi.models.BusinessSort
-import com.mudhut.nudge.businesses.publicapi.models.PublicBusinessDetail
-import com.mudhut.nudge.businesses.publicapi.models.PublicBusinessSummary
-import com.mudhut.nudge.businesses.publicapi.services.PublicBrowseService
+import com.mudhut.nudge.discovery.models.BusinessSort
+import com.mudhut.nudge.discovery.models.PublicBusinessDetail
+import com.mudhut.nudge.discovery.models.PublicBusinessSummary
+import com.mudhut.nudge.discovery.services.PublicBrowseService
 import com.mudhut.nudge.config.JsonAccessDeniedHandler
 import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
 import com.mudhut.nudge.config.PassThroughJwtFilterConfig
