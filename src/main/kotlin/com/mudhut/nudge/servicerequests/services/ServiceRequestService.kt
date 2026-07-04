@@ -4,6 +4,7 @@ import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestAttachment
+import com.mudhut.nudge.servicerequests.events.ServiceRequestSubmittedEvent
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemAddon
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
@@ -26,6 +27,7 @@ import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import com.mudhut.nudge.utils.exceptions.ServiceAddonNotFoundException
 import jakarta.persistence.EntityNotFoundException
 import jakarta.transaction.Transactional
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
@@ -40,6 +42,7 @@ class ServiceRequestService(
     private val businessRepo: BusinessRepository,
     private val serviceRepo: ServiceOfferedRepository,
     private val addonRepo: ServiceAddonRepository,
+    private val events: ApplicationEventPublisher,
 ) {
 
     @Transactional
@@ -136,7 +139,18 @@ class ServiceRequestService(
 
         request.status = ServiceRequestStatus.PENDING
         request.submittedAt = LocalDateTime.now()
-        return toResponse(repo.save(request))
+        val saved = repo.save(request)
+        events.publishEvent(
+            ServiceRequestSubmittedEvent(
+                requestId = saved.id!!,
+                businessId = saved.business!!.id!!,
+                businessName = saved.business!!.name!!,
+                ownerEmail = saved.business!!.owner!!.email!!,
+                customerName = saved.customer!!.username!!,
+                submittedAt = saved.submittedAt!!,
+            )
+        )
+        return toResponse(saved)
     }
 
     @Transactional

@@ -6,6 +6,7 @@ import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.ServiceRequestSubmittedEvent
 import com.mudhut.nudge.servicerequests.models.AttachmentInput
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
 import com.mudhut.nudge.servicerequests.models.RequestItemInput
@@ -27,9 +28,12 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import org.springframework.context.ApplicationEventPublisher
 import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.Optional
@@ -41,8 +45,9 @@ class ServiceRequestServiceTest {
     private val businessRepo: BusinessRepository = mock()
     private val serviceRepo: ServiceOfferedRepository = mock()
     private val addonRepo: com.mudhut.nudge.servicesoffered.repositories.ServiceAddonRepository = mock()
+    private val publisher: ApplicationEventPublisher = mock()
 
-    private val sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo)
+    private val sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo, publisher)
 
     // --- fixtures ---
 
@@ -61,6 +66,7 @@ class ServiceRequestServiceTest {
         name = "SparkleClean",
         description = "Cleaning",
         category = BusinessCategory(id = 1L, name = "Cleaning"),
+        owner = user(id = 99L, email = "owner@sparkle.com"),
         phoneNumbers = mutableListOf(),
         email = "biz@example.com",
         logoUrl = null,
@@ -260,6 +266,41 @@ class ServiceRequestServiceTest {
         assertEquals(BigDecimal("250000.00"), item.snapshotPriceAmount)
         assertEquals("UGX", item.snapshotPriceCurrency)
         assertEquals("https://cdn/svc.jpg", item.snapshotCoverUrl)
+    }
+
+    @Test
+    fun `submit publishes ServiceRequestSubmittedEvent`() {
+        val alice = user()
+        val biz = business()
+        val svc = service(id = 100L, biz = biz)
+        val req = ServiceRequest(
+            id = 1L,
+            customer = alice,
+            business = biz,
+            status = ServiceRequestStatus.DRAFT,
+            requestedDate = LocalDateTime.now().plusDays(3),
+            serviceLocation = "Kampala",
+        )
+        req.items.add(
+            com.mudhut.nudge.servicerequests.entities.ServiceRequestItem(
+                request = req,
+                service = svc,
+                position = 0,
+            )
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        sut.submit(alice.email!!, 1L)
+
+        val captor = argumentCaptor<ServiceRequestSubmittedEvent>()
+        verify(publisher).publishEvent(captor.capture())
+        assertEquals(1L, captor.firstValue.requestId)
+        assertEquals(10L, captor.firstValue.businessId)
+        assertEquals("SparkleClean", captor.firstValue.businessName)
+        assertEquals("owner@sparkle.com", captor.firstValue.ownerEmail)
+        assertEquals("Alice", captor.firstValue.customerName)
     }
 
     @Test
