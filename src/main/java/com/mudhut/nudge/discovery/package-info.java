@@ -1,2 +1,3 @@
-@org.springframework.modulith.ApplicationModule(type = org.springframework.modulith.ApplicationModule.Type.OPEN)
+// CLOSED module: leaf — exposes only its base package; nothing else imports it.
+@org.springframework.modulith.ApplicationModule
 package com.mudhut.nudge.discovery;
