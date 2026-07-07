@@ -1,6 +1,6 @@
 package com.mudhut.nudge.users.services
 
-import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
+import com.mudhut.nudge.users.spi.UserBusinessMembershipQuery
 import com.mudhut.nudge.users.entities.RefreshToken
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.UserRole
@@ -23,13 +23,13 @@ class TokenRefreshServiceTest {
 
     @Mock private lateinit var refreshTokenService: RefreshTokenService
     @Mock private lateinit var jwtService: JwtService
-    @Mock private lateinit var businessMemberRepository: BusinessMemberRepository
+    @Mock private lateinit var membershipQuery: UserBusinessMembershipQuery
 
     private lateinit var service: TokenRefreshService
 
     @BeforeEach
     fun setUp() {
-        service = TokenRefreshService(refreshTokenService, jwtService, businessMemberRepository)
+        service = TokenRefreshService(refreshTokenService, jwtService, membershipQuery)
     }
 
     private fun user() = User(
@@ -50,7 +50,7 @@ class TokenRefreshServiceTest {
             expiryDate = originalExpiry,
         )
         `when`(refreshTokenService.findByToken("raw-refresh")).thenReturn(Optional.of(stored))
-        `when`(businessMemberRepository.findByUserIdAndIsActiveTrue(7L)).thenReturn(emptyList())
+        `when`(membershipQuery.findActiveMembershipsFor(7L)).thenReturn(emptyList())
         `when`(jwtService.generateToken(user)).thenReturn("new-access")
 
         val response = service.refresh("raw-refresh")

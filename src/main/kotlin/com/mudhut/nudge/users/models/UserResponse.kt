@@ -1,8 +1,8 @@
 package com.mudhut.nudge.users.models
 
-import com.mudhut.nudge.businesses.entities.BusinessMember
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.UserRole
+import com.mudhut.nudge.users.spi.UserBusinessSummary
 import java.time.LocalDateTime
 
 data class UserResponse(
@@ -22,7 +22,7 @@ data class UserResponse(
     val businesses: List<UserBusinessSummary> = emptyList()
 ) {
     companion object {
-        fun from(user: User, memberships: List<BusinessMember> = emptyList()): UserResponse {
+        fun from(user: User, memberships: List<UserBusinessSummary> = emptyList()): UserResponse {
             return UserResponse(
                 id = user.id,
                 email = user.email,
@@ -37,7 +37,7 @@ data class UserResponse(
                 avatarUrl = user.avatarUrl,
                 avatarPublicId = user.avatarPublicId,
                 createdAt = user.createdAt,
-                businesses = memberships.map { UserBusinessSummary.from(it) }
+                businesses = memberships,
             )
         }
     }
