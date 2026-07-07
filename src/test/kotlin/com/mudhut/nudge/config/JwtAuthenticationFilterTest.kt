@@ -2,7 +2,7 @@ package com.mudhut.nudge.config
 
 import com.mudhut.nudge.users.services.AccessTokenBlocklistService
 import com.mudhut.nudge.users.services.JwtService
-import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
+import com.mudhut.nudge.users.services.NudgeUserDetailsService
 import io.jsonwebtoken.Claims
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest

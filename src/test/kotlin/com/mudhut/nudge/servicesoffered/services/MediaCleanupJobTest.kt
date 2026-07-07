@@ -1,7 +1,7 @@
 package com.mudhut.nudge.servicesoffered.services
 
-import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
-import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
+import com.mudhut.nudge.media.PendingMediaDeletion
+import com.mudhut.nudge.media.PendingMediaDeletionRepository
 import com.mudhut.nudge.utils.exceptions.MediaDeletionException
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test

@@ -2,7 +2,7 @@ package com.mudhut.nudge.servicesoffered.services
 
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
-import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
+import com.mudhut.nudge.media.PendingMediaDeletion
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedImage
@@ -11,7 +11,7 @@ import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
 import com.mudhut.nudge.servicesoffered.models.MediaResponse
 import com.mudhut.nudge.servicesoffered.models.ServiceOfferedResponse
 import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
-import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
+import com.mudhut.nudge.media.PendingMediaDeletionRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import jakarta.transaction.Transactional

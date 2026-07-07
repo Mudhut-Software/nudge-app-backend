@@ -1,6 +1,6 @@
 package com.mudhut.nudge.config
 
-import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
+import com.mudhut.nudge.users.services.NudgeUserDetailsService
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.security.authentication.AuthenticationManager

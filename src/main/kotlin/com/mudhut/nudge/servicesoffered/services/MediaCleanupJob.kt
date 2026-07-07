@@ -1,7 +1,7 @@
 package com.mudhut.nudge.servicesoffered.services
 
-import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
-import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
+import com.mudhut.nudge.media.PendingMediaDeletion
+import com.mudhut.nudge.media.PendingMediaDeletionRepository
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled

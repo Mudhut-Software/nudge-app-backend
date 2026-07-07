@@ -1,8 +1,8 @@
 package com.mudhut.nudge.users.services
 
 import com.mudhut.nudge.users.spi.UserBusinessMembershipQuery
-import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
-import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
+import com.mudhut.nudge.media.PendingMediaDeletion
+import com.mudhut.nudge.media.PendingMediaDeletionRepository
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.models.UpdateUserRequest
 import com.mudhut.nudge.users.repositories.UserRepository

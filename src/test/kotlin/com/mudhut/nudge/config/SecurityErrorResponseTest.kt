@@ -2,7 +2,7 @@ package com.mudhut.nudge.config
 
 import com.mudhut.nudge.businesses.controllers.BusinessCategoryController
 import com.mudhut.nudge.businesses.services.BusinessCategoryService
-import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
+import com.mudhut.nudge.users.services.NudgeUserDetailsService
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc

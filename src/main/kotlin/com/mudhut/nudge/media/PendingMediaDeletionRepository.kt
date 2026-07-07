@@ -1,6 +1,5 @@
-package com.mudhut.nudge.servicesoffered.repositories
+package com.mudhut.nudge.media
 
-import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.stereotype.Repository
 
