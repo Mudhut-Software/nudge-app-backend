@@ -74,4 +74,76 @@ interface ServiceRequestRepository : JpaRepository<ServiceRequest, Long> {
     fun popularityCounts(
         @Param("statuses") statuses: Collection<ServiceRequestStatus>,
     ): List<BusinessPopularityCount>
+
+    @Query(
+        value = """
+            SELECT r.customer.id AS customerId, r.customer.username AS name, r.customer.email AS email,
+                   r.customer.phoneNumber AS phone, r.customer.location AS location,
+                   COUNT(r) AS totalRequests, MIN(r.createdAt) AS firstRequestAt, MAX(r.createdAt) AS lastRequestAt
+            FROM ServiceRequest r
+            WHERE r.business.id = :businessId
+              AND r.status <> com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.DRAFT
+              AND (:search IS NULL
+                   OR LOWER(r.customer.username) LIKE LOWER(CONCAT('%', :search, '%'))
+                   OR LOWER(r.customer.email) LIKE LOWER(CONCAT('%', :search, '%')))
+            GROUP BY r.customer.id, r.customer.username, r.customer.email, r.customer.phoneNumber, r.customer.location
+            ORDER BY MAX(r.createdAt) DESC
+        """,
+        countQuery = """
+            SELECT COUNT(DISTINCT r.customer.id) FROM ServiceRequest r
+            WHERE r.business.id = :businessId
+              AND r.status <> com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.DRAFT
+              AND (:search IS NULL
+                   OR LOWER(r.customer.username) LIKE LOWER(CONCAT('%', :search, '%'))
+                   OR LOWER(r.customer.email) LIKE LOWER(CONCAT('%', :search, '%')))
+        """,
+    )
+    fun findClients(
+        @Param("businessId") businessId: Long,
+        @Param("search") search: String?,
+        pageable: Pageable,
+    ): Page<ClientSummaryProjection>
+
+    @Query(
+        """
+        SELECT r.customer.id AS customerId, r.customer.username AS name, r.customer.email AS email,
+               r.customer.phoneNumber AS phone, r.customer.location AS location,
+               COUNT(r) AS totalRequests, MIN(r.createdAt) AS firstRequestAt, MAX(r.createdAt) AS lastRequestAt
+        FROM ServiceRequest r
+        WHERE r.business.id = :businessId AND r.customer.id = :customerId
+          AND r.status <> com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.DRAFT
+        GROUP BY r.customer.id, r.customer.username, r.customer.email, r.customer.phoneNumber, r.customer.location
+        """
+    )
+    fun findClientSummary(
+        @Param("businessId") businessId: Long,
+        @Param("customerId") customerId: Long,
+    ): ClientSummaryProjection?
+
+    @Query(
+        """
+        SELECT r.status AS status, COUNT(r) AS count FROM ServiceRequest r
+        WHERE r.business.id = :businessId AND r.customer.id = :customerId
+          AND r.status <> com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.DRAFT
+        GROUP BY r.status
+        """
+    )
+    fun clientStatusCounts(
+        @Param("businessId") businessId: Long,
+        @Param("customerId") customerId: Long,
+    ): List<StatusCountProjection>
+
+    @Query(
+        """
+        SELECT r FROM ServiceRequest r
+        WHERE r.business.id = :businessId AND r.customer.id = :customerId
+          AND r.status <> com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.DRAFT
+        ORDER BY r.createdAt DESC
+        """
+    )
+    fun findClientRequests(
+        @Param("businessId") businessId: Long,
+        @Param("customerId") customerId: Long,
+        pageable: Pageable,
+    ): List<ServiceRequest>
 }
