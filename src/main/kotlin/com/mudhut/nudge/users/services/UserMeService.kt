@@ -1,8 +1,8 @@
 package com.mudhut.nudge.users.services
 
-import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
-import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
-import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
+import com.mudhut.nudge.users.spi.UserBusinessMembershipQuery
+import com.mudhut.nudge.media.PendingMediaDeletion
+import com.mudhut.nudge.media.PendingMediaDeletionRepository
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.models.UpdateUserRequest
 import com.mudhut.nudge.users.models.UserResponse
@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class UserMeService(
     private val userRepository: UserRepository,
-    private val businessMemberRepository: BusinessMemberRepository,
+    private val membershipQuery: UserBusinessMembershipQuery,
     private val pendingMediaDeletionRepository: PendingMediaDeletionRepository,
 ) {
 
@@ -31,7 +31,7 @@ class UserMeService(
 
         userRepository.save(user)
 
-        val memberships = user.id?.let { businessMemberRepository.findByUserIdAndIsActiveTrue(it) }.orEmpty()
+        val memberships = user.id?.let { membershipQuery.findActiveMembershipsFor(it) }.orEmpty()
         return UserResponse.from(user, memberships)
     }
 

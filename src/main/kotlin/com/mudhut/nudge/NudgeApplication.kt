@@ -5,7 +5,7 @@ import org.springframework.boot.runApplication
 import org.springframework.modulith.Modulithic
 import org.springframework.scheduling.annotation.EnableScheduling
 
-@Modulithic(sharedModules = ["config", "utils"])
+@Modulithic(sharedModules = ["config", "utils", "media"])
 @SpringBootApplication
 @EnableScheduling
 class NudgeApplication

@@ -1,11 +1,10 @@
 package com.mudhut.nudge.users.controllers
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.mudhut.nudge.businesses.entities.BusinessRole
-import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.UserRole
 import com.mudhut.nudge.users.models.*
+import com.mudhut.nudge.users.spi.UserBusinessSummary
 import com.mudhut.nudge.users.services.ForgotPasswordService
 import com.mudhut.nudge.users.services.GoogleAuthService
 import com.mudhut.nudge.users.services.LoginService
@@ -19,7 +18,7 @@ import com.mudhut.nudge.config.JsonAccessDeniedHandler
 import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
 import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
-import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
+import com.mudhut.nudge.users.services.NudgeUserDetailsService
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.mockito.Mockito.verify
@@ -229,8 +228,8 @@ class UserControllerTest {
             isPhoneVerified = false,
             isActive = true,
             businesses = listOf(
-                UserBusinessSummary(id = 42L, status = BusinessStatus.ACTIVE, role = BusinessRole.OWNER),
-                UserBusinessSummary(id = 43L, status = BusinessStatus.SUSPENDED, role = BusinessRole.STAFF)
+                UserBusinessSummary(id = 42L, status = "ACTIVE", role = "OWNER"),
+                UserBusinessSummary(id = 43L, status = "SUSPENDED", role = "STAFF")
             )
         )
 

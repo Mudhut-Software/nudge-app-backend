@@ -1,6 +1,6 @@
 package com.mudhut.nudge.users.services
 
-import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
+import com.mudhut.nudge.users.spi.UserBusinessMembershipQuery
 import com.mudhut.nudge.users.models.AuthResponse
 import com.mudhut.nudge.users.models.UserResponse
 import org.springframework.security.authentication.AuthenticationServiceException
@@ -12,7 +12,7 @@ import java.time.Instant
 class TokenRefreshService(
     private val refreshTokenService: RefreshTokenService,
     private val jwtService: JwtService,
-    private val businessMemberRepository: BusinessMemberRepository,
+    private val membershipQuery: UserBusinessMembershipQuery,
 ) {
 
     @Transactional
@@ -26,7 +26,7 @@ class TokenRefreshService(
         }
 
         val user = stored.user!!
-        val memberships = businessMemberRepository.findByUserIdAndIsActiveTrue(user.id!!)
+        val memberships = membershipQuery.findActiveMembershipsFor(user.id!!)
 
         val newAccessToken = jwtService.generateToken(user)
 

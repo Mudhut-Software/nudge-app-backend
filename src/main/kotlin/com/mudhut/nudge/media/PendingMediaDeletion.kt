@@ -1,4 +1,4 @@
-package com.mudhut.nudge.servicesoffered.entities
+package com.mudhut.nudge.media
 
 import jakarta.persistence.*
 import org.hibernate.annotations.CreationTimestamp

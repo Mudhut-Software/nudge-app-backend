@@ -8,7 +8,7 @@ import com.mudhut.nudge.config.SecurityConfig
 import com.mudhut.nudge.users.models.UpdateUserRequest
 import com.mudhut.nudge.users.models.UserResponse
 import com.mudhut.nudge.users.services.UserMeService
-import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
+import com.mudhut.nudge.users.services.NudgeUserDetailsService
 import com.mudhut.nudge.utils.exceptions.UserAlreadyExistsException
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any

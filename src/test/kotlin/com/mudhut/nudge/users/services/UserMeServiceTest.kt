@@ -1,8 +1,8 @@
 package com.mudhut.nudge.users.services
 
-import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
-import com.mudhut.nudge.servicesoffered.entities.PendingMediaDeletion
-import com.mudhut.nudge.servicesoffered.repositories.PendingMediaDeletionRepository
+import com.mudhut.nudge.users.spi.UserBusinessMembershipQuery
+import com.mudhut.nudge.media.PendingMediaDeletion
+import com.mudhut.nudge.media.PendingMediaDeletionRepository
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.models.UpdateUserRequest
 import com.mudhut.nudge.users.repositories.UserRepository
@@ -24,10 +24,10 @@ import java.util.Optional
 class UserMeServiceTest {
 
     private val userRepository: UserRepository = mock()
-    private val businessMemberRepository: BusinessMemberRepository = mock()
+    private val membershipQuery: UserBusinessMembershipQuery = mock()
     private val pendingMediaDeletionRepository: PendingMediaDeletionRepository = mock()
 
-    private val sut = UserMeService(userRepository, businessMemberRepository, pendingMediaDeletionRepository)
+    private val sut = UserMeService(userRepository, membershipQuery, pendingMediaDeletionRepository)
 
     private fun existingUser(
         id: Long = 1L,
@@ -48,7 +48,7 @@ class UserMeServiceTest {
     ).also {
         whenever(userRepository.findByEmail(email)).thenReturn(Optional.of(it))
         whenever(userRepository.save(any<User>())).thenAnswer { invocation -> invocation.arguments[0] }
-        whenever(businessMemberRepository.findByUserIdAndIsActiveTrue(id)).thenReturn(emptyList())
+        whenever(membershipQuery.findActiveMembershipsFor(id)).thenReturn(emptyList())
     }
 
     @Test
@@ -176,7 +176,7 @@ class UserMeServiceTest {
     fun `updateMe returns the membership list with the response`() {
         val user = existingUser(id = 42L)
         // Empty memberships list from beforeEach — assert response carries the empty list, not null.
-        whenever(businessMemberRepository.findByUserIdAndIsActiveTrue(eq(42L))).thenReturn(emptyList())
+        whenever(membershipQuery.findActiveMembershipsFor(eq(42L))).thenReturn(emptyList())
 
         val response = sut.updateMe("alice@example.com", UpdateUserRequest(location = "Mengo"))
 

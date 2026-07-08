@@ -9,7 +9,7 @@ import com.mudhut.nudge.servicesoffered.models.CreateServiceAddonRequest
 import com.mudhut.nudge.servicesoffered.models.ReorderAddonsRequest
 import com.mudhut.nudge.servicesoffered.models.ServiceAddonResponse
 import com.mudhut.nudge.servicesoffered.services.ServiceAddonService
-import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
+import com.mudhut.nudge.users.services.NudgeUserDetailsService
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
