@@ -17,6 +17,7 @@ import com.mudhut.nudge.utils.exceptions.InvitationException
 import com.mudhut.nudge.utils.models.GeneralRequestResponse
 import jakarta.persistence.EntityNotFoundException
 import jakarta.transaction.Transactional
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
 import java.util.UUID
@@ -29,7 +30,8 @@ class BusinessInvitationService(
     private val userRepository: UserRepository,
     private val businessService: BusinessService,
     private val emailService: IEmailService,
-    private val urlService: UrlService
+    private val urlService: UrlService,
+    @Value("\${nudge.frontend-url:}") private val frontendUrl: String,
 ) {
 
     @Transactional
@@ -166,6 +168,13 @@ class BusinessInvitationService(
             .map { toResponse(it) }
     }
 
+    /** Preview an invitation by its token (for the accept/decline landing page). */
+    fun getInvitation(token: String): InvitationResponse {
+        val invitation = invitationRepository.findByToken(token)
+            .orElseThrow { InvitationException("Invitation not found") }
+        return toResponse(invitation)
+    }
+
     fun resolveInvitationsForNewUser(userEmail: String) {
         val user = userRepository.findByEmail(userEmail).orElse(null) ?: return
         val pendingInvitations = invitationRepository.findByEmailAndStatus(userEmail, InvitationStatus.PENDING)
@@ -176,10 +185,7 @@ class BusinessInvitationService(
     }
 
     private fun sendInvitationEmail(invitation: BusinessInvitation, businessName: String) {
-        val inviteUrl = urlService.buildUrlWithParam(
-            "/api/v1/invitations/${invitation.token}/accept",
-            "token", invitation.token!!
-        )
+        val inviteUrl = "${frontendUrl.trimEnd('/')}/invitations/${invitation.token}"
         val subject = "You've been invited to join $businessName"
         val body = """
             You have been invited to join $businessName as ${invitation.role?.name}.
