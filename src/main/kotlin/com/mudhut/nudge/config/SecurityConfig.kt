@@ -50,6 +50,7 @@ class SecurityConfig(
             .authorizeHttpRequests { auth ->
                 auth
                     .requestMatchers("/verify-email").permitAll()
+                    .requestMatchers("/ws/**").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
                     .requestMatchers("/api/v1/auth/**").permitAll()
                     .requestMatchers(
