@@ -124,6 +124,8 @@ class BusinessMemberService(
             id = member.id!!,
             userId = member.user!!.id!!,
             userEmail = member.user!!.email!!,
+            userName = member.user!!.username,
+            userAvatarUrl = member.user!!.avatarUrl,
             businessId = business.id!!,
             businessName = business.name!!,
             businessLogoUrl = business.logoUrl,
