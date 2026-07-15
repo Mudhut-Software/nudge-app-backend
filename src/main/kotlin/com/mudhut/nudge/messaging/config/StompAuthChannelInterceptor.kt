@@ -6,6 +6,7 @@ import org.springframework.messaging.MessageChannel
 import org.springframework.messaging.simp.stomp.StompCommand
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor
 import org.springframework.messaging.support.ChannelInterceptor
+import org.springframework.messaging.support.MessageHeaderAccessor
 import org.springframework.stereotype.Component
 import java.security.Principal
 
@@ -19,7 +20,11 @@ class StompAuthChannelInterceptor(
     private val jwtService: JwtService,
 ) : ChannelInterceptor {
     override fun preSend(message: Message<*>, channel: MessageChannel): Message<*> {
-        val accessor = StompHeaderAccessor.wrap(message)
+        // Use getAccessor (not wrap): it returns the *mutable* accessor bound to this inbound
+        // message, so setting the Principal actually sticks to the session. `wrap()` copies the
+        // headers into a detached accessor, silently dropping the user we set here.
+        val accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor::class.java)
+            ?: return message
         if (StompCommand.CONNECT == accessor.command) {
             val token = accessor.getFirstNativeHeader("Authorization")
                 ?.removePrefix("Bearer ")
