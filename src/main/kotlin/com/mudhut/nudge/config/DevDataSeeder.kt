@@ -70,19 +70,68 @@ class DevDataSeeder(
 
     @Transactional
     override fun run(args: ApplicationArguments?) {
-        if (categoryRepo.count() > 0L) {
-            log.info("DevDataSeeder: categories already present — skipping seed.")
-            return
+        if (categoryRepo.count() == 0L) {
+            log.info("DevDataSeeder: empty database — seeding demo data…")
+            val categories = seedCategories()
+            seedCustomer()
+            seedBusinesses(categories)
+        } else {
+            log.info("DevDataSeeder: data already present — skipping demo seed.")
         }
-        log.info("DevDataSeeder: empty database — seeding demo data…")
 
-        val categories = seedCategories()
-        val customer = seedCustomer()
-        val owners = seedBusinesses(categories)
+        // Always run (dev-only): guarantee every account is usable for physical testing.
+        normalizeForTesting()
+        logTestCredentials()
+    }
 
-        log.info("DevDataSeeder: done. Customer = {} / {}.", customer.email, DEMO_PASSWORD)
-        log.info("DevDataSeeder: {} business owners (all / {}): {}",
-            owners.size, DEMO_PASSWORD, owners.joinToString(", ") { it.email!! })
+    /**
+     * Dev-only. Makes every account physically testable and every business owner-backed:
+     *   • all users → active, email-verified, password = [DEMO_PASSWORD]
+     *   • every business → an active OWNER [BusinessMember] for its owner
+     *
+     * Idempotent — safe to run on every boot. This is why both seeded businesses AND any
+     * created through the UI can all be logged into with the shared password.
+     */
+    private fun normalizeForTesting() {
+        val encoded = passwordEncoder.encode(DEMO_PASSWORD)
+        val users = userRepo.findAll()
+        users.forEach { u ->
+            u.isActive = true
+            u.isEmailVerified = true
+            u.password = encoded
+        }
+        userRepo.saveAll(users)
+
+        var createdMemberships = 0
+        businessRepo.findAll().forEach { biz ->
+            val owner = biz.owner ?: return@forEach
+            val bizId = biz.id ?: return@forEach
+            val ownerId = owner.id ?: return@forEach
+            val existing = businessMemberRepo.findByBusinessIdAndUserId(bizId, ownerId)
+            if (existing.isPresent) {
+                val member = existing.get()
+                member.role = BusinessRole.OWNER
+                member.isActive = true
+                businessMemberRepo.save(member)
+            } else {
+                businessMemberRepo.save(
+                    BusinessMember(user = owner, business = biz, role = BusinessRole.OWNER, isActive = true)
+                )
+                createdMemberships++
+            }
+        }
+        log.info(
+            "DevDataSeeder: normalized {} users (active + verified + shared password); created {} missing owner memberships.",
+            users.size, createdMemberships,
+        )
+    }
+
+    /** Prints one login line per business so any business can be tested manually. */
+    private fun logTestCredentials() {
+        val businesses = businessRepo.findAll()
+        log.info("DevDataSeeder: ===== TEST LOGINS (all accounts share password '{}') =====", DEMO_PASSWORD)
+        businesses.forEach { b -> log.info("DevDataSeeder:   {} → owner {}", b.name, b.owner?.email) }
+        log.info("DevDataSeeder: ===== {} businesses, all owner accounts activated =====", businesses.size)
     }
 
     private fun seedCategories(): Map<String, BusinessCategory> {
