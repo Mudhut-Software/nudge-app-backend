@@ -18,6 +18,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
@@ -30,7 +31,10 @@ class ConversationServiceTest {
     private val userRepo: UserRepository = mock()
     private val businessRepo: BusinessRepository = mock()
     private val memberRepo: BusinessMemberRepository = mock()
-    private val sut = ConversationService(conversationRepo, messageRepo, userRepo, businessRepo, memberRepo)
+    private val presenceService: PresenceService = mock()
+    private val sut = ConversationService(
+        conversationRepo, messageRepo, userRepo, businessRepo, memberRepo, presenceService,
+    )
 
     private fun user(id: Long, email: String = "u$id@e.com") = User(
         id = id, username = "User$id", email = email,
@@ -53,6 +57,8 @@ class ConversationServiceTest {
         whenever(memberRepo.findByBusinessIdAndIsActiveTrue(10L)).thenReturn(listOf(member(user(2)), member(user(3))))
         whenever(conversationRepo.countByBusinessIdAndAssignedMemberId(10L, 2L)).thenReturn(5L)
         whenever(conversationRepo.countByBusinessIdAndAssignedMemberId(10L, 3L)).thenReturn(1L)
+        // Both online, so the tie-break is pure load (member 3, load 1).
+        whenever(presenceService.isOnline(any(), anyOrNull())).thenReturn(true)
         whenever(conversationRepo.save(any<Conversation>())).thenAnswer {
             (it.arguments[0] as Conversation).apply { if (id == null) id = 100L }
         }
@@ -62,6 +68,48 @@ class ConversationServiceTest {
 
         assertThat(res.assignedMemberId).isEqualTo(3L)
         assertThat(res.customerId).isEqualTo(1L)
+    }
+
+    @Test
+    fun `startAsCustomer prefers an online member over a less-loaded offline one`() {
+        val customer = user(1)
+        whenever(userRepo.findByEmail("u1@e.com")).thenReturn(Optional.of(customer))
+        whenever(businessRepo.findById(10L)).thenReturn(Optional.of(business()))
+        whenever(conversationRepo.findByCustomerIdAndBusinessId(1L, 10L)).thenReturn(Optional.empty())
+        whenever(memberRepo.findByBusinessIdAndIsActiveTrue(10L)).thenReturn(listOf(member(user(2)), member(user(3))))
+        // Member 2 is busier (load 5) but ONLINE; member 3 is idle (load 1) but OFFLINE.
+        whenever(conversationRepo.countByBusinessIdAndAssignedMemberId(10L, 2L)).thenReturn(5L)
+        whenever(conversationRepo.countByBusinessIdAndAssignedMemberId(10L, 3L)).thenReturn(1L)
+        whenever(presenceService.isOnline("u2@e.com", null)).thenReturn(true)
+        whenever(presenceService.isOnline("u3@e.com", null)).thenReturn(false)
+        whenever(conversationRepo.save(any<Conversation>())).thenAnswer {
+            (it.arguments[0] as Conversation).apply { if (id == null) id = 100L }
+        }
+        stubToConversationReads()
+
+        val res = sut.startAsCustomer("u1@e.com", 10L)
+
+        assertThat(res.assignedMemberId).isEqualTo(2L)
+    }
+
+    @Test
+    fun `startAsCustomer falls back to least-loaded when nobody is online`() {
+        val customer = user(1)
+        whenever(userRepo.findByEmail("u1@e.com")).thenReturn(Optional.of(customer))
+        whenever(businessRepo.findById(10L)).thenReturn(Optional.of(business()))
+        whenever(conversationRepo.findByCustomerIdAndBusinessId(1L, 10L)).thenReturn(Optional.empty())
+        whenever(memberRepo.findByBusinessIdAndIsActiveTrue(10L)).thenReturn(listOf(member(user(2)), member(user(3))))
+        whenever(conversationRepo.countByBusinessIdAndAssignedMemberId(10L, 2L)).thenReturn(5L)
+        whenever(conversationRepo.countByBusinessIdAndAssignedMemberId(10L, 3L)).thenReturn(1L)
+        whenever(presenceService.isOnline(any(), anyOrNull())).thenReturn(false)
+        whenever(conversationRepo.save(any<Conversation>())).thenAnswer {
+            (it.arguments[0] as Conversation).apply { if (id == null) id = 100L }
+        }
+        stubToConversationReads()
+
+        val res = sut.startAsCustomer("u1@e.com", 10L)
+
+        assertThat(res.assignedMemberId).isEqualTo(3L)
     }
 
     @Test

@@ -18,6 +18,8 @@ data class ConversationResponse(
     val lastMessagePreview: String?,
     val lastMessageAt: LocalDateTime?,
     val unreadCount: Long,
+    /** Whether the other party in this conversation currently has a live socket. */
+    val counterpartOnline: Boolean,
 )
 
 data class MessageResponse(
