@@ -1,0 +1,144 @@
+package com.mudhut.nudge.discovery.services
+
+import com.mudhut.nudge.businesses.entities.Business
+import com.mudhut.nudge.discovery.models.BusinessSort
+import com.mudhut.nudge.discovery.models.PublicBusinessDetail
+import com.mudhut.nudge.discovery.models.PublicBusinessSummary
+import com.mudhut.nudge.discovery.models.PublicServiceSummary
+import com.mudhut.nudge.businesses.repositories.BusinessRepository
+import com.mudhut.nudge.discovery.repositories.DiscoveryBusinessRepository
+import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
+import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
+import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.PageImpl
+import org.springframework.data.domain.Pageable
+import org.springframework.stereotype.Service
+
+@Service
+class PublicBrowseService(
+    private val discoveryRepository: DiscoveryBusinessRepository,
+    private val businessRepository: BusinessRepository,
+    private val serviceRepository: ServiceOfferedRepository,
+) {
+
+    fun list(
+        categoryId: Long?,
+        sort: BusinessSort,
+        lat: Double?,
+        lng: Double?,
+        pageable: Pageable,
+    ): Page<PublicBusinessSummary> = when (sort) {
+        BusinessSort.NEWEST -> discoveryRepository
+            .findPublicQualifiedNewest(categoryId, pageable)
+            .map { toSummary(it) }
+
+        BusinessSort.POPULAR -> discoveryRepository
+            .findPublicQualifiedPopular(categoryId, pageable)
+            .map { toSummary(it) }
+
+        BusinessSort.NEAREST -> nearestPage(categoryId, lat, lng, pageable)
+    }
+
+    private fun nearestPage(
+        categoryId: Long?,
+        lat: Double?,
+        lng: Double?,
+        pageable: Pageable,
+    ): Page<PublicBusinessSummary> {
+        require(lat != null && lng != null) { "sort=nearest requires lat and lng" }
+
+        val page = discoveryRepository.findPublicQualifiedNearest(categoryId, lat, lng, pageable)
+        if (page.isEmpty) return PageImpl(emptyList(), pageable, page.totalElements)
+
+        val distancesById = page.content.associate { it.id to it.distanceKm }
+        val byId = businessRepository.findAllById(distancesById.keys).associateBy { it.id!! }
+
+        val summaries = page.content.mapNotNull { row ->
+            byId[row.id]?.let { biz -> toSummary(biz, distancesById[row.id]) }
+        }
+
+        return PageImpl(summaries, pageable, page.totalElements)
+    }
+
+    fun detail(id: Long): PublicBusinessDetail {
+        val biz = businessRepository.findById(id)
+            .orElseThrow { BusinessNotFoundException("Business not found") }
+
+        val activeServices = serviceRepository
+            .findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(biz.id!!, ServiceOfferedStatus.ACTIVE)
+
+        if (activeServices.isEmpty()) {
+            throw BusinessNotFoundException("Business not found")
+        }
+
+        return PublicBusinessDetail(
+            id = biz.id!!,
+            name = biz.name!!,
+            description = biz.description,
+            logoUrl = biz.logoUrl,
+            categoryId = biz.category!!.id!!,
+            categoryName = biz.category!!.name!!,
+            address = biz.address,
+            phoneNumbers = biz.phoneNumbers.mapNotNull { it.phoneNumber },
+            email = biz.email,
+            serviceAreas = biz.serviceAreas.toList(),
+            coverImageUrl = deriveCover(biz, activeServices.firstOrNull()),
+            services = activeServices.map { toServiceSummary(it) },
+        )
+    }
+
+    private fun toSummary(biz: Business, distanceKm: Double? = null): PublicBusinessSummary {
+        val firstActive = serviceRepository
+            .findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(biz.id!!, ServiceOfferedStatus.ACTIVE)
+        return PublicBusinessSummary(
+            id = biz.id!!,
+            name = biz.name!!,
+            categoryId = biz.category!!.id!!,
+            categoryName = biz.category!!.name!!,
+            address = biz.address,
+            coverImageUrl = deriveCover(biz, firstActive),
+            serviceCount = serviceRepository
+                .countByBusinessIdAndStatus(biz.id!!, ServiceOfferedStatus.ACTIVE).toInt(),
+            distanceKm = distanceKm,
+        )
+    }
+
+    private fun deriveCover(biz: Business, firstActiveService: ServiceOffered?): String? {
+        return biz.coverImageUrl ?: firstActiveService?.coverImageUrl
+    }
+
+    private fun toServiceSummary(s: ServiceOffered): PublicServiceSummary = PublicServiceSummary(
+        id = s.id!!,
+        title = s.title!!,
+        description = s.description,
+        priceMode = s.priceMode!!,
+        priceAmount = s.priceAmount,
+        priceCurrency = s.priceCurrency,
+        priceUnit = s.priceUnit,
+        coverImageUrl = s.coverImageUrl!!,
+        galleryImageUrls = s.galleryImages
+            .sortedBy { it.position }
+            .mapNotNull { it.url },
+        tag = s.tag,
+        validFrom = s.validFrom,
+        validUntil = s.validUntil,
+        addons = s.addons.sortedBy { it.position }.map { a ->
+            com.mudhut.nudge.servicesoffered.models.PublicServiceAddon(
+                id = a.id!!,
+                title = a.title!!,
+                description = a.description,
+                coverImageUrl = a.coverImageUrl,
+                priceDelta = a.priceDelta,
+                priceUnit = a.priceUnit,
+                defaultSelected = a.defaultSelected,
+                quantifiable = a.quantifiable,
+                defaultQuantity = a.defaultQuantity,
+                maxQuantity = a.maxQuantity,
+                position = a.position,
+            )
+        },
+    )
+
+}

@@ -6,6 +6,8 @@ import com.mudhut.nudge.businesses.models.CreateCategoryRequest
 import com.mudhut.nudge.businesses.models.UpdateCategoryRequest
 import com.mudhut.nudge.businesses.repositories.BusinessCategoryRepository
 import com.mudhut.nudge.utils.exceptions.CategoryNotFoundException
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -34,9 +36,13 @@ class BusinessCategoryService(
         return toResponse(saved)
     }
 
-    fun getTopLevelCategories(): List<CategoryResponse> {
-        return categoryRepository.findByParentIsNullAndIsActiveTrue()
-            .map { toResponse(it) }
+    fun getTopLevelCategories(pageable: Pageable, search: String? = null): Page<CategoryResponse> {
+        val page = if (search.isNullOrBlank()) {
+            categoryRepository.findByParentIsNullAndIsActiveTrue(pageable)
+        } else {
+            categoryRepository.findByParentIsNullAndIsActiveTrueAndNameContainingIgnoreCase(search.trim(), pageable)
+        }
+        return page.map { toResponse(it) }
     }
 
     fun getSubcategories(parentId: Long): List<CategoryResponse> {

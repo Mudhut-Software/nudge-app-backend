@@ -1,0 +1,249 @@
+package com.mudhut.nudge.discovery.services
+
+import com.mudhut.nudge.businesses.entities.Business
+import com.mudhut.nudge.businesses.entities.BusinessCategory
+import com.mudhut.nudge.businesses.entities.BusinessStatus
+import com.mudhut.nudge.discovery.models.BusinessSort
+import com.mudhut.nudge.businesses.repositories.BusinessRepository
+import com.mudhut.nudge.discovery.repositories.DiscoveryBusinessRepository
+import com.mudhut.nudge.discovery.repositories.BusinessWithDistance
+import com.mudhut.nudge.servicesoffered.entities.PriceMode
+import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
+import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
+import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
+import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.whenever
+import org.springframework.data.domain.PageImpl
+import org.springframework.data.domain.Pageable
+import java.math.BigDecimal
+import java.util.Optional
+
+class PublicBrowseServiceTest {
+
+    private val discoveryRepository: DiscoveryBusinessRepository = mock()
+    private val businessRepository: BusinessRepository = mock()
+    private val serviceRepository: ServiceOfferedRepository = mock()
+
+    private val sut = PublicBrowseService(
+        discoveryRepository,
+        businessRepository,
+        serviceRepository,
+    )
+
+    private fun category(id: Long, name: String) = BusinessCategory(id = id, name = name)
+
+    private fun business(
+        id: Long,
+        name: String = "Biz $id",
+        categoryId: Long = 1L,
+        categoryName: String = "Catering",
+        coverImageUrl: String? = null,
+        coverImagePublicId: String? = null,
+    ): Business {
+        return Business(
+            id = id,
+            name = name,
+            description = "About $name",
+            category = category(categoryId, categoryName),
+            phoneNumbers = mutableListOf(),
+            email = "$name@example.com",
+            logoUrl = null,
+            coverImageUrl = coverImageUrl,
+            coverImagePublicId = coverImagePublicId,
+            address = "Kampala",
+            serviceAreas = mutableListOf("Kampala"),
+            status = BusinessStatus.ACTIVE,
+        )
+    }
+
+    private fun service(
+        id: Long,
+        biz: Business,
+        title: String = "Service $id",
+        status: ServiceOfferedStatus = ServiceOfferedStatus.ACTIVE,
+        coverUrl: String = "https://cdn/svc-$id.jpg",
+    ): ServiceOffered = ServiceOffered(
+        id = id,
+        business = biz,
+        title = title,
+        description = null,
+        coverImageUrl = coverUrl,
+        coverImagePublicId = "pid-$id",
+        priceMode = PriceMode.FIXED,
+        priceAmount = BigDecimal("100.00"),
+        priceCurrency = "UGX",
+        priceUnit = null,
+        status = status,
+    )
+
+    private fun businessWithDistance(id: Long, distanceKm: Double): BusinessWithDistance =
+        object : BusinessWithDistance {
+            override val id = id
+            override val distanceKm = distanceKm
+        }
+
+    private fun stubSummaryHelpers(bizId: Long, coverFromService: String? = null) {
+        whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(bizId), eq(ServiceOfferedStatus.ACTIVE)))
+            .thenReturn(coverFromService?.let { service(id = bizId * 10, biz = business(bizId), coverUrl = it) })
+        whenever(serviceRepository.countByBusinessIdAndStatus(eq(bizId), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
+    }
+
+    @Test
+    fun `summary cover falls back to first active service when business cover is null`() {
+        val biz = business(id = 5, coverImageUrl = null)
+        val firstActiveService = service(id = 50, biz = biz, coverUrl = "https://cdn/svc-50.jpg")
+        whenever(discoveryRepository.findPublicQualifiedNewest(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
+        whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
+            .thenReturn(firstActiveService)
+        whenever(serviceRepository.countByBusinessIdAndStatus(eq(5), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
+
+        val summary = sut.list(null, BusinessSort.NEWEST, null, null, Pageable.ofSize(20)).content.single()
+
+        assertEquals("https://cdn/svc-50.jpg", summary.coverImageUrl)
+    }
+
+    @Test
+    fun `summary cover prefers business coverImageUrl when set`() {
+        val biz = business(id = 5, coverImageUrl = "https://cdn/biz-5.jpg")
+        whenever(discoveryRepository.findPublicQualifiedNewest(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
+        whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
+            .thenReturn(service(id = 50, biz = biz, coverUrl = "https://cdn/svc-50.jpg"))
+        whenever(serviceRepository.countByBusinessIdAndStatus(eq(5), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
+
+        val summary = sut.list(null, BusinessSort.NEWEST, null, null, Pageable.ofSize(20)).content.single()
+
+        assertEquals("https://cdn/biz-5.jpg", summary.coverImageUrl)
+    }
+
+    @Test
+    fun `list with sort=NEWEST and category delegates to findPublicQualifiedNewest`() {
+        val biz = business(id = 7, categoryId = 1, categoryName = "Catering")
+        whenever(discoveryRepository.findPublicQualifiedNewest(eq(1L), any())).thenReturn(PageImpl(listOf(biz)))
+        stubSummaryHelpers(7)
+
+        val page = sut.list(1L, BusinessSort.NEWEST, null, null, Pageable.ofSize(20))
+
+        assertEquals(1, page.totalElements)
+        assertEquals(7L, page.content.single().id)
+        assertNull(page.content.single().distanceKm)
+    }
+
+    @Test
+    fun `list with sort=POPULAR delegates to findPublicQualifiedPopular`() {
+        val biz = business(id = 8)
+        whenever(discoveryRepository.findPublicQualifiedPopular(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
+        stubSummaryHelpers(8)
+
+        val page = sut.list(null, BusinessSort.POPULAR, null, null, Pageable.ofSize(20))
+
+        assertEquals(8L, page.content.single().id)
+        assertNull(page.content.single().distanceKm)
+    }
+
+    @Test
+    fun `list with sort=NEAREST returns distanceKm and preserves DB ordering`() {
+        val far = business(id = 20)
+        val near = business(id = 10)
+        whenever(discoveryRepository.findPublicQualifiedNearest(eq(null), eq(0.0), eq(0.0), any()))
+            .thenReturn(
+                PageImpl(
+                    listOf(
+                        businessWithDistance(10L, 1.5),
+                        businessWithDistance(20L, 9.8),
+                    )
+                )
+            )
+        whenever(businessRepository.findAllById(setOf(10L, 20L))).thenReturn(listOf(far, near))
+        stubSummaryHelpers(10)
+        stubSummaryHelpers(20)
+
+        val page = sut.list(null, BusinessSort.NEAREST, 0.0, 0.0, Pageable.ofSize(20))
+
+        assertEquals(listOf(10L, 20L), page.content.map { it.id })
+        assertEquals(1.5, page.content[0].distanceKm)
+        assertEquals(9.8, page.content[1].distanceKm)
+    }
+
+    @Test
+    fun `list with sort=NEAREST without lat or lng throws IllegalArgumentException`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.list(null, BusinessSort.NEAREST, null, null, Pageable.ofSize(20))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.list(null, BusinessSort.NEAREST, 0.0, null, Pageable.ofSize(20))
+        }
+    }
+
+    @Test
+    fun `list with sort=NEAREST returns empty page when no qualified businesses`() {
+        whenever(discoveryRepository.findPublicQualifiedNearest(eq(null), eq(0.0), eq(0.0), any()))
+            .thenReturn(PageImpl(emptyList()))
+
+        val page = sut.list(null, BusinessSort.NEAREST, 0.0, 0.0, Pageable.ofSize(20))
+
+        assertTrue(page.content.isEmpty())
+    }
+
+    @Test
+    fun `detail surfaces service promo fields tag and window`() {
+        val biz = business(id = 12)
+        val today = java.time.LocalDate.now()
+        val svc = service(id = 120, biz = biz, title = "Holiday Bundle").apply {
+            tag = ServiceOfferedTag.HOLIDAY_OFFER
+            validFrom = today.minusDays(1)
+            validUntil = today.plusDays(30)
+        }
+
+        whenever(businessRepository.findById(12)).thenReturn(Optional.of(biz))
+        whenever(serviceRepository.findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(eq(12), eq(ServiceOfferedStatus.ACTIVE)))
+            .thenReturn(listOf(svc))
+
+        val detail = sut.detail(12)
+
+        val summary = detail.services.first()
+        assertEquals(ServiceOfferedTag.HOLIDAY_OFFER, summary.tag)
+        assertEquals(today.minusDays(1), summary.validFrom)
+        assertEquals(today.plusDays(30), summary.validUntil)
+    }
+
+    @Test
+    fun `detail returns embedded active services sorted by createdAt desc`() {
+        val biz = business(id = 9)
+        val newer = service(id = 91, biz = biz, title = "Newer")
+        val older = service(id = 92, biz = biz, title = "Older")
+
+        whenever(businessRepository.findById(9)).thenReturn(Optional.of(biz))
+        whenever(serviceRepository.findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(eq(9), eq(ServiceOfferedStatus.ACTIVE)))
+            .thenReturn(listOf(newer, older))
+
+        val detail = sut.detail(9)
+
+        assertEquals(listOf(91L, 92L), detail.services.map { it.id })
+    }
+
+    @Test
+    fun `detail throws 404 when business not found`() {
+        whenever(businessRepository.findById(404)).thenReturn(Optional.empty())
+
+        assertThrows(BusinessNotFoundException::class.java) { sut.detail(404) }
+    }
+
+    @Test
+    fun `detail throws 404 when business has no active services`() {
+        val biz = business(id = 50)
+        whenever(businessRepository.findById(50)).thenReturn(Optional.of(biz))
+        whenever(serviceRepository.findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(eq(50), eq(ServiceOfferedStatus.ACTIVE)))
+            .thenReturn(emptyList())
+
+        assertThrows(BusinessNotFoundException::class.java) { sut.detail(50) }
+    }
+}

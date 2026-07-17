@@ -7,8 +7,13 @@ data class BusinessMemberResponse(
     val id: Long,
     val userId: Long,
     val userEmail: String,
+    val userName: String? = null,
+    val userAvatarUrl: String? = null,
     val businessId: Long,
     val role: BusinessRole,
     val isActive: Boolean,
-    val joinedAt: LocalDateTime?
+    val joinedAt: LocalDateTime?,
+    val businessName: String = "",
+    val businessLogoUrl: String? = null,
+    val businessCategoryName: String? = null,
 )

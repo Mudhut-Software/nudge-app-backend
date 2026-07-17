@@ -1,36 +1,40 @@
 package com.mudhut.nudge.users.controllers
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.mudhut.nudge.businesses.entities.BusinessRole
-import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.UserRole
 import com.mudhut.nudge.users.models.*
+import com.mudhut.nudge.users.spi.UserBusinessSummary
 import com.mudhut.nudge.users.services.ForgotPasswordService
 import com.mudhut.nudge.users.services.GoogleAuthService
 import com.mudhut.nudge.users.services.LoginService
+import com.mudhut.nudge.users.services.LogoutService
 import com.mudhut.nudge.users.services.RegistrationService
+import com.mudhut.nudge.users.services.TokenRefreshService
 import com.mudhut.nudge.users.services.UserService
 import com.mudhut.nudge.users.services.VerificationService
-import com.mudhut.nudge.config.EnvConfig
-import com.mudhut.nudge.config.JwtAuthenticationFilter
+import org.springframework.security.authentication.AuthenticationServiceException
+import com.mudhut.nudge.config.JsonAccessDeniedHandler
+import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
+import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
-import com.mudhut.nudge.users.services.JwtService
-import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
+import com.mudhut.nudge.users.services.NudgeUserDetailsService
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.mockito.Mockito.verify
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
+import org.springframework.security.test.context.support.WithMockUser
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers
 
 @WebMvcTest(UserController::class)
-@Import(SecurityConfig::class, JwtAuthenticationFilter::class)
+@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class, JsonAuthenticationEntryPoint::class, JsonAccessDeniedHandler::class)
 @AutoConfigureMockMvc
 class UserControllerTest {
 
@@ -56,13 +60,13 @@ class UserControllerTest {
     private lateinit var userService: UserService
 
     @MockitoBean
-    private lateinit var jwtService: JwtService
-
-    @MockitoBean
     private lateinit var userDetailsService: NudgeUserDetailsService
 
     @MockitoBean
-    private lateinit var envConfig: EnvConfig
+    private lateinit var logoutService: LogoutService
+
+    @MockitoBean
+    private lateinit var tokenRefreshService: TokenRefreshService
 
     @Autowired
     private lateinit var objectMapper: ObjectMapper
@@ -224,8 +228,8 @@ class UserControllerTest {
             isPhoneVerified = false,
             isActive = true,
             businesses = listOf(
-                UserBusinessSummary(id = 42L, status = BusinessStatus.ACTIVE, role = BusinessRole.OWNER),
-                UserBusinessSummary(id = 43L, status = BusinessStatus.SUSPENDED, role = BusinessRole.STAFF)
+                UserBusinessSummary(id = 42L, status = "ACTIVE", role = "OWNER"),
+                UserBusinessSummary(id = 43L, status = "SUSPENDED", role = "STAFF")
             )
         )
 
@@ -435,5 +439,93 @@ class UserControllerTest {
                 .content(objectMapper.writeValueAsString(request))
         )
             .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+
+    @Test
+    fun testLogout_RequiresAuthentication() {
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/logout")
+                .header("Authorization", "Bearer some-token")
+        )
+            .andExpect(MockMvcResultMatchers.status().isUnauthorized)
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com", roles = ["BASIC_USER"])
+    fun testLogout_Success() {
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/logout")
+                .header("Authorization", "Bearer access-token")
+        )
+            .andExpect(MockMvcResultMatchers.status().isNoContent)
+
+        verify(logoutService).logout("alice@example.com", "Bearer access-token")
+    }
+
+    // --- POST /refresh ---
+
+    @Test
+    fun testRefresh_Success() {
+        val userResponse = UserResponse(
+            id = 1L,
+            email = "test@example.com",
+            username = "testuser",
+            phoneNumber = "+256759123321",
+            role = UserRole.BASIC_USER,
+            isEmailVerified = true,
+            isPhoneVerified = false,
+            isActive = true
+        )
+
+        val authResponse = AuthResponse.builder()
+            .accessToken("new-access-token")
+            .refreshToken("existing-refresh-token")
+            .user(userResponse)
+            .build()
+
+        Mockito.`when`(tokenRefreshService.refresh("existing-refresh-token")).thenReturn(authResponse)
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"refreshToken":"existing-refresh-token"}""")
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.accessToken").value("new-access-token"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.refreshToken").value("existing-refresh-token"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.user.id").value(1))
+    }
+
+    @Test
+    fun testRefresh_ValidationError_MissingToken() {
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{}""")
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+
+    @Test
+    fun testRefresh_ValidationError_BlankToken() {
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"refreshToken":"   "}""")
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+    }
+
+    @Test
+    fun testRefresh_InvalidToken_ReturnsUnauthorized() {
+        Mockito.`when`(tokenRefreshService.refresh("bad-token"))
+            .thenThrow(AuthenticationServiceException("Invalid refresh token"))
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/auth/refresh")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"refreshToken":"bad-token"}""")
+        )
+            .andExpect(MockMvcResultMatchers.status().isUnauthorized)
     }
 }

@@ -1,6 +1,6 @@
 package com.mudhut.nudge.config
 
-import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
+import com.mudhut.nudge.users.services.NudgeUserDetailsService
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.security.authentication.AuthenticationManager
@@ -22,7 +22,9 @@ import org.springframework.security.web.header.writers.XXssProtectionHeaderWrite
 @EnableWebSecurity
 class SecurityConfig(
     private val jwtAuthenticationFilter: JwtAuthenticationFilter,
-    private val userDetailsService: NudgeUserDetailsService
+    private val userDetailsService: NudgeUserDetailsService,
+    private val jsonAuthenticationEntryPoint: JsonAuthenticationEntryPoint,
+    private val jsonAccessDeniedHandler: JsonAccessDeniedHandler
 ) {
 
     @Bean
@@ -48,6 +50,8 @@ class SecurityConfig(
             .authorizeHttpRequests { auth ->
                 auth
                     .requestMatchers("/verify-email").permitAll()
+                    .requestMatchers("/ws/**").permitAll()
+                    .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
                     .requestMatchers("/api/v1/auth/**").permitAll()
                     .requestMatchers(
                         HttpMethod.POST,
@@ -61,6 +65,8 @@ class SecurityConfig(
                         HttpMethod.DELETE,
                         "/api/v1/categories/{id}"
                     ).hasAnyRole("SUPER_ADMIN", "ADMIN")
+                    .requestMatchers(HttpMethod.GET, "/api/v1/businesses/public/**").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/v1/categories", "/api/v1/categories/**").permitAll()
                     .anyRequest().authenticated()
             }
             .headers { headers ->
@@ -79,6 +85,10 @@ class SecurityConfig(
             }
             .sessionManagement { session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+            }
+            .exceptionHandling { ex ->
+                ex.authenticationEntryPoint(jsonAuthenticationEntryPoint)
+                ex.accessDeniedHandler(jsonAccessDeniedHandler)
             }
             .authenticationProvider(authenticationProvider())
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter::class.java)

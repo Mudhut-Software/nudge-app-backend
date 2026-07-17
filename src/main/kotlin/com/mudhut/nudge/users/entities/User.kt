@@ -44,6 +44,18 @@ class User(
 
     var isActive: Boolean = true,
 
+    @Column(name = "location")
+    var location: String? = null,
+
+    @Column(name = "website")
+    var website: String? = null,
+
+    @Column(name = "avatar_url")
+    var avatarUrl: String? = null,
+
+    @Column(name = "avatar_public_id")
+    var avatarPublicId: String? = null,
+
     @CreationTimestamp
     var createdAt: LocalDateTime? = null,
 

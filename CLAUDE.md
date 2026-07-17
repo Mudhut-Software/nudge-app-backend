@@ -64,7 +64,7 @@ Controllers receive `Authentication authentication` and call `authentication.nam
 
 ### Testing pattern
 
-Controller tests use `@WebMvcTest(SomeController::class)` + `@Import(SecurityConfig::class, JwtAuthenticationFilter::class)` and `@MockitoBean` for services. This means security rules are exercised in tests — if you add a new endpoint with auth requirements, expect to provide `@WithMockUser(roles=...)` in tests. Integration-style tests use Mockito for dependencies rather than a real `@SpringBootTest` context.
+Controller tests use `@WebMvcTest(SomeController::class)` + `@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class)` and `@MockitoBean` for services. The pass-through filter (in `src/test/.../config/`) is a no-op `JwtAuthenticationFilter` so tests don't have to mock the filter's internal dependencies; the real filter's authentication logic is exercised separately in `JwtAuthenticationFilterTest`. Security rules still run — if you add a new endpoint with auth requirements, expect to provide `@WithMockUser(roles=...)` in tests. Integration-style tests use Mockito for dependencies rather than a real `@SpringBootTest` context.
 
 ## Docs
 

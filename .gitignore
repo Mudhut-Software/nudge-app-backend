@@ -41,3 +41,7 @@ junie-analysis/
 
 # Design docs
 docs/
+
+# IDE-decompiled library stubs (IntelliJ drops these at the repo root when
+# you navigate into a library class without sources attached)
+/io/

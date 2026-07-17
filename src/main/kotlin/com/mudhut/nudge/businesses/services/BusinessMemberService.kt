@@ -119,11 +119,17 @@ class BusinessMemberService(
     }
 
     private fun toResponse(member: BusinessMember): BusinessMemberResponse {
+        val business = member.business!!
         return BusinessMemberResponse(
             id = member.id!!,
             userId = member.user!!.id!!,
             userEmail = member.user!!.email!!,
-            businessId = member.business!!.id!!,
+            userName = member.user!!.username,
+            userAvatarUrl = member.user!!.avatarUrl,
+            businessId = business.id!!,
+            businessName = business.name!!,
+            businessLogoUrl = business.logoUrl,
+            businessCategoryName = business.category?.name,
             role = member.role!!,
             isActive = member.isActive,
             joinedAt = member.joinedAt
