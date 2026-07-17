@@ -2,8 +2,7 @@ package com.mudhut.nudge.users.services
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
-import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
-import com.mudhut.nudge.users.entities.RefreshToken
+import com.mudhut.nudge.users.spi.UserBusinessMembershipQuery
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.UserRole
 import com.mudhut.nudge.users.repositories.UserRepository
@@ -28,7 +27,7 @@ class GoogleAuthServiceTest {
     @Mock private lateinit var userRepository: UserRepository
     @Mock private lateinit var jwtService: JwtService
     @Mock private lateinit var refreshTokenService: RefreshTokenService
-    @Mock private lateinit var businessMemberRepository: BusinessMemberRepository
+    @Mock private lateinit var membershipQuery: UserBusinessMembershipQuery
     @Mock private lateinit var usernameGenerator: UsernameGenerator
 
     private lateinit var service: GoogleAuthService
@@ -44,7 +43,7 @@ class GoogleAuthServiceTest {
             userRepository,
             jwtService,
             refreshTokenService,
-            businessMemberRepository,
+            membershipQuery,
             usernameGenerator,
             clientId = "fake-client-id.apps.googleusercontent.com"
         )
@@ -63,11 +62,10 @@ class GoogleAuthServiceTest {
     }
 
     private fun stubAuthInfra(user: User) {
-        `when`(businessMemberRepository.findByUserIdAndIsActiveTrue(user.id!!))
+        `when`(membershipQuery.findActiveMembershipsFor(user.id!!))
             .thenReturn(emptyList())
         `when`(jwtService.generateToken(user)).thenReturn("access-token")
-        val refresh = RefreshToken(token = "refresh-token", user = user)
-        `when`(refreshTokenService.createRefreshToken(user)).thenReturn(refresh)
+        `when`(refreshTokenService.createRefreshToken(user)).thenReturn("refresh-token")
     }
 
     @Test
@@ -122,11 +120,9 @@ class GoogleAuthServiceTest {
             (it.arguments[0] as User).also { u -> u.id = 42L }
         }
         val captured = saved
-        `when`(businessMemberRepository.findByUserIdAndIsActiveTrue(42L)).thenReturn(emptyList())
+        `when`(membershipQuery.findActiveMembershipsFor(42L)).thenReturn(emptyList())
         `when`(jwtService.generateToken(any())).thenReturn("access-token")
-        `when`(refreshTokenService.createRefreshToken(any())).thenAnswer {
-            RefreshToken(token = "refresh-token", user = it.arguments[0] as User)
-        }
+        `when`(refreshTokenService.createRefreshToken(any())).thenReturn("refresh-token")
 
         val result = service.authenticate(rawToken)
 
@@ -160,7 +156,7 @@ class GoogleAuthServiceTest {
     fun `blank clientId throws IllegalStateException without calling verifier`() {
         val unconfigured = GoogleAuthService(
             verifier, userRepository, jwtService, refreshTokenService,
-            businessMemberRepository, usernameGenerator, clientId = ""
+            membershipQuery, usernameGenerator, clientId = ""
         )
 
         assertThrows<IllegalStateException> { unconfigured.authenticate(rawToken) }

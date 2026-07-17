@@ -4,12 +4,16 @@ import com.mudhut.nudge.users.models.*
 import com.mudhut.nudge.users.services.ForgotPasswordService
 import com.mudhut.nudge.users.services.GoogleAuthService
 import com.mudhut.nudge.users.services.LoginService
+import com.mudhut.nudge.users.services.LogoutService
 import com.mudhut.nudge.users.services.RegistrationService
+import com.mudhut.nudge.users.services.TokenRefreshService
 import com.mudhut.nudge.users.services.UserService
 import com.mudhut.nudge.users.services.VerificationService
 import com.mudhut.nudge.utils.models.GeneralRequestResponse
+import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
+import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.*
 
 @RestController
@@ -20,7 +24,9 @@ class UserController(
     private val registrationService: RegistrationService,
     private val forgotPasswordService: ForgotPasswordService,
     private val verificationService: VerificationService,
-    private val googleAuthService: GoogleAuthService
+    private val googleAuthService: GoogleAuthService,
+    private val logoutService: LogoutService,
+    private val tokenRefreshService: TokenRefreshService,
 ) {
 
     @PostMapping("/register")
@@ -34,6 +40,10 @@ class UserController(
     @PostMapping("/google")
     fun googleAuth(@Valid @RequestBody request: GoogleAuthRequest): ResponseEntity<AuthResponse> =
         ResponseEntity.ok(googleAuthService.authenticate(request.idToken!!))
+
+    @PostMapping("/refresh")
+    fun refreshToken(@Valid @RequestBody request: RefreshTokenRequest): ResponseEntity<AuthResponse> =
+        ResponseEntity.ok(tokenRefreshService.refresh(request.refreshToken!!))
 
     @PostMapping("/verify-email")
     fun verifyEmail(@RequestParam token: String): ResponseEntity<Any> {
@@ -61,5 +71,11 @@ class UserController(
         return ResponseEntity.ok(
             GeneralRequestResponse("Your password has been reset successfully")
         )
+    }
+
+    @PostMapping("/logout")
+    fun logout(authentication: Authentication, request: HttpServletRequest): ResponseEntity<Void> {
+        logoutService.logout(authentication.name, request.getHeader("Authorization"))
+        return ResponseEntity.noContent().build()
     }
 }

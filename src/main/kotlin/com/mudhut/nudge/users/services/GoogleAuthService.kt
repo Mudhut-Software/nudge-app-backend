@@ -1,7 +1,7 @@
 package com.mudhut.nudge.users.services
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier
-import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
+import com.mudhut.nudge.users.spi.UserBusinessMembershipQuery
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.UserRole
 import com.mudhut.nudge.users.models.AuthResponse
@@ -18,7 +18,7 @@ class GoogleAuthService(
     private val userRepository: UserRepository,
     private val jwtService: JwtService,
     private val refreshTokenService: RefreshTokenService,
-    private val businessMemberRepository: BusinessMemberRepository,
+    private val membershipQuery: UserBusinessMembershipQuery,
     private val usernameGenerator: UsernameGenerator,
     @Value("\${nudge.google.client-id:}") private val clientId: String
 ) {
@@ -50,13 +50,13 @@ class GoogleAuthService(
                 .orElseGet { createNewGoogleUser(googleId, email) }
         }
 
-        val memberships = businessMemberRepository.findByUserIdAndIsActiveTrue(user.id!!)
+        val memberships = membershipQuery.findActiveMembershipsFor(user.id!!)
         val accessToken = jwtService.generateToken(user)
         val refreshToken = refreshTokenService.createRefreshToken(user)
 
         return AuthResponse.builder()
             .accessToken(accessToken)
-            .refreshToken(refreshToken.token)
+            .refreshToken(refreshToken)
             .user(UserResponse.from(user, memberships))
             .build()
     }

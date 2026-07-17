@@ -1,22 +1,22 @@
 package com.mudhut.nudge.businesses.controllers
 
-import com.fasterxml.jackson.databind.ObjectMapper
+import tools.jackson.databind.ObjectMapper
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.entities.InvitationStatus
 import com.mudhut.nudge.businesses.models.InvitationResponse
 import com.mudhut.nudge.businesses.models.InviteMemberRequest
 import com.mudhut.nudge.businesses.services.BusinessInvitationService
-import com.mudhut.nudge.config.EnvConfig
-import com.mudhut.nudge.config.JwtAuthenticationFilter
+import com.mudhut.nudge.config.JsonAccessDeniedHandler
+import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
+import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
-import com.mudhut.nudge.users.services.JwtService
-import com.mudhut.nudge.users.services.helpers.NudgeUserDetailsService
+import com.mudhut.nudge.users.services.NudgeUserDetailsService
 import com.mudhut.nudge.utils.models.GeneralRequestResponse
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
 import org.springframework.security.test.context.support.WithMockUser
@@ -27,7 +27,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers
 import java.time.LocalDateTime
 
 @WebMvcTest(BusinessInvitationController::class)
-@Import(SecurityConfig::class, JwtAuthenticationFilter::class)
+@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class, JsonAuthenticationEntryPoint::class, JsonAccessDeniedHandler::class)
 @AutoConfigureMockMvc
 class BusinessInvitationControllerTest {
 
@@ -38,13 +38,7 @@ class BusinessInvitationControllerTest {
     private lateinit var invitationService: BusinessInvitationService
 
     @MockitoBean
-    private lateinit var jwtService: JwtService
-
-    @MockitoBean
     private lateinit var userDetailsService: NudgeUserDetailsService
-
-    @MockitoBean
-    private lateinit var envConfig: EnvConfig
 
     @Autowired
     private lateinit var objectMapper: ObjectMapper
@@ -53,6 +47,28 @@ class BusinessInvitationControllerTest {
         Mockito.any<T>()
         @Suppress("UNCHECKED_CAST")
         return null as T
+    }
+
+    @Test
+    @WithMockUser(username = "invitee@test.com")
+    fun testGetInvitationByToken_Success() {
+        val response = InvitationResponse(
+            id = 1L,
+            businessId = 10L,
+            businessName = "Sparkle Clean",
+            inviterEmail = "owner@test.com",
+            inviteeEmail = "invitee@test.com",
+            role = BusinessRole.MANAGER,
+            status = InvitationStatus.PENDING,
+            expiryDate = LocalDateTime.now().plusDays(7),
+            createdAt = LocalDateTime.now(),
+        )
+        Mockito.`when`(invitationService.getInvitation("tok-123")).thenReturn(response)
+
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/invitations/tok-123"))
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.businessName").value("Sparkle Clean"))
+            .andExpect(MockMvcResultMatchers.jsonPath("$.role").value("MANAGER"))
     }
 
     @Test

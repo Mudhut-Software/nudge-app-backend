@@ -158,6 +158,11 @@ class BusinessService(
             .map { toResponse(it) }
     }
 
+    fun findBusinessEntity(businessId: Long): Business {
+        return businessRepository.findById(businessId)
+            .orElseThrow { BusinessNotFoundException("Business not found with id: $businessId") }
+    }
+
     fun requireRole(businessId: Long, userEmail: String, minimumRole: BusinessRole) {
         val user = userRepository.findByEmail(userEmail)
             .orElseThrow { EntityNotFoundException("User not found") }

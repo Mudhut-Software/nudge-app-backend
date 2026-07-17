@@ -1,4 +1,4 @@
-package com.mudhut.nudge.users.services.helpers
+package com.mudhut.nudge.users.services
 
 import com.mudhut.nudge.users.repositories.UserRepository
 import org.springframework.security.core.authority.SimpleGrantedAuthority
@@ -21,7 +21,7 @@ class NudgeUserDetailsService(
         )
 
         return org.springframework.security.core.userdetails.User(
-            user.email,
+            user.email ?: username,
             user.password,
             authorities
         )

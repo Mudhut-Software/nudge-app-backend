@@ -1,6 +1,6 @@
 package com.mudhut.nudge.users.services
 
-import com.mudhut.nudge.email.JavaEmailService
+import com.mudhut.nudge.email.IEmailService
 import com.mudhut.nudge.users.entities.PhoneVerificationToken
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.VerificationToken
@@ -10,16 +10,21 @@ import com.mudhut.nudge.users.repositories.VerificationTokenRepository
 import com.mudhut.nudge.utils.UrlService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.thymeleaf.TemplateEngine
+import org.thymeleaf.context.Context
 import java.time.LocalDateTime
 import java.util.*
+
+private const val VERIFICATION_EMAIL_SUBJECT = "Confirm your email to get started"
 
 @Service
 class VerificationService(
     private val verificationTokenRepository: VerificationTokenRepository,
     private val phoneVerificationTokenRepository: PhoneVerificationTokenRepository,
     private val userRepository: UserRepository,
-    private val emailService: JavaEmailService,
-    private val urlService: UrlService
+    private val emailService: IEmailService,
+    private val urlService: UrlService,
+    private val templateEngine: TemplateEngine,
 ) {
 
     private fun generateRandomToken(): String = UUID.randomUUID().toString()
@@ -43,20 +48,33 @@ class VerificationService(
 
     fun sendVerificationEmail(user: User, token: String) {
         val verificationUrl = urlService.buildUrlWithParam("/verify-email", "token", token)
+        val displayName = user.username ?: "there"
 
-        val subject = "Please verify your email address"
-
-        val content = buildString {
-            append("Dear User,\n\n")
-            append("Please click the link below to verify your email address:\n")
-            append(verificationUrl).append("\n\n")
-            append("This link will expire in 24 hours.\n\n")
-            append("Thank you,\n")
-            append("The Nudge App Team")
+        val context = Context().apply {
+            setVariable("displayName", displayName)
+            setVariable("verificationUrl", verificationUrl)
+            setVariable("subject", VERIFICATION_EMAIL_SUBJECT)
         }
+        val html = templateEngine.process("emails/verification", context)
+        val text = plainTextVerificationEmail(displayName, verificationUrl)
 
-        emailService.sendEmail(user.email!!, subject, content)
+        emailService.sendHtmlEmail(user.email!!, VERIFICATION_EMAIL_SUBJECT, html, text)
     }
+
+    private fun plainTextVerificationEmail(displayName: String, verificationUrl: String): String =
+        """
+        Hi $displayName,
+
+        Thanks for signing up for Nudge. Click the link below to verify your email address and activate your account:
+
+        $verificationUrl
+
+        This link expires in 24 hours.
+
+        If you didn't sign up for Nudge, you can safely ignore this email.
+
+        — The Nudge team
+        """.trimIndent()
 
     @Transactional
     fun verifyEmail(token: String) {

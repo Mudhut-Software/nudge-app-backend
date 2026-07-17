@@ -3,6 +3,7 @@ package com.mudhut.nudge.businesses.entities
 import com.mudhut.nudge.users.entities.User
 import jakarta.persistence.*
 import jakarta.validation.constraints.NotBlank
+import org.hibernate.annotations.ColumnDefault
 import org.hibernate.annotations.CreationTimestamp
 import org.hibernate.annotations.UpdateTimestamp
 import java.time.LocalDateTime
@@ -34,6 +35,12 @@ class Business(
 
     var logoUrl: String? = null,
 
+    @Column(name = "cover_image_url")
+    var coverImageUrl: String? = null,
+
+    @Column(name = "cover_image_public_id")
+    var coverImagePublicId: String? = null,
+
     var address: String? = null,
 
     var latitude: Double? = null,
@@ -50,6 +57,10 @@ class Business(
 
     @Enumerated(EnumType.STRING)
     var status: BusinessStatus = BusinessStatus.ACTIVE,
+
+    @Column(name = "popularity_count", nullable = false)
+    @ColumnDefault("0")
+    var popularityCount: Long = 0,
 
     @CreationTimestamp
     var createdAt: LocalDateTime? = null,

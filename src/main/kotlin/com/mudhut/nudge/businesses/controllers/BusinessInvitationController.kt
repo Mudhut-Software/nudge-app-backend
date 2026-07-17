@@ -44,6 +44,14 @@ class BusinessInvitationController(
         )
     }
 
+    @GetMapping("/api/v1/invitations/{token}")
+    fun getInvitation(
+        @PathVariable token: String,
+        @Suppress("UNUSED_PARAMETER") authentication: Authentication
+    ): ResponseEntity<InvitationResponse> {
+        return ResponseEntity.ok(invitationService.getInvitation(token))
+    }
+
     @PostMapping("/api/v1/invitations/{token}/accept")
     fun acceptInvitation(
         @PathVariable token: String,

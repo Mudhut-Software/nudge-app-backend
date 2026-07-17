@@ -5,6 +5,10 @@ import com.mudhut.nudge.businesses.models.CreateCategoryRequest
 import com.mudhut.nudge.businesses.models.UpdateCategoryRequest
 import com.mudhut.nudge.businesses.services.BusinessCategoryService
 import jakarta.validation.Valid
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
+import org.springframework.data.domain.Sort
+import org.springframework.data.web.PageableDefault
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
@@ -22,8 +26,11 @@ class BusinessCategoryController(
     }
 
     @GetMapping
-    fun getTopLevelCategories(): ResponseEntity<List<CategoryResponse>> {
-        return ResponseEntity.ok(categoryService.getTopLevelCategories())
+    fun getTopLevelCategories(
+        @PageableDefault(size = 20, sort = ["name"], direction = Sort.Direction.ASC) pageable: Pageable,
+        @RequestParam(required = false) search: String?
+    ): ResponseEntity<Page<CategoryResponse>> {
+        return ResponseEntity.ok(categoryService.getTopLevelCategories(pageable, search))
     }
 
     @GetMapping("/{id}")

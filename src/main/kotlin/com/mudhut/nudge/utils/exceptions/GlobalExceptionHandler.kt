@@ -1,6 +1,7 @@
 package com.mudhut.nudge.utils.exceptions
 
 import com.mailersend.sdk.exceptions.MailerSendException
+import jakarta.persistence.EntityNotFoundException
 import jakarta.validation.ConstraintViolationException
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
@@ -105,6 +106,15 @@ class GlobalExceptionHandler {
         )
     }
 
+    @ExceptionHandler(EntityNotFoundException::class)
+    fun handleEntityNotFoundException(ex: EntityNotFoundException): ResponseEntity<ErrorResponse> {
+        logger.warn("Entity not found: {}", ex.message)
+        return ResponseEntity(
+            ErrorResponse(ERROR_CODE_NOT_FOUND, ex.message ?: "Resource not found"),
+            HttpStatus.NOT_FOUND
+        )
+    }
+
     @ExceptionHandler(BadCredentialsException::class)
     fun handleBadCredentialsException(ex: BadCredentialsException): ResponseEntity<ErrorResponse> {
         logger.warn("Authentication failed: Bad credentials")
@@ -177,6 +187,28 @@ class GlobalExceptionHandler {
         )
     }
 
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException::class)
+    fun handleMissingParam(
+        ex: org.springframework.web.bind.MissingServletRequestParameterException,
+    ): ResponseEntity<ErrorResponse> {
+        logger.warn("Missing request parameter: {}", ex.parameterName)
+        return ResponseEntity(
+            ErrorResponse(ERROR_CODE_REQUEST, "Required parameter '${ex.parameterName}' is missing"),
+            HttpStatus.BAD_REQUEST,
+        )
+    }
+
+    @ExceptionHandler(InvalidStateTransitionException::class)
+    fun handleInvalidStateTransition(
+        ex: InvalidStateTransitionException,
+    ): ResponseEntity<ErrorResponse> {
+        logger.warn("Invalid request state transition: {} -> {}", ex.from, ex.to)
+        return ResponseEntity(
+            ErrorResponse("INVALID_TRANSITION", ex.message ?: "Invalid state transition"),
+            HttpStatus.CONFLICT,
+        )
+    }
+
     @ExceptionHandler(BusinessNotFoundException::class)
     fun handleBusinessNotFoundException(ex: BusinessNotFoundException): ResponseEntity<ErrorResponse> {
         logger.warn("Business not found: {}", ex.message)
@@ -191,6 +223,15 @@ class GlobalExceptionHandler {
         logger.warn("Category not found: {}", ex.message)
         return ResponseEntity(
             ErrorResponse(ERROR_CODE_NOT_FOUND, ex.message ?: "Category not found"),
+            HttpStatus.NOT_FOUND
+        )
+    }
+
+    @ExceptionHandler(ServiceAddonNotFoundException::class)
+    fun handleServiceAddonNotFoundException(ex: ServiceAddonNotFoundException): ResponseEntity<ErrorResponse> {
+        logger.warn("Service addon not found: {}", ex.message)
+        return ResponseEntity(
+            ErrorResponse(ERROR_CODE_NOT_FOUND, ex.message ?: "Service addon not found"),
             HttpStatus.NOT_FOUND
         )
     }
