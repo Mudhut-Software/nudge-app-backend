@@ -30,6 +30,7 @@ class ConversationService(
     private val userRepo: UserRepository,
     private val businessRepo: BusinessRepository,
     private val memberRepo: BusinessMemberRepository,
+    private val presenceService: PresenceService,
 ) {
     @Transactional
     fun startAsCustomer(email: String, businessId: Long): ConversationResponse {
@@ -107,11 +108,14 @@ class ConversationService(
         )
     }
 
-    /** Least-loaded active member (fewest assigned conversations). */
-    private fun pickFreeMember(businessId: Long): User? =
-        memberRepo.findByBusinessIdAndIsActiveTrue(businessId)
-            .mapNotNull { it.user }
-            .minByOrNull { conversationRepo.countByBusinessIdAndAssignedMemberId(businessId, it.id!!) }
+    /** Least-loaded member, preferring those currently online; falls back to all when none are. */
+    private fun pickFreeMember(businessId: Long): User? {
+        val members = memberRepo.findByBusinessIdAndIsActiveTrue(businessId).mapNotNull { it.user }
+        if (members.isEmpty()) return null
+        val online = members.filter { presenceService.isOnline(it.email) }
+        val pool = online.ifEmpty { members }
+        return pool.minByOrNull { conversationRepo.countByBusinessIdAndAssignedMemberId(businessId, it.id!!) }
+    }
 
     private fun requireUser(email: String): User =
         userRepo.findByEmail(email).orElseThrow { UserNotFoundException("User not found") }
@@ -149,6 +153,9 @@ class ConversationService(
         } else {
             messageRepo.countByConversationIdAndSenderSideAndSentAtAfter(convo.id!!, otherSide, since)
         }
+        val counterpartOnline =
+            if (isCustomer) presenceService.isOnline(convo.assignedMember?.email)
+            else presenceService.isOnline(convo.customer?.email)
         return ConversationResponse(
             id = convo.id!!,
             businessId = convo.business!!.id!!,
@@ -161,6 +168,7 @@ class ConversationService(
             lastMessagePreview = lastBody?.take(PREVIEW_LEN),
             lastMessageAt = convo.lastMessageAt,
             unreadCount = unread,
+            counterpartOnline = counterpartOnline,
         )
     }
 

@@ -18,6 +18,8 @@ data class ConversationResponse(
     val lastMessagePreview: String?,
     val lastMessageAt: LocalDateTime?,
     val unreadCount: Long,
+    /** Whether the other party in this conversation currently has a live socket. */
+    val counterpartOnline: Boolean,
 )
 
 data class MessageResponse(
@@ -47,4 +49,16 @@ data class StartWithCustomerRequest(
 
 data class UnreadCountResponse(
     val count: Long,
+)
+
+/** Pushed to a counterpart's `/user/queue/presence` when the other party's presence changes. */
+data class PresenceEvent(
+    val conversationId: Long,
+    val online: Boolean,
+)
+
+/** Projection: a conversation id + the email of the OTHER party, relative to a given email. */
+data class PresenceTarget(
+    val conversationId: Long,
+    val counterpartEmail: String?,
 )
