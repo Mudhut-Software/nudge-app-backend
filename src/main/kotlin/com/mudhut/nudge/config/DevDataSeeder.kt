@@ -69,7 +69,7 @@ class DevDataSeeder(
     private val log = LoggerFactory.getLogger(DevDataSeeder::class.java)
 
     @Transactional
-    override fun run(args: ApplicationArguments?) {
+    override fun run(args: ApplicationArguments) {
         if (categoryRepo.count() == 0L) {
             log.info("DevDataSeeder: empty database — seeding demo data…")
             val categories = seedCategories()

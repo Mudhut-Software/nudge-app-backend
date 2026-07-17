@@ -2,7 +2,7 @@ package com.mudhut.nudge.notifications
 
 import com.mudhut.nudge.servicerequests.events.ServiceRequestSubmittedEvent
 import org.slf4j.LoggerFactory
-import org.springframework.modulith.ApplicationModuleListener
+import org.springframework.modulith.events.ApplicationModuleListener
 import org.springframework.stereotype.Component
 
 /**
