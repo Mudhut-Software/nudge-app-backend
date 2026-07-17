@@ -57,7 +57,7 @@ class ServiceAddonServiceTest {
     fun setUp() {
         sut = ServiceAddonService(addonRepo, serviceRepo, pendingMediaDeletionRepo, businessService, events)
         whenever(serviceRepo.findById(10L)).thenReturn(Optional.of(service))
-        whenever(addonRepo.save(any())).thenAnswer {
+        whenever(addonRepo.save(any<ServiceAddon>())).thenAnswer {
             (it.arguments[0] as ServiceAddon).apply { if (id == null) id = 99L }
         }
     }
