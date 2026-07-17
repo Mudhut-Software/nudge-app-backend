@@ -21,7 +21,7 @@ class NudgeUserDetailsService(
         )
 
         return org.springframework.security.core.userdetails.User(
-            user.email,
+            user.email ?: username,
             user.password,
             authorities
         )

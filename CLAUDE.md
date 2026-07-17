@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Stack
 
-Spring Boot 3.4.2 on Java 17, written in Kotlin (1.9.25). PostgreSQL + Hibernate/JPA, Spring Security with JWT, Thymeleaf for a handful of server-rendered auth pages, Maven (wrapper included). `spring-dotenv` loads environment from a `.env` file at the project root — see `SET_UP.md` for the full variable list.
+Spring Boot 4.0.6 (Spring Framework 7 / Spring Security 7 / Jackson 3) on Java 17, written in Kotlin (2.3.21). PostgreSQL + Hibernate/JPA, Spring Security with JWT, Thymeleaf for a handful of server-rendered auth pages, Maven (wrapper included). `spring-dotenv` loads environment from a `.env` file at the project root — see `SET_UP.md` for the full variable list.
 
 ## Commands
 
