@@ -1,13 +1,18 @@
 package com.mudhut.nudge.messaging.services
 
 import com.mudhut.nudge.businesses.entities.Business
+import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.messaging.entities.Conversation
 import com.mudhut.nudge.messaging.entities.Message
+import com.mudhut.nudge.messaging.entities.MessageAttachment
 import com.mudhut.nudge.messaging.entities.SenderSide
+import com.mudhut.nudge.messaging.models.AttachmentInput
+import com.mudhut.nudge.messaging.models.AttachmentResponse
 import com.mudhut.nudge.messaging.models.ConversationResponse
 import com.mudhut.nudge.messaging.models.MessageResponse
+import com.mudhut.nudge.messaging.models.TypingEvent
 import com.mudhut.nudge.messaging.repositories.ConversationRepository
 import com.mudhut.nudge.messaging.repositories.MessageRepository
 import com.mudhut.nudge.users.entities.User
@@ -52,6 +57,12 @@ class ConversationService(
         return conversationRepo.findForUser(user.id!!).map { toConversation(it, user) }
     }
 
+    /** Full business inbox — every conversation of the business. OWNER/ADMIN only. */
+    fun listForBusiness(email: String, businessId: Long): List<ConversationResponse> {
+        val admin = requireAdmin(businessId, email)
+        return conversationRepo.findForBusiness(businessId).map { toConversation(it, admin) }
+    }
+
     fun getMessages(email: String, conversationId: Long, size: Int): List<MessageResponse> {
         val user = requireUser(email)
         val convo = requireConversation(conversationId)
@@ -64,21 +75,57 @@ class ConversationService(
     }
 
     @Transactional
-    fun send(email: String, conversationId: Long, body: String): Pair<MessageResponse, Conversation> {
+    fun send(
+        email: String,
+        conversationId: Long,
+        body: String,
+        attachments: List<AttachmentInput> = emptyList(),
+    ): Pair<MessageResponse, Conversation> {
+        require(body.isNotBlank() || attachments.isNotEmpty()) {
+            "Message must have a body or at least one attachment"
+        }
         val user = requireUser(email)
         val convo = requireConversation(conversationId)
         requireParticipant(convo, user)
         val side = if (convo.customer!!.id == user.id) SenderSide.CUSTOMER else SenderSide.BUSINESS
         if (side == SenderSide.BUSINESS && convo.assignedMember == null) convo.assignedMember = user
 
-        val message = messageRepo.save(
-            Message(conversation = convo, sender = user, senderSide = side, body = body),
-        )
+        val unsaved = Message(conversation = convo, sender = user, senderSide = side, body = body)
+        attachments.forEachIndexed { i, a ->
+            unsaved.attachments.add(
+                MessageAttachment(
+                    message = unsaved, url = a.url!!, publicId = a.publicId!!,
+                    width = a.width, height = a.height, position = i,
+                ),
+            )
+        }
+        val message = messageRepo.save(unsaved)
         val at = message.sentAt ?: LocalDateTime.now()
         convo.lastMessageAt = at
         if (side == SenderSide.CUSTOMER) convo.customerLastReadAt = at else convo.memberLastReadAt = at
         conversationRepo.save(convo)
         return toMessage(message) to convo
+    }
+
+    /**
+     * Hand a thread to another active member (OWNER/ADMIN only). Returns the updated
+     * conversation plus the distinct emails to notify: old assignee, new assignee, customer.
+     */
+    @Transactional
+    fun reassign(email: String, conversationId: Long, memberUserId: Long): Pair<ConversationResponse, List<String>> {
+        val convo = requireConversation(conversationId)
+        val admin = requireAdmin(convo.business!!.id!!, email)
+        val target = memberRepo.findByBusinessIdAndUserId(convo.business!!.id!!, memberUserId)
+            .orElseThrow { IllegalArgumentException("Target user is not a member of this business") }
+        if (!target.isActive) throw IllegalArgumentException("Target member is inactive")
+        val affected = listOfNotNull(
+            convo.assignedMember?.email,
+            target.user!!.email,
+            convo.customer!!.email,
+        ).distinct()
+        convo.assignedMember = target.user
+        conversationRepo.save(convo)
+        return toConversation(convo, admin) to affected
     }
 
     @Transactional
@@ -92,6 +139,18 @@ class ConversationService(
     }
 
     fun unreadCount(email: String): Long = messageRepo.totalUnreadForUser(requireUser(email).id!!)
+
+    /** Who to notify that [email] is typing in [conversationId]; null when there is nobody. */
+    fun typingTarget(email: String, conversationId: Long): Pair<TypingEvent, String>? {
+        val user = requireUser(email)
+        val convo = requireConversation(conversationId)
+        requireParticipant(convo, user)
+        return if (convo.customer!!.id == user.id) {
+            convo.assignedMember?.email?.let { TypingEvent(conversationId, SenderSide.CUSTOMER) to it }
+        } else {
+            convo.customer?.email?.let { TypingEvent(conversationId, SenderSide.BUSINESS) to it }
+        }
+    }
 
     /** Emails of everyone who should receive live delivery for a conversation (customer + assigned member). */
     fun participantEmails(convo: Conversation): List<String> =
@@ -134,6 +193,16 @@ class ConversationService(
         return user
     }
 
+    private fun requireAdmin(businessId: Long, email: String): User {
+        val user = requireUser(email)
+        val member = memberRepo.findByBusinessIdAndUserId(businessId, user.id!!)
+            .orElseThrow { BusinessAccessDeniedException("You are not a member of this business") }
+        if (!member.isActive || member.role !in setOf(BusinessRole.OWNER, BusinessRole.ADMIN)) {
+            throw BusinessAccessDeniedException("Requires OWNER or ADMIN role")
+        }
+        return user
+    }
+
     private fun requireParticipant(convo: Conversation, user: User) {
         if (convo.customer!!.id == user.id) return
         val member = memberRepo.findByBusinessIdAndUserId(convo.business!!.id!!, user.id!!)
@@ -143,9 +212,14 @@ class ConversationService(
 
     private fun toConversation(convo: Conversation, viewer: User): ConversationResponse {
         val isCustomer = convo.customer!!.id == viewer.id
-        val lastBody = messageRepo
+        val last = messageRepo
             .findByConversationIdOrderBySentAtDesc(convo.id!!, PageRequest.of(0, 1))
-            .firstOrNull()?.body
+            .firstOrNull()
+        val preview = when {
+            last == null -> null
+            last.body.isBlank() && last.attachments.isNotEmpty() -> "\ud83d\udcf7 Photo"
+            else -> last.body.take(PREVIEW_LEN)
+        }
         val otherSide = if (isCustomer) SenderSide.BUSINESS else SenderSide.CUSTOMER
         val since = if (isCustomer) convo.customerLastReadAt else convo.memberLastReadAt
         val unread = if (since == null) {
@@ -165,7 +239,9 @@ class ConversationService(
             counterpartName = if (isCustomer) convo.business!!.name else convo.customer!!.username,
             counterpartAvatarUrl = if (isCustomer) convo.business!!.logoUrl else convo.customer!!.avatarUrl,
             assignedMemberId = convo.assignedMember?.id,
-            lastMessagePreview = lastBody?.take(PREVIEW_LEN),
+            assignedMemberName = convo.assignedMember?.username,
+            assignedMemberAvatarUrl = convo.assignedMember?.avatarUrl,
+            lastMessagePreview = preview,
             lastMessageAt = convo.lastMessageAt,
             unreadCount = unread,
             counterpartOnline = counterpartOnline,
@@ -180,5 +256,6 @@ class ConversationService(
         senderSide = m.senderSide,
         body = m.body,
         sentAt = m.sentAt ?: LocalDateTime.now(),
+        attachments = m.attachments.map { AttachmentResponse(it.url, it.publicId, it.width, it.height) },
     )
 }

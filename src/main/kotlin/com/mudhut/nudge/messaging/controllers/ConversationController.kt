@@ -1,6 +1,8 @@
 package com.mudhut.nudge.messaging.controllers
 
 import com.mudhut.nudge.messaging.models.ConversationResponse
+import com.mudhut.nudge.messaging.models.ConversationUpdateEvent
+import com.mudhut.nudge.messaging.models.ReassignRequest
 import com.mudhut.nudge.messaging.models.MessageResponse
 import com.mudhut.nudge.messaging.models.SendMessageRequest
 import com.mudhut.nudge.messaging.models.StartConversationRequest
@@ -13,6 +15,7 @@ import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.messaging.simp.SimpMessagingTemplate
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestParam
@@ -41,6 +44,13 @@ class ConversationController(
     fun list(authentication: Authentication): List<ConversationResponse> =
         service.listForUser(authentication.name)
 
+    /** Full business inbox (OWNER/ADMIN only). */
+    @GetMapping("/api/v1/businesses/{businessId}/conversations")
+    fun listForBusiness(
+        @PathVariable businessId: Long,
+        authentication: Authentication,
+    ): List<ConversationResponse> = service.listForBusiness(authentication.name, businessId)
+
     @GetMapping("/api/v1/conversations/unread-count")
     fun unreadCount(authentication: Authentication): UnreadCountResponse =
         UnreadCountResponse(service.unreadCount(authentication.name))
@@ -58,12 +68,25 @@ class ConversationController(
         @Valid @RequestBody request: SendMessageRequest,
         authentication: Authentication,
     ): MessageResponse {
-        val (message, conversation) = service.send(authentication.name, id, request.body!!.trim())
+        val (message, conversation) = service.send(authentication.name, id, request.body?.trim() ?: "", request.attachments)
         // Live-deliver to each participant's user queue (their WS subscription to /user/queue/messages).
         service.participantEmails(conversation).forEach { email ->
             messagingTemplate.convertAndSendToUser(email, "/queue/messages", message)
         }
         return message
+    }
+
+    @PatchMapping("/api/v1/conversations/{id}/assignee")
+    fun reassign(
+        @PathVariable id: Long,
+        @Valid @RequestBody request: ReassignRequest,
+        authentication: Authentication,
+    ): ConversationResponse {
+        val (convo, affected) = service.reassign(authentication.name, id, request.memberUserId!!)
+        affected.forEach {
+            messagingTemplate.convertAndSendToUser(it, "/queue/conversation-updates", ConversationUpdateEvent("REASSIGNED", id))
+        }
+        return convo
     }
 
     @PostMapping("/api/v1/conversations/{id}/read")

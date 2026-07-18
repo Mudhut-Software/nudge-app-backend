@@ -7,7 +7,9 @@ import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.messaging.entities.Conversation
 import com.mudhut.nudge.messaging.entities.Message
+import com.mudhut.nudge.messaging.entities.MessageAttachment
 import com.mudhut.nudge.messaging.entities.SenderSide
+import com.mudhut.nudge.messaging.models.AttachmentInput
 import com.mudhut.nudge.messaging.repositories.ConversationRepository
 import com.mudhut.nudge.messaging.repositories.MessageRepository
 import com.mudhut.nudge.users.entities.User
@@ -141,6 +143,209 @@ class ConversationServiceTest {
         assertThat(msg.senderSide).isEqualTo(SenderSide.CUSTOMER)
         assertThat(msg.body).isEqualTo("hello")
         assertThat(convo.lastMessageAt).isNotNull()
+    }
+
+    @Test
+    fun `send with attachments persists them and maps the response`() {
+        val customer = user(1)
+        val convo = Conversation(id = 50L, customer = customer, business = business(), assignedMember = user(9))
+        whenever(userRepo.findByEmail("u1@e.com")).thenReturn(Optional.of(customer))
+        whenever(conversationRepo.findById(50L)).thenReturn(Optional.of(convo))
+        whenever(messageRepo.save(any<Message>())).thenAnswer {
+            (it.arguments[0] as Message).apply { id = 7L; sentAt = LocalDateTime.now() }
+        }
+
+        val input = listOf(
+            AttachmentInput(url = "https://res.cloudinary.com/x/image/upload/nudge/images/a.jpg", publicId = "nudge/images/a"),
+            AttachmentInput(url = "https://res.cloudinary.com/x/image/upload/nudge/images/b.jpg", publicId = "nudge/images/b"),
+        )
+        val (msg, _) = sut.send("u1@e.com", 50L, "", input)
+
+        assertThat(msg.attachments).hasSize(2)
+        assertThat(msg.attachments[0].publicId).isEqualTo("nudge/images/a")
+        assertThat(msg.attachments[1].publicId).isEqualTo("nudge/images/b")
+    }
+
+    @Test
+    fun `send with neither body nor attachments is rejected`() {
+        assertThatThrownBy { sut.send("u1@e.com", 50L, "  ", emptyList()) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `attachment-only message previews as photo`() {
+        val customer = user(1)
+        val convo = Conversation(
+            id = 50L, customer = customer, business = business(), assignedMember = user(9),
+            lastMessageAt = LocalDateTime.now(),
+        )
+        val attachmentOnly = Message(id = 7L, conversation = convo, sender = customer, body = "").apply {
+            attachments.add(MessageAttachment(message = this, url = "u", publicId = "nudge/images/a"))
+        }
+        whenever(userRepo.findByEmail("u1@e.com")).thenReturn(Optional.of(customer))
+        whenever(conversationRepo.findForUser(1L)).thenReturn(listOf(convo))
+        whenever(messageRepo.findByConversationIdOrderBySentAtDesc(any(), any())).thenReturn(listOf(attachmentOnly))
+        whenever(messageRepo.countByConversationIdAndSenderSide(any(), any())).thenReturn(0L)
+
+        val res = sut.listForUser("u1@e.com")
+
+        assertThat(res).hasSize(1)
+        assertThat(res[0].lastMessagePreview).isEqualTo("📷 Photo")
+    }
+
+    @Test
+    fun `listForBusiness returns every business conversation with assignee fields for an ADMIN`() {
+        val admin = user(5)
+        val assignee = user(9)
+        val convo = Conversation(id = 50L, customer = user(1), business = business(), assignedMember = assignee)
+        whenever(userRepo.findByEmail("u5@e.com")).thenReturn(Optional.of(admin))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 5L)).thenReturn(
+            Optional.of(BusinessMember(id = 5L, user = admin, business = business(), role = BusinessRole.ADMIN)),
+        )
+        whenever(conversationRepo.findForBusiness(10L)).thenReturn(listOf(convo))
+        stubToConversationReads()
+
+        val res = sut.listForBusiness("u5@e.com", 10L)
+
+        assertThat(res).hasSize(1)
+        assertThat(res[0].assignedMemberId).isEqualTo(9L)
+        assertThat(res[0].assignedMemberName).isEqualTo("User9")
+    }
+
+    @Test
+    fun `listForBusiness requires ADMIN or OWNER`() {
+        val manager = user(6)
+        whenever(userRepo.findByEmail("u6@e.com")).thenReturn(Optional.of(manager))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 6L)).thenReturn(
+            Optional.of(BusinessMember(id = 6L, user = manager, business = business(), role = BusinessRole.MANAGER)),
+        )
+
+        assertThatThrownBy { sut.listForBusiness("u6@e.com", 10L) }
+            .isInstanceOf(BusinessAccessDeniedException::class.java)
+    }
+
+    @Test
+    fun `listForBusiness rejects an inactive ADMIN and a non-member`() {
+        val inactiveAdmin = user(7)
+        whenever(userRepo.findByEmail("u7@e.com")).thenReturn(Optional.of(inactiveAdmin))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 7L)).thenReturn(
+            Optional.of(
+                BusinessMember(id = 7L, user = inactiveAdmin, business = business(), role = BusinessRole.ADMIN)
+                    .apply { isActive = false },
+            ),
+        )
+        assertThatThrownBy { sut.listForBusiness("u7@e.com", 10L) }
+            .isInstanceOf(BusinessAccessDeniedException::class.java)
+
+        val stranger = user(8)
+        whenever(userRepo.findByEmail("u8@e.com")).thenReturn(Optional.of(stranger))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 8L)).thenReturn(Optional.empty())
+        assertThatThrownBy { sut.listForBusiness("u8@e.com", 10L) }
+            .isInstanceOf(BusinessAccessDeniedException::class.java)
+    }
+
+    @Test
+    fun `reassign swaps the assignee and reports old assignee, new assignee, and customer`() {
+        val admin = user(5)
+        val oldAssignee = user(9)
+        val newAssignee = user(3)
+        val convo = Conversation(id = 50L, customer = user(1), business = business(), assignedMember = oldAssignee)
+        whenever(userRepo.findByEmail("u5@e.com")).thenReturn(Optional.of(admin))
+        whenever(conversationRepo.findById(50L)).thenReturn(Optional.of(convo))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 5L)).thenReturn(
+            Optional.of(BusinessMember(id = 5L, user = admin, business = business(), role = BusinessRole.OWNER)),
+        )
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 3L)).thenReturn(
+            Optional.of(BusinessMember(id = 3L, user = newAssignee, business = business(), role = BusinessRole.STAFF)),
+        )
+        whenever(conversationRepo.save(any<Conversation>())).thenAnswer { it.arguments[0] }
+        stubToConversationReads()
+
+        val (res, affected) = sut.reassign("u5@e.com", 50L, 3L)
+
+        assertThat(res.assignedMemberId).isEqualTo(3L)
+        assertThat(affected).containsExactlyInAnyOrder("u9@e.com", "u3@e.com", "u1@e.com")
+    }
+
+    @Test
+    fun `reassign requires ADMIN or OWNER`() {
+        val staff = user(6)
+        val convo = Conversation(id = 50L, customer = user(1), business = business(), assignedMember = user(9))
+        whenever(userRepo.findByEmail("u6@e.com")).thenReturn(Optional.of(staff))
+        whenever(conversationRepo.findById(50L)).thenReturn(Optional.of(convo))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 6L)).thenReturn(
+            Optional.of(BusinessMember(id = 6L, user = staff, business = business(), role = BusinessRole.STAFF)),
+        )
+
+        assertThatThrownBy { sut.reassign("u6@e.com", 50L, 3L) }
+            .isInstanceOf(BusinessAccessDeniedException::class.java)
+    }
+
+    @Test
+    fun `reassign rejects a non-member or inactive target`() {
+        val admin = user(5)
+        val convo = Conversation(id = 50L, customer = user(1), business = business(), assignedMember = user(9))
+        whenever(userRepo.findByEmail("u5@e.com")).thenReturn(Optional.of(admin))
+        whenever(conversationRepo.findById(50L)).thenReturn(Optional.of(convo))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 5L)).thenReturn(
+            Optional.of(BusinessMember(id = 5L, user = admin, business = business(), role = BusinessRole.ADMIN)),
+        )
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 99L)).thenReturn(Optional.empty())
+        assertThatThrownBy { sut.reassign("u5@e.com", 50L, 99L) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+
+        val inactive = user(4)
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 4L)).thenReturn(
+            Optional.of(
+                BusinessMember(id = 4L, user = inactive, business = business(), role = BusinessRole.STAFF)
+                    .apply { isActive = false },
+            ),
+        )
+        assertThatThrownBy { sut.reassign("u5@e.com", 50L, 4L) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `typingTarget routes customer typing to the assigned member and member typing to the customer`() {
+        val customer = user(1)
+        val assignee = user(9)
+        val convo = Conversation(id = 50L, customer = customer, business = business(), assignedMember = assignee)
+        whenever(conversationRepo.findById(50L)).thenReturn(Optional.of(convo))
+        whenever(userRepo.findByEmail("u1@e.com")).thenReturn(Optional.of(customer))
+        whenever(userRepo.findByEmail("u9@e.com")).thenReturn(Optional.of(assignee))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 9L)).thenReturn(
+            Optional.of(BusinessMember(id = 9L, user = assignee, business = business(), role = BusinessRole.STAFF)),
+        )
+
+        val fromCustomer = sut.typingTarget("u1@e.com", 50L)
+        assertThat(fromCustomer!!.second).isEqualTo("u9@e.com")
+        assertThat(fromCustomer.first.side).isEqualTo(SenderSide.CUSTOMER)
+
+        val fromMember = sut.typingTarget("u9@e.com", 50L)
+        assertThat(fromMember!!.second).isEqualTo("u1@e.com")
+        assertThat(fromMember.first.side).isEqualTo(SenderSide.BUSINESS)
+    }
+
+    @Test
+    fun `typingTarget is null when the customer types into an unassigned thread`() {
+        val customer = user(1)
+        val convo = Conversation(id = 50L, customer = customer, business = business(), assignedMember = null)
+        whenever(conversationRepo.findById(50L)).thenReturn(Optional.of(convo))
+        whenever(userRepo.findByEmail("u1@e.com")).thenReturn(Optional.of(customer))
+
+        assertThat(sut.typingTarget("u1@e.com", 50L)).isNull()
+    }
+
+    @Test
+    fun `typingTarget rejects a non-participant`() {
+        val stranger = user(99)
+        val convo = Conversation(id = 50L, customer = user(1), business = business(), assignedMember = user(9))
+        whenever(conversationRepo.findById(50L)).thenReturn(Optional.of(convo))
+        whenever(userRepo.findByEmail("u99@e.com")).thenReturn(Optional.of(stranger))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 99L)).thenReturn(Optional.empty())
+
+        assertThatThrownBy { sut.typingTarget("u99@e.com", 50L) }
+            .isInstanceOf(BusinessAccessDeniedException::class.java)
     }
 
     @Test

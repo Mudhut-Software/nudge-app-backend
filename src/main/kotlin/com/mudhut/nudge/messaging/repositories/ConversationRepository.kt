@@ -24,6 +24,15 @@ interface ConversationRepository : JpaRepository<Conversation, Long> {
 
     fun countByBusinessIdAndAssignedMemberId(businessId: Long, assignedMemberId: Long): Long
 
+    @Query(
+        """
+        SELECT c FROM Conversation c
+        WHERE c.business.id = :businessId
+        ORDER BY c.lastMessageAt DESC NULLS LAST, c.createdAt DESC
+        """
+    )
+    fun findForBusiness(@Param("businessId") businessId: Long): List<Conversation>
+
     /** Every conversation the email participates in, with the OTHER party's email. */
     @Query(
         """
