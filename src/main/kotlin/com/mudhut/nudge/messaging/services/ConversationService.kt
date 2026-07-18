@@ -12,6 +12,7 @@ import com.mudhut.nudge.messaging.models.AttachmentInput
 import com.mudhut.nudge.messaging.models.AttachmentResponse
 import com.mudhut.nudge.messaging.models.ConversationResponse
 import com.mudhut.nudge.messaging.models.MessageResponse
+import com.mudhut.nudge.messaging.models.TypingEvent
 import com.mudhut.nudge.messaging.repositories.ConversationRepository
 import com.mudhut.nudge.messaging.repositories.MessageRepository
 import com.mudhut.nudge.users.entities.User
@@ -138,6 +139,18 @@ class ConversationService(
     }
 
     fun unreadCount(email: String): Long = messageRepo.totalUnreadForUser(requireUser(email).id!!)
+
+    /** Who to notify that [email] is typing in [conversationId]; null when there is nobody. */
+    fun typingTarget(email: String, conversationId: Long): Pair<TypingEvent, String>? {
+        val user = requireUser(email)
+        val convo = requireConversation(conversationId)
+        requireParticipant(convo, user)
+        return if (convo.customer!!.id == user.id) {
+            convo.assignedMember?.email?.let { TypingEvent(conversationId, SenderSide.CUSTOMER) to it }
+        } else {
+            convo.customer?.email?.let { TypingEvent(conversationId, SenderSide.BUSINESS) to it }
+        }
+    }
 
     /** Emails of everyone who should receive live delivery for a conversation (customer + assigned member). */
     fun participantEmails(convo: Conversation): List<String> =

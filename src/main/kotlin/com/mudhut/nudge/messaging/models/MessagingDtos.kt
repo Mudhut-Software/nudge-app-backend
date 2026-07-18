@@ -92,6 +92,12 @@ data class ConversationUpdateEvent(
     val conversationId: Long,
 )
 
+/** Relayed to the counterpart's `/user/queue/typing` while the other party is typing. */
+data class TypingEvent(
+    val conversationId: Long,
+    val side: SenderSide,
+)
+
 /** Pushed to a counterpart's `/user/queue/presence` when the other party's presence changes. */
 data class PresenceEvent(
     val conversationId: Long,

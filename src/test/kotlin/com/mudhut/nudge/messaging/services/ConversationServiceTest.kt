@@ -306,6 +306,49 @@ class ConversationServiceTest {
     }
 
     @Test
+    fun `typingTarget routes customer typing to the assigned member and member typing to the customer`() {
+        val customer = user(1)
+        val assignee = user(9)
+        val convo = Conversation(id = 50L, customer = customer, business = business(), assignedMember = assignee)
+        whenever(conversationRepo.findById(50L)).thenReturn(Optional.of(convo))
+        whenever(userRepo.findByEmail("u1@e.com")).thenReturn(Optional.of(customer))
+        whenever(userRepo.findByEmail("u9@e.com")).thenReturn(Optional.of(assignee))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 9L)).thenReturn(
+            Optional.of(BusinessMember(id = 9L, user = assignee, business = business(), role = BusinessRole.STAFF)),
+        )
+
+        val fromCustomer = sut.typingTarget("u1@e.com", 50L)
+        assertThat(fromCustomer!!.second).isEqualTo("u9@e.com")
+        assertThat(fromCustomer.first.side).isEqualTo(SenderSide.CUSTOMER)
+
+        val fromMember = sut.typingTarget("u9@e.com", 50L)
+        assertThat(fromMember!!.second).isEqualTo("u1@e.com")
+        assertThat(fromMember.first.side).isEqualTo(SenderSide.BUSINESS)
+    }
+
+    @Test
+    fun `typingTarget is null when the customer types into an unassigned thread`() {
+        val customer = user(1)
+        val convo = Conversation(id = 50L, customer = customer, business = business(), assignedMember = null)
+        whenever(conversationRepo.findById(50L)).thenReturn(Optional.of(convo))
+        whenever(userRepo.findByEmail("u1@e.com")).thenReturn(Optional.of(customer))
+
+        assertThat(sut.typingTarget("u1@e.com", 50L)).isNull()
+    }
+
+    @Test
+    fun `typingTarget rejects a non-participant`() {
+        val stranger = user(99)
+        val convo = Conversation(id = 50L, customer = user(1), business = business(), assignedMember = user(9))
+        whenever(conversationRepo.findById(50L)).thenReturn(Optional.of(convo))
+        whenever(userRepo.findByEmail("u99@e.com")).thenReturn(Optional.of(stranger))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 99L)).thenReturn(Optional.empty())
+
+        assertThatThrownBy { sut.typingTarget("u99@e.com", 50L) }
+            .isInstanceOf(BusinessAccessDeniedException::class.java)
+    }
+
+    @Test
     fun `send by a non-participant is rejected`() {
         val stranger = user(99)
         val convo = Conversation(id = 50L, customer = user(1), business = business(), assignedMember = user(9))
