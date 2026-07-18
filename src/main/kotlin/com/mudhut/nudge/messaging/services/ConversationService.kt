@@ -5,7 +5,10 @@ import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.messaging.entities.Conversation
 import com.mudhut.nudge.messaging.entities.Message
+import com.mudhut.nudge.messaging.entities.MessageAttachment
 import com.mudhut.nudge.messaging.entities.SenderSide
+import com.mudhut.nudge.messaging.models.AttachmentInput
+import com.mudhut.nudge.messaging.models.AttachmentResponse
 import com.mudhut.nudge.messaging.models.ConversationResponse
 import com.mudhut.nudge.messaging.models.MessageResponse
 import com.mudhut.nudge.messaging.repositories.ConversationRepository
@@ -64,16 +67,31 @@ class ConversationService(
     }
 
     @Transactional
-    fun send(email: String, conversationId: Long, body: String): Pair<MessageResponse, Conversation> {
+    fun send(
+        email: String,
+        conversationId: Long,
+        body: String,
+        attachments: List<AttachmentInput> = emptyList(),
+    ): Pair<MessageResponse, Conversation> {
+        require(body.isNotBlank() || attachments.isNotEmpty()) {
+            "Message must have a body or at least one attachment"
+        }
         val user = requireUser(email)
         val convo = requireConversation(conversationId)
         requireParticipant(convo, user)
         val side = if (convo.customer!!.id == user.id) SenderSide.CUSTOMER else SenderSide.BUSINESS
         if (side == SenderSide.BUSINESS && convo.assignedMember == null) convo.assignedMember = user
 
-        val message = messageRepo.save(
-            Message(conversation = convo, sender = user, senderSide = side, body = body),
-        )
+        val unsaved = Message(conversation = convo, sender = user, senderSide = side, body = body)
+        attachments.forEachIndexed { i, a ->
+            unsaved.attachments.add(
+                MessageAttachment(
+                    message = unsaved, url = a.url!!, publicId = a.publicId!!,
+                    width = a.width, height = a.height, position = i,
+                ),
+            )
+        }
+        val message = messageRepo.save(unsaved)
         val at = message.sentAt ?: LocalDateTime.now()
         convo.lastMessageAt = at
         if (side == SenderSide.CUSTOMER) convo.customerLastReadAt = at else convo.memberLastReadAt = at
@@ -143,9 +161,14 @@ class ConversationService(
 
     private fun toConversation(convo: Conversation, viewer: User): ConversationResponse {
         val isCustomer = convo.customer!!.id == viewer.id
-        val lastBody = messageRepo
+        val last = messageRepo
             .findByConversationIdOrderBySentAtDesc(convo.id!!, PageRequest.of(0, 1))
-            .firstOrNull()?.body
+            .firstOrNull()
+        val preview = when {
+            last == null -> null
+            last.body.isBlank() && last.attachments.isNotEmpty() -> "\ud83d\udcf7 Photo"
+            else -> last.body.take(PREVIEW_LEN)
+        }
         val otherSide = if (isCustomer) SenderSide.BUSINESS else SenderSide.CUSTOMER
         val since = if (isCustomer) convo.customerLastReadAt else convo.memberLastReadAt
         val unread = if (since == null) {
@@ -165,7 +188,7 @@ class ConversationService(
             counterpartName = if (isCustomer) convo.business!!.name else convo.customer!!.username,
             counterpartAvatarUrl = if (isCustomer) convo.business!!.logoUrl else convo.customer!!.avatarUrl,
             assignedMemberId = convo.assignedMember?.id,
-            lastMessagePreview = lastBody?.take(PREVIEW_LEN),
+            lastMessagePreview = preview,
             lastMessageAt = convo.lastMessageAt,
             unreadCount = unread,
             counterpartOnline = counterpartOnline,
@@ -180,5 +203,6 @@ class ConversationService(
         senderSide = m.senderSide,
         body = m.body,
         sentAt = m.sentAt ?: LocalDateTime.now(),
+        attachments = m.attachments.map { AttachmentResponse(it.url, it.publicId, it.width, it.height) },
     )
 }

@@ -58,7 +58,7 @@ class ConversationController(
         @Valid @RequestBody request: SendMessageRequest,
         authentication: Authentication,
     ): MessageResponse {
-        val (message, conversation) = service.send(authentication.name, id, request.body!!.trim())
+        val (message, conversation) = service.send(authentication.name, id, request.body?.trim() ?: "", request.attachments)
         // Live-deliver to each participant's user queue (their WS subscription to /user/queue/messages).
         service.participantEmails(conversation).forEach { email ->
             messagingTemplate.convertAndSendToUser(email, "/queue/messages", message)

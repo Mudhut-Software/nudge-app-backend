@@ -1,8 +1,11 @@
 package com.mudhut.nudge.messaging.entities
 
 import com.mudhut.nudge.users.entities.User
+import jakarta.persistence.CascadeType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.OneToMany
+import jakarta.persistence.OrderBy
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
@@ -42,4 +45,8 @@ class Message(
     @CreationTimestamp
     @Column(name = "sent_at", updatable = false)
     var sentAt: LocalDateTime? = null,
+
+    @OneToMany(mappedBy = "message", cascade = [CascadeType.ALL], orphanRemoval = true)
+    @OrderBy("position ASC")
+    var attachments: MutableList<MessageAttachment> = mutableListOf(),
 )

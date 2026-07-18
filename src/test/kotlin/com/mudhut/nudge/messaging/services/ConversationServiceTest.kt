@@ -7,7 +7,9 @@ import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.messaging.entities.Conversation
 import com.mudhut.nudge.messaging.entities.Message
+import com.mudhut.nudge.messaging.entities.MessageAttachment
 import com.mudhut.nudge.messaging.entities.SenderSide
+import com.mudhut.nudge.messaging.models.AttachmentInput
 import com.mudhut.nudge.messaging.repositories.ConversationRepository
 import com.mudhut.nudge.messaging.repositories.MessageRepository
 import com.mudhut.nudge.users.entities.User
@@ -141,6 +143,54 @@ class ConversationServiceTest {
         assertThat(msg.senderSide).isEqualTo(SenderSide.CUSTOMER)
         assertThat(msg.body).isEqualTo("hello")
         assertThat(convo.lastMessageAt).isNotNull()
+    }
+
+    @Test
+    fun `send with attachments persists them and maps the response`() {
+        val customer = user(1)
+        val convo = Conversation(id = 50L, customer = customer, business = business(), assignedMember = user(9))
+        whenever(userRepo.findByEmail("u1@e.com")).thenReturn(Optional.of(customer))
+        whenever(conversationRepo.findById(50L)).thenReturn(Optional.of(convo))
+        whenever(messageRepo.save(any<Message>())).thenAnswer {
+            (it.arguments[0] as Message).apply { id = 7L; sentAt = LocalDateTime.now() }
+        }
+
+        val input = listOf(
+            AttachmentInput(url = "https://res.cloudinary.com/x/image/upload/nudge/images/a.jpg", publicId = "nudge/images/a"),
+            AttachmentInput(url = "https://res.cloudinary.com/x/image/upload/nudge/images/b.jpg", publicId = "nudge/images/b"),
+        )
+        val (msg, _) = sut.send("u1@e.com", 50L, "", input)
+
+        assertThat(msg.attachments).hasSize(2)
+        assertThat(msg.attachments[0].publicId).isEqualTo("nudge/images/a")
+        assertThat(msg.attachments[1].publicId).isEqualTo("nudge/images/b")
+    }
+
+    @Test
+    fun `send with neither body nor attachments is rejected`() {
+        assertThatThrownBy { sut.send("u1@e.com", 50L, "  ", emptyList()) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `attachment-only message previews as photo`() {
+        val customer = user(1)
+        val convo = Conversation(
+            id = 50L, customer = customer, business = business(), assignedMember = user(9),
+            lastMessageAt = LocalDateTime.now(),
+        )
+        val attachmentOnly = Message(id = 7L, conversation = convo, sender = customer, body = "").apply {
+            attachments.add(MessageAttachment(message = this, url = "u", publicId = "nudge/images/a"))
+        }
+        whenever(userRepo.findByEmail("u1@e.com")).thenReturn(Optional.of(customer))
+        whenever(conversationRepo.findForUser(1L)).thenReturn(listOf(convo))
+        whenever(messageRepo.findByConversationIdOrderBySentAtDesc(any(), any())).thenReturn(listOf(attachmentOnly))
+        whenever(messageRepo.countByConversationIdAndSenderSide(any(), any())).thenReturn(0L)
+
+        val res = sut.listForUser("u1@e.com")
+
+        assertThat(res).hasSize(1)
+        assertThat(res[0].lastMessagePreview).isEqualTo("📷 Photo")
     }
 
     @Test
