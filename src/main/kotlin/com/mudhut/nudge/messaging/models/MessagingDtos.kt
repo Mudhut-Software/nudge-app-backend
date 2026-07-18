@@ -22,6 +22,8 @@ data class ConversationResponse(
     val counterpartName: String?,
     val counterpartAvatarUrl: String?,
     val assignedMemberId: Long?,
+    val assignedMemberName: String?,
+    val assignedMemberAvatarUrl: String?,
     val lastMessagePreview: String?,
     val lastMessageAt: LocalDateTime?,
     val unreadCount: Long,

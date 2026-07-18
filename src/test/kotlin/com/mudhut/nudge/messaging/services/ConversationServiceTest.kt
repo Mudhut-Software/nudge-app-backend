@@ -194,6 +194,57 @@ class ConversationServiceTest {
     }
 
     @Test
+    fun `listForBusiness returns every business conversation with assignee fields for an ADMIN`() {
+        val admin = user(5)
+        val assignee = user(9)
+        val convo = Conversation(id = 50L, customer = user(1), business = business(), assignedMember = assignee)
+        whenever(userRepo.findByEmail("u5@e.com")).thenReturn(Optional.of(admin))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 5L)).thenReturn(
+            Optional.of(BusinessMember(id = 5L, user = admin, business = business(), role = BusinessRole.ADMIN)),
+        )
+        whenever(conversationRepo.findForBusiness(10L)).thenReturn(listOf(convo))
+        stubToConversationReads()
+
+        val res = sut.listForBusiness("u5@e.com", 10L)
+
+        assertThat(res).hasSize(1)
+        assertThat(res[0].assignedMemberId).isEqualTo(9L)
+        assertThat(res[0].assignedMemberName).isEqualTo("User9")
+    }
+
+    @Test
+    fun `listForBusiness requires ADMIN or OWNER`() {
+        val manager = user(6)
+        whenever(userRepo.findByEmail("u6@e.com")).thenReturn(Optional.of(manager))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 6L)).thenReturn(
+            Optional.of(BusinessMember(id = 6L, user = manager, business = business(), role = BusinessRole.MANAGER)),
+        )
+
+        assertThatThrownBy { sut.listForBusiness("u6@e.com", 10L) }
+            .isInstanceOf(BusinessAccessDeniedException::class.java)
+    }
+
+    @Test
+    fun `listForBusiness rejects an inactive ADMIN and a non-member`() {
+        val inactiveAdmin = user(7)
+        whenever(userRepo.findByEmail("u7@e.com")).thenReturn(Optional.of(inactiveAdmin))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 7L)).thenReturn(
+            Optional.of(
+                BusinessMember(id = 7L, user = inactiveAdmin, business = business(), role = BusinessRole.ADMIN)
+                    .apply { isActive = false },
+            ),
+        )
+        assertThatThrownBy { sut.listForBusiness("u7@e.com", 10L) }
+            .isInstanceOf(BusinessAccessDeniedException::class.java)
+
+        val stranger = user(8)
+        whenever(userRepo.findByEmail("u8@e.com")).thenReturn(Optional.of(stranger))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 8L)).thenReturn(Optional.empty())
+        assertThatThrownBy { sut.listForBusiness("u8@e.com", 10L) }
+            .isInstanceOf(BusinessAccessDeniedException::class.java)
+    }
+
+    @Test
     fun `send by a non-participant is rejected`() {
         val stranger = user(99)
         val convo = Conversation(id = 50L, customer = user(1), business = business(), assignedMember = user(9))

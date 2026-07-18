@@ -1,6 +1,7 @@
 package com.mudhut.nudge.messaging.services
 
 import com.mudhut.nudge.businesses.entities.Business
+import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.messaging.entities.Conversation
@@ -53,6 +54,12 @@ class ConversationService(
     fun listForUser(email: String): List<ConversationResponse> {
         val user = requireUser(email)
         return conversationRepo.findForUser(user.id!!).map { toConversation(it, user) }
+    }
+
+    /** Full business inbox — every conversation of the business. OWNER/ADMIN only. */
+    fun listForBusiness(email: String, businessId: Long): List<ConversationResponse> {
+        val admin = requireAdmin(businessId, email)
+        return conversationRepo.findForBusiness(businessId).map { toConversation(it, admin) }
     }
 
     fun getMessages(email: String, conversationId: Long, size: Int): List<MessageResponse> {
@@ -152,6 +159,16 @@ class ConversationService(
         return user
     }
 
+    private fun requireAdmin(businessId: Long, email: String): User {
+        val user = requireUser(email)
+        val member = memberRepo.findByBusinessIdAndUserId(businessId, user.id!!)
+            .orElseThrow { BusinessAccessDeniedException("You are not a member of this business") }
+        if (!member.isActive || member.role !in setOf(BusinessRole.OWNER, BusinessRole.ADMIN)) {
+            throw BusinessAccessDeniedException("Requires OWNER or ADMIN role")
+        }
+        return user
+    }
+
     private fun requireParticipant(convo: Conversation, user: User) {
         if (convo.customer!!.id == user.id) return
         val member = memberRepo.findByBusinessIdAndUserId(convo.business!!.id!!, user.id!!)
@@ -188,6 +205,8 @@ class ConversationService(
             counterpartName = if (isCustomer) convo.business!!.name else convo.customer!!.username,
             counterpartAvatarUrl = if (isCustomer) convo.business!!.logoUrl else convo.customer!!.avatarUrl,
             assignedMemberId = convo.assignedMember?.id,
+            assignedMemberName = convo.assignedMember?.username,
+            assignedMemberAvatarUrl = convo.assignedMember?.avatarUrl,
             lastMessagePreview = preview,
             lastMessageAt = convo.lastMessageAt,
             unreadCount = unread,

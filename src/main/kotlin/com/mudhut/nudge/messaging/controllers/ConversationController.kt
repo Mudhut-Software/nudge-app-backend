@@ -41,6 +41,13 @@ class ConversationController(
     fun list(authentication: Authentication): List<ConversationResponse> =
         service.listForUser(authentication.name)
 
+    /** Full business inbox (OWNER/ADMIN only). */
+    @GetMapping("/api/v1/businesses/{businessId}/conversations")
+    fun listForBusiness(
+        @PathVariable businessId: Long,
+        authentication: Authentication,
+    ): List<ConversationResponse> = service.listForBusiness(authentication.name, businessId)
+
     @GetMapping("/api/v1/conversations/unread-count")
     fun unreadCount(authentication: Authentication): UnreadCountResponse =
         UnreadCountResponse(service.unreadCount(authentication.name))
