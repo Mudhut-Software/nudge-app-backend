@@ -245,6 +245,67 @@ class ConversationServiceTest {
     }
 
     @Test
+    fun `reassign swaps the assignee and reports old assignee, new assignee, and customer`() {
+        val admin = user(5)
+        val oldAssignee = user(9)
+        val newAssignee = user(3)
+        val convo = Conversation(id = 50L, customer = user(1), business = business(), assignedMember = oldAssignee)
+        whenever(userRepo.findByEmail("u5@e.com")).thenReturn(Optional.of(admin))
+        whenever(conversationRepo.findById(50L)).thenReturn(Optional.of(convo))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 5L)).thenReturn(
+            Optional.of(BusinessMember(id = 5L, user = admin, business = business(), role = BusinessRole.OWNER)),
+        )
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 3L)).thenReturn(
+            Optional.of(BusinessMember(id = 3L, user = newAssignee, business = business(), role = BusinessRole.STAFF)),
+        )
+        whenever(conversationRepo.save(any<Conversation>())).thenAnswer { it.arguments[0] }
+        stubToConversationReads()
+
+        val (res, affected) = sut.reassign("u5@e.com", 50L, 3L)
+
+        assertThat(res.assignedMemberId).isEqualTo(3L)
+        assertThat(affected).containsExactlyInAnyOrder("u9@e.com", "u3@e.com", "u1@e.com")
+    }
+
+    @Test
+    fun `reassign requires ADMIN or OWNER`() {
+        val staff = user(6)
+        val convo = Conversation(id = 50L, customer = user(1), business = business(), assignedMember = user(9))
+        whenever(userRepo.findByEmail("u6@e.com")).thenReturn(Optional.of(staff))
+        whenever(conversationRepo.findById(50L)).thenReturn(Optional.of(convo))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 6L)).thenReturn(
+            Optional.of(BusinessMember(id = 6L, user = staff, business = business(), role = BusinessRole.STAFF)),
+        )
+
+        assertThatThrownBy { sut.reassign("u6@e.com", 50L, 3L) }
+            .isInstanceOf(BusinessAccessDeniedException::class.java)
+    }
+
+    @Test
+    fun `reassign rejects a non-member or inactive target`() {
+        val admin = user(5)
+        val convo = Conversation(id = 50L, customer = user(1), business = business(), assignedMember = user(9))
+        whenever(userRepo.findByEmail("u5@e.com")).thenReturn(Optional.of(admin))
+        whenever(conversationRepo.findById(50L)).thenReturn(Optional.of(convo))
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 5L)).thenReturn(
+            Optional.of(BusinessMember(id = 5L, user = admin, business = business(), role = BusinessRole.ADMIN)),
+        )
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 99L)).thenReturn(Optional.empty())
+        assertThatThrownBy { sut.reassign("u5@e.com", 50L, 99L) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+
+        val inactive = user(4)
+        whenever(memberRepo.findByBusinessIdAndUserId(10L, 4L)).thenReturn(
+            Optional.of(
+                BusinessMember(id = 4L, user = inactive, business = business(), role = BusinessRole.STAFF)
+                    .apply { isActive = false },
+            ),
+        )
+        assertThatThrownBy { sut.reassign("u5@e.com", 50L, 4L) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
     fun `send by a non-participant is rejected`() {
         val stranger = user(99)
         val convo = Conversation(id = 50L, customer = user(1), business = business(), assignedMember = user(9))

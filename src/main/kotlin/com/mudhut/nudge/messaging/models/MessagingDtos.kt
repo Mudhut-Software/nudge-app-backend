@@ -81,6 +81,17 @@ data class UnreadCountResponse(
     val count: Long,
 )
 
+data class ReassignRequest(
+    @field:NotNull(message = "memberUserId is required")
+    var memberUserId: Long? = null,
+)
+
+/** Pushed to `/user/queue/conversation-updates` when a conversation changes outside normal message flow. */
+data class ConversationUpdateEvent(
+    val type: String,
+    val conversationId: Long,
+)
+
 /** Pushed to a counterpart's `/user/queue/presence` when the other party's presence changes. */
 data class PresenceEvent(
     val conversationId: Long,

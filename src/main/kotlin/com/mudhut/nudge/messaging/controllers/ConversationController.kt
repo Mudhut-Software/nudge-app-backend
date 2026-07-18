@@ -1,6 +1,8 @@
 package com.mudhut.nudge.messaging.controllers
 
 import com.mudhut.nudge.messaging.models.ConversationResponse
+import com.mudhut.nudge.messaging.models.ConversationUpdateEvent
+import com.mudhut.nudge.messaging.models.ReassignRequest
 import com.mudhut.nudge.messaging.models.MessageResponse
 import com.mudhut.nudge.messaging.models.SendMessageRequest
 import com.mudhut.nudge.messaging.models.StartConversationRequest
@@ -13,6 +15,7 @@ import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.messaging.simp.SimpMessagingTemplate
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestParam
@@ -71,6 +74,19 @@ class ConversationController(
             messagingTemplate.convertAndSendToUser(email, "/queue/messages", message)
         }
         return message
+    }
+
+    @PatchMapping("/api/v1/conversations/{id}/assignee")
+    fun reassign(
+        @PathVariable id: Long,
+        @Valid @RequestBody request: ReassignRequest,
+        authentication: Authentication,
+    ): ConversationResponse {
+        val (convo, affected) = service.reassign(authentication.name, id, request.memberUserId!!)
+        affected.forEach {
+            messagingTemplate.convertAndSendToUser(it, "/queue/conversation-updates", ConversationUpdateEvent("REASSIGNED", id))
+        }
+        return convo
     }
 
     @PostMapping("/api/v1/conversations/{id}/read")

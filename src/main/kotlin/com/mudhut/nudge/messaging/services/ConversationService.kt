@@ -106,6 +106,27 @@ class ConversationService(
         return toMessage(message) to convo
     }
 
+    /**
+     * Hand a thread to another active member (OWNER/ADMIN only). Returns the updated
+     * conversation plus the distinct emails to notify: old assignee, new assignee, customer.
+     */
+    @Transactional
+    fun reassign(email: String, conversationId: Long, memberUserId: Long): Pair<ConversationResponse, List<String>> {
+        val convo = requireConversation(conversationId)
+        val admin = requireAdmin(convo.business!!.id!!, email)
+        val target = memberRepo.findByBusinessIdAndUserId(convo.business!!.id!!, memberUserId)
+            .orElseThrow { IllegalArgumentException("Target user is not a member of this business") }
+        if (!target.isActive) throw IllegalArgumentException("Target member is inactive")
+        val affected = listOfNotNull(
+            convo.assignedMember?.email,
+            target.user!!.email,
+            convo.customer!!.email,
+        ).distinct()
+        convo.assignedMember = target.user
+        conversationRepo.save(convo)
+        return toConversation(convo, admin) to affected
+    }
+
     @Transactional
     fun markRead(email: String, conversationId: Long) {
         val user = requireUser(email)
