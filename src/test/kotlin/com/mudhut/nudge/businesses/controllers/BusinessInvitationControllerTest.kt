@@ -72,6 +72,40 @@ class BusinessInvitationControllerTest {
     }
 
     @Test
+    fun `invitation preview by token is public - the emailed link lands here before login`() {
+        val response = InvitationResponse(
+            id = 1L,
+            businessId = 10L,
+            businessName = "Sparkle Clean",
+            inviterEmail = "owner@test.com",
+            inviteeEmail = "invitee@test.com",
+            role = BusinessRole.MANAGER,
+            status = InvitationStatus.PENDING,
+            expiryDate = LocalDateTime.now().plusDays(7),
+            createdAt = LocalDateTime.now(),
+        )
+        Mockito.`when`(invitationService.getInvitation("tok-123")).thenReturn(response)
+
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/invitations/tok-123"))
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.businessName").value("Sparkle Clean"))
+    }
+
+    @Test
+    fun `my invitations listing stays authenticated`() {
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/invitations/my"))
+            .andExpect(MockMvcResultMatchers.status().isUnauthorized)
+    }
+
+    @Test
+    fun `accept and decline stay authenticated`() {
+        mockMvc.perform(MockMvcRequestBuilders.post("/api/v1/invitations/tok-123/accept"))
+            .andExpect(MockMvcResultMatchers.status().isUnauthorized)
+        mockMvc.perform(MockMvcRequestBuilders.post("/api/v1/invitations/tok-123/decline"))
+            .andExpect(MockMvcResultMatchers.status().isUnauthorized)
+    }
+
+    @Test
     @WithMockUser(username = "admin@test.com")
     fun testSendInvitation_Success() {
         val request = InviteMemberRequest(
