@@ -17,8 +17,11 @@ import com.mudhut.nudge.utils.exceptions.InvitationException
 import com.mudhut.nudge.utils.models.GeneralRequestResponse
 import jakarta.persistence.EntityNotFoundException
 import jakarta.transaction.Transactional
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import org.thymeleaf.TemplateEngine
+import org.thymeleaf.context.Context
 import java.time.LocalDateTime
 import java.util.UUID
 
@@ -32,7 +35,11 @@ class BusinessInvitationService(
     private val emailService: IEmailService,
     private val urlService: UrlService,
     @Value("\${nudge.frontend-url:}") private val frontendUrl: String,
+    private val templateEngine: TemplateEngine,
+    /** Dev convenience: also log the accept link (localhost emails get spam-filtered). */
+    @Value("\${nudge.invitations.log-link:false}") private val logInviteLink: Boolean,
 ) {
+    private val log = LoggerFactory.getLogger(BusinessInvitationService::class.java)
 
     @Transactional
     fun sendInvitation(
@@ -186,17 +193,37 @@ class BusinessInvitationService(
 
     private fun sendInvitationEmail(invitation: BusinessInvitation, businessName: String) {
         val inviteUrl = "${frontendUrl.trimEnd('/')}/invitations/${invitation.token}"
-        val subject = "You've been invited to join $businessName"
-        val body = """
-            You have been invited to join $businessName as ${invitation.role?.name}.
+        val roleName = invitation.role?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "member"
+        val subject = "You've been invited to join $businessName on Nudge"
 
-            Click the link below to accept the invitation:
-            $inviteUrl
+        // Emailed links to a localhost frontend are routinely spam-filtered by providers, so in
+        // dev we surface the accept link in the logs too — copy it straight from the console.
+        if (logInviteLink) {
+            log.info("Invitation accept link for {}: {}", invitation.email, inviteUrl)
+        }
 
-            This invitation expires on ${invitation.expiryDate}.
-        """.trimIndent()
-        emailService.sendEmail(invitation.email!!, subject, body)
+        val context = Context().apply {
+            setVariable("businessName", businessName)
+            setVariable("roleName", roleName)
+            setVariable("inviteUrl", inviteUrl)
+            setVariable("subject", subject)
+        }
+        val html = templateEngine.process("emails/invitation", context)
+        val text = plainTextInvitationEmail(businessName, roleName, inviteUrl)
+
+        emailService.sendHtmlEmail(invitation.email!!, subject, html, text)
     }
+
+    private fun plainTextInvitationEmail(businessName: String, roleName: String, inviteUrl: String): String =
+        """
+        You've been invited to join $businessName as $roleName on Nudge.
+
+        Accept the invitation:
+        $inviteUrl
+
+        If you don't have a Nudge account yet, sign up with this email address and the
+        invitation links to your account automatically.
+        """.trimIndent()
 
     private fun toResponse(invitation: BusinessInvitation): InvitationResponse {
         return InvitationResponse(
