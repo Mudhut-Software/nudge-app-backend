@@ -44,11 +44,9 @@ class BusinessInvitationController(
         )
     }
 
+    /** Public: the emailed invite link lands here before the invitee logs in. */
     @GetMapping("/api/v1/invitations/{token}")
-    fun getInvitation(
-        @PathVariable token: String,
-        @Suppress("UNUSED_PARAMETER") authentication: Authentication
-    ): ResponseEntity<InvitationResponse> {
+    fun getInvitation(@PathVariable token: String): ResponseEntity<InvitationResponse> {
         return ResponseEntity.ok(invitationService.getInvitation(token))
     }
 

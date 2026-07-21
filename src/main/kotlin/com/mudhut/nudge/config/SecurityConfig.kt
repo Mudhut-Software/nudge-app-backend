@@ -66,6 +66,11 @@ class SecurityConfig(
                     ).hasAnyRole("SUPER_ADMIN", "ADMIN")
                     .requestMatchers(HttpMethod.GET, "/api/v1/businesses/public/**").permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/v1/categories", "/api/v1/categories/**").permitAll()
+                    // The emailed invite link lands on the preview BEFORE the invitee logs in
+                    // (they may not even have an account yet). /my must stay authenticated and
+                    // is matched first; accept/decline are POSTs, untouched by the GET permit.
+                    .requestMatchers(HttpMethod.GET, "/api/v1/invitations/my").authenticated()
+                    .requestMatchers(HttpMethod.GET, "/api/v1/invitations/*").permitAll()
                     .anyRequest().authenticated()
             }
             .headers { headers ->
