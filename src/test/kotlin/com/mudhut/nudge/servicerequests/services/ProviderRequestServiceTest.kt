@@ -22,6 +22,7 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.Optional
 
@@ -156,6 +157,35 @@ class ProviderRequestServiceTest {
 
         assertThrows(InvalidStateTransitionException::class.java) {
             sut.complete("owner@example.com", 10L, 100L)
+        }
+    }
+
+    @Test
+    fun `calendar queries CONFIRMED and COMPLETED within the half-open window`() {
+        whenever(repo.findCalendarJobs(any(), any(), any(), any())).thenReturn(emptyList())
+
+        sut.calendar("owner@example.com", 10L, LocalDate.of(2026, 3, 1), LocalDate.of(2026, 4, 1))
+
+        verify(businessService).requireRole(10L, "owner@example.com", BusinessRole.MANAGER)
+        verify(repo).findCalendarJobs(
+            eq(10L),
+            eq(listOf(ServiceRequestStatus.CONFIRMED, ServiceRequestStatus.COMPLETED)),
+            eq(LocalDateTime.of(2026, 3, 1, 0, 0)),
+            eq(LocalDateTime.of(2026, 4, 1, 0, 0)),
+        )
+    }
+
+    @Test
+    fun `calendar rejects an inverted or empty window`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.calendar("owner@example.com", 10L, LocalDate.of(2026, 4, 1), LocalDate.of(2026, 4, 1))
+        }
+    }
+
+    @Test
+    fun `calendar rejects a window longer than 92 days`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.calendar("owner@example.com", 10L, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 6, 1))
         }
     }
 }

@@ -13,6 +13,7 @@ import jakarta.transaction.Transactional
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 @Service
@@ -40,6 +41,24 @@ class ProviderRequestService(
     fun unreadCount(email: String, businessId: Long): Long {
         businessService.requireRole(businessId, email, BusinessRole.MANAGER)
         return repo.countUnreadByBusiness(businessId)
+    }
+
+    /** Confirmed + completed jobs whose requestedDate falls in the half-open window [from, to). */
+    fun calendar(
+        email: String,
+        businessId: Long,
+        from: LocalDate,
+        to: LocalDate,
+    ): List<ServiceRequestResponse> {
+        require(to.isAfter(from)) { "'to' must be after 'from'" }
+        require(!from.plusDays(92).isBefore(to)) { "Calendar window must be at most 92 days" }
+        businessService.requireRole(businessId, email, BusinessRole.MANAGER)
+        return repo.findCalendarJobs(
+            businessId,
+            listOf(ServiceRequestStatus.CONFIRMED, ServiceRequestStatus.COMPLETED),
+            from.atStartOfDay(),
+            to.atStartOfDay(),
+        ).map { toResponse(it) }
     }
 
     @Transactional
