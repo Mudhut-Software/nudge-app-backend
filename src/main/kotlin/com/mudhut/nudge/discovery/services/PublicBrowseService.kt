@@ -7,6 +7,7 @@ import com.mudhut.nudge.discovery.models.PublicBusinessSummary
 import com.mudhut.nudge.discovery.models.PublicServiceSummary
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.discovery.repositories.DiscoveryBusinessRepository
+import com.mudhut.nudge.discovery.repositories.ReviewRepository
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
@@ -21,6 +22,7 @@ class PublicBrowseService(
     private val discoveryRepository: DiscoveryBusinessRepository,
     private val businessRepository: BusinessRepository,
     private val serviceRepository: ServiceOfferedRepository,
+    private val reviewRepository: ReviewRepository,
 ) {
 
     fun list(
@@ -33,12 +35,25 @@ class PublicBrowseService(
         BusinessSort.NEWEST -> discoveryRepository
             .findPublicQualifiedNewest(categoryId, pageable)
             .map { toSummary(it) }
+            .let(::withRatings)
 
         BusinessSort.POPULAR -> discoveryRepository
             .findPublicQualifiedPopular(categoryId, pageable)
             .map { toSummary(it) }
+            .let(::withRatings)
 
         BusinessSort.NEAREST -> nearestPage(categoryId, lat, lng, pageable)
+    }
+
+    /** Fill in per-business rating aggregates for a page of summaries in one batch query. */
+    private fun withRatings(page: Page<PublicBusinessSummary>): Page<PublicBusinessSummary> {
+        val ids = page.content.map { it.id }
+        if (ids.isEmpty()) return page
+        val byId = reviewRepository.aggregatesFor(ids).associateBy { it.getBusinessId() }
+        return page.map { s ->
+            val agg = byId[s.id]
+            s.copy(averageRating = agg?.getAverage(), reviewCount = agg?.getCount()?.toInt() ?: 0)
+        }
     }
 
     private fun nearestPage(
@@ -59,7 +74,7 @@ class PublicBrowseService(
             byId[row.id]?.let { biz -> toSummary(biz, distancesById[row.id]) }
         }
 
-        return PageImpl(summaries, pageable, page.totalElements)
+        return withRatings(PageImpl(summaries, pageable, page.totalElements))
     }
 
     fun detail(id: Long): PublicBusinessDetail {
@@ -86,6 +101,8 @@ class PublicBrowseService(
             serviceAreas = biz.serviceAreas.toList(),
             coverImageUrl = deriveCover(biz, activeServices.firstOrNull()),
             services = activeServices.map { toServiceSummary(it) },
+            averageRating = reviewRepository.averageForBusiness(biz.id!!),
+            reviewCount = reviewRepository.countByBusinessId(biz.id!!).toInt(),
         )
     }
 

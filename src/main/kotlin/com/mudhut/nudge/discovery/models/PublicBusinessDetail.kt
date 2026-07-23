@@ -13,4 +13,6 @@ data class PublicBusinessDetail(
     val serviceAreas: List<String>,
     val coverImageUrl: String?,
     val services: List<PublicServiceSummary>,
+    val averageRating: Double? = null,
+    val reviewCount: Int = 0,
 )
