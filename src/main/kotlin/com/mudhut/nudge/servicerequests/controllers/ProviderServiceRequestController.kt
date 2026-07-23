@@ -6,10 +6,12 @@ import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
 import com.mudhut.nudge.servicerequests.models.UnreadCountResponse
 import com.mudhut.nudge.servicerequests.services.ProviderRequestService
 import jakarta.validation.Valid
+import java.time.LocalDate
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
 import org.springframework.data.web.PageableDefault
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -39,6 +41,14 @@ class ProviderServiceRequestController(
         @PathVariable businessId: Long,
         authentication: Authentication,
     ): UnreadCountResponse = UnreadCountResponse(service.unreadCount(authentication.name, businessId))
+
+    @GetMapping("/calendar")
+    fun calendar(
+        @PathVariable businessId: Long,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate,
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate,
+        authentication: Authentication,
+    ): List<ServiceRequestResponse> = service.calendar(authentication.name, businessId, from, to)
 
     @GetMapping("/{id}")
     fun get(

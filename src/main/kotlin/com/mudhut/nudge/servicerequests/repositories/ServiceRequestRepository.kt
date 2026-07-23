@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import java.time.LocalDateTime
 
 @Repository
 interface ServiceRequestRepository : JpaRepository<ServiceRequest, Long> {
@@ -62,6 +63,23 @@ interface ServiceRequestRepository : JpaRepository<ServiceRequest, Long> {
         businessId: Long,
         statuses: Collection<ServiceRequestStatus>,
     ): Long
+
+    @Query(
+        """
+        SELECT r FROM ServiceRequest r
+        WHERE r.business.id = :businessId
+          AND r.status IN :statuses
+          AND r.requestedDate >= :from
+          AND r.requestedDate < :to
+        ORDER BY r.requestedDate ASC
+        """
+    )
+    fun findCalendarJobs(
+        @Param("businessId") businessId: Long,
+        @Param("statuses") statuses: Collection<ServiceRequestStatus>,
+        @Param("from") from: LocalDateTime,
+        @Param("to") to: LocalDateTime,
+    ): List<ServiceRequest>
 
     @Query(
         """
