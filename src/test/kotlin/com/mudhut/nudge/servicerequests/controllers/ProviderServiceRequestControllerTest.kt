@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 @Suppress("unused")
@@ -92,6 +93,34 @@ class ProviderServiceRequestControllerTest {
         mockMvc.perform(get("/api/v1/businesses/10/requests/unread-count"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.count").value(7))
+    }
+
+    @Test
+    @WithMockUser(username = "owner@example.com")
+    fun `GET calendar returns jobs in the window`() {
+        whenever(
+            service.calendar(
+                eq("owner@example.com"), eq(10L),
+                eq(LocalDate.of(2026, 3, 1)), eq(LocalDate.of(2026, 4, 1)),
+            ),
+        ).thenReturn(listOf(sample(ServiceRequestStatus.CONFIRMED)))
+
+        mockMvc.perform(
+            get("/api/v1/businesses/10/requests/calendar")
+                .param("from", "2026-03-01")
+                .param("to", "2026-04-01"),
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].id").value(1))
+    }
+
+    @Test
+    fun `GET calendar returns 401 anonymous`() {
+        mockMvc.perform(
+            get("/api/v1/businesses/10/requests/calendar")
+                .param("from", "2026-03-01")
+                .param("to", "2026-04-01"),
+        ).andExpect(status().isUnauthorized)
     }
 
     @Test
