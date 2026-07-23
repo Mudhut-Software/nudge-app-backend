@@ -7,6 +7,7 @@ import com.mudhut.nudge.discovery.models.BusinessSort
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.discovery.repositories.DiscoveryBusinessRepository
 import com.mudhut.nudge.discovery.repositories.BusinessWithDistance
+import com.mudhut.nudge.discovery.repositories.ReviewRepository
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
@@ -32,11 +33,13 @@ class PublicBrowseServiceTest {
     private val discoveryRepository: DiscoveryBusinessRepository = mock()
     private val businessRepository: BusinessRepository = mock()
     private val serviceRepository: ServiceOfferedRepository = mock()
+    private val reviewRepository: ReviewRepository = mock()
 
     private val sut = PublicBrowseService(
         discoveryRepository,
         businessRepository,
         serviceRepository,
+        reviewRepository,
     )
 
     private fun category(id: Long, name: String) = BusinessCategory(id = id, name = name)
@@ -213,6 +216,22 @@ class PublicBrowseServiceTest {
         assertEquals(ServiceOfferedTag.HOLIDAY_OFFER, summary.tag)
         assertEquals(today.minusDays(1), summary.validFrom)
         assertEquals(today.plusDays(30), summary.validUntil)
+    }
+
+    @Test
+    fun `detail includes the rating aggregate`() {
+        val biz = business(id = 10)
+        val svc = service(id = 90, biz = biz, title = "Svc")
+        whenever(businessRepository.findById(10)).thenReturn(Optional.of(biz))
+        whenever(serviceRepository.findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(eq(10), eq(ServiceOfferedStatus.ACTIVE)))
+            .thenReturn(listOf(svc))
+        whenever(reviewRepository.averageForBusiness(10)).thenReturn(4.5)
+        whenever(reviewRepository.countByBusinessId(10)).thenReturn(8L)
+
+        val detail = sut.detail(10)
+
+        assertEquals(4.5, detail.averageRating)
+        assertEquals(8, detail.reviewCount)
     }
 
     @Test

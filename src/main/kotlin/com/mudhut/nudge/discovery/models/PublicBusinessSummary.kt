@@ -9,4 +9,6 @@ data class PublicBusinessSummary(
     val coverImageUrl: String?,
     val serviceCount: Int,
     val distanceKm: Double? = null,
+    val averageRating: Double? = null,
+    val reviewCount: Int = 0,
 )

@@ -64,6 +64,12 @@ interface ServiceRequestRepository : JpaRepository<ServiceRequest, Long> {
         statuses: Collection<ServiceRequestStatus>,
     ): Long
 
+    fun existsByCustomerIdAndBusinessIdAndStatus(
+        customerId: Long,
+        businessId: Long,
+        status: ServiceRequestStatus,
+    ): Boolean
+
     @Query(
         """
         SELECT r FROM ServiceRequest r
