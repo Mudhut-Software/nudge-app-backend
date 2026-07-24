@@ -4,11 +4,13 @@ import com.mudhut.nudge.users.spi.UserBusinessMembershipQuery
 import com.mudhut.nudge.media.PendingMediaDeletion
 import com.mudhut.nudge.media.PendingMediaDeletionRepository
 import com.mudhut.nudge.users.entities.User
+import com.mudhut.nudge.users.models.ChangePasswordRequest
 import com.mudhut.nudge.users.models.UpdateUserRequest
 import com.mudhut.nudge.users.models.UserResponse
 import com.mudhut.nudge.users.repositories.UserRepository
 import com.mudhut.nudge.utils.exceptions.UserAlreadyExistsException
 import com.mudhut.nudge.utils.exceptions.UserNotFoundException
+import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -17,7 +19,19 @@ class UserMeService(
     private val userRepository: UserRepository,
     private val membershipQuery: UserBusinessMembershipQuery,
     private val pendingMediaDeletionRepository: PendingMediaDeletionRepository,
+    private val passwordEncoder: PasswordEncoder,
 ) {
+
+    @Transactional
+    fun changePassword(email: String, request: ChangePasswordRequest) {
+        val user = userRepository.findByEmail(email)
+            .orElseThrow { UserNotFoundException("User not found") }
+        require(passwordEncoder.matches(request.currentPassword, user.password)) {
+            "Current password is incorrect"
+        }
+        user.password = passwordEncoder.encode(request.newPassword)
+        userRepository.save(user)
+    }
 
     @Transactional
     fun updateMe(email: String, request: UpdateUserRequest): UserResponse {
