@@ -26,8 +26,9 @@ class UserMeServiceTest {
     private val userRepository: UserRepository = mock()
     private val membershipQuery: UserBusinessMembershipQuery = mock()
     private val pendingMediaDeletionRepository: PendingMediaDeletionRepository = mock()
+    private val passwordEncoder: org.springframework.security.crypto.password.PasswordEncoder = mock()
 
-    private val sut = UserMeService(userRepository, membershipQuery, pendingMediaDeletionRepository)
+    private val sut = UserMeService(userRepository, membershipQuery, pendingMediaDeletionRepository, passwordEncoder)
 
     private fun existingUser(
         id: Long = 1L,
