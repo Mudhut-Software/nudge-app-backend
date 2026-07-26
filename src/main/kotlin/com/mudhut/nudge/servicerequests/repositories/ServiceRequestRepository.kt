@@ -13,6 +13,8 @@ import java.time.LocalDateTime
 @Repository
 interface ServiceRequestRepository : JpaRepository<ServiceRequest, Long> {
 
+    fun findByBusinessIdAndIdIn(businessId: Long, ids: Collection<Long>): List<ServiceRequest>
+
     fun findAllByCustomerId(customerId: Long, pageable: Pageable): Page<ServiceRequest>
     fun findAllByCustomerIdAndBusinessId(customerId: Long, businessId: Long, pageable: Pageable): Page<ServiceRequest>
     fun findAllByCustomerIdAndStatus(customerId: Long, status: ServiceRequestStatus, pageable: Pageable): Page<ServiceRequest>
