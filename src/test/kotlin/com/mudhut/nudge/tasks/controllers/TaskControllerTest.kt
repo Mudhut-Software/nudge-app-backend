@@ -13,6 +13,7 @@ import com.mudhut.nudge.tasks.models.UpdateTaskRequest
 import com.mudhut.nudge.tasks.services.TaskService
 import com.mudhut.nudge.users.services.NudgeUserDetailsService
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.ArgumentMatchers.isNull
@@ -43,6 +44,11 @@ class TaskControllerTest {
         Mockito.any<T>()
         @Suppress("UNCHECKED_CAST")
         return null as T
+    }
+
+    private fun <T> eqObject(value: T): T {
+        Mockito.eq(value)
+        return value
     }
 
     private fun response() = TaskResponse(
@@ -96,5 +102,68 @@ class TaskControllerTest {
     fun `GET is unauthorized without auth`() {
         mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/businesses/1/tasks"))
             .andExpect(MockMvcResultMatchers.status().isUnauthorized)
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `PUT with a blank title returns 400`() {
+        val body = mapOf(
+            "title" to "",
+            "description" to null,
+            "priority" to "MEDIUM",
+            "dueDate" to null,
+            "jobRequestId" to null,
+            "assigneeIds" to emptyList<Long>(),
+        )
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.put("/api/v1/businesses/1/tasks/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(body)),
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+
+        Mockito.verify(taskService, Mockito.never())
+            .update(anyString(), anyLong(), anyLong(), anyObject())
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `PATCH status routes and returns the updated task`() {
+        `when`(taskService.changeStatus(anyString(), eq(1L), eq(1L), eqObject(TaskStatus.DONE)))
+            .thenReturn(response())
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.patch("/api/v1/businesses/1/tasks/1/status")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(mapOf("status" to "DONE"))),
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.title").value("Prep kit"))
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `DELETE removes a task`() {
+        mockMvc.perform(MockMvcRequestBuilders.delete("/api/v1/businesses/1/tasks/1"))
+            .andExpect(MockMvcResultMatchers.status().isNoContent)
+
+        Mockito.verify(taskService).delete("mgr@test.com", 1L, 1L)
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `GET binds populated query params`() {
+        `when`(taskService.list(anyString(), eq(1L), eq(TaskStatus.TODO), eq(5L), eq(100L)))
+            .thenReturn(listOf(response()))
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.get("/api/v1/businesses/1/tasks")
+                .param("status", "TODO")
+                .param("assigneeId", "5")
+                .param("jobRequestId", "100"),
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$[0].title").value("Prep kit"))
     }
 }
