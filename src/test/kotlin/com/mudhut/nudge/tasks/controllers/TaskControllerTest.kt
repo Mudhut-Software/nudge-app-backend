@@ -1,0 +1,100 @@
+package com.mudhut.nudge.tasks.controllers
+
+import tools.jackson.databind.ObjectMapper
+import com.mudhut.nudge.config.JsonAccessDeniedHandler
+import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
+import com.mudhut.nudge.config.PassThroughJwtFilterConfig
+import com.mudhut.nudge.config.SecurityConfig
+import com.mudhut.nudge.tasks.entities.TaskPriority
+import com.mudhut.nudge.tasks.entities.TaskStatus
+import com.mudhut.nudge.tasks.models.CreateTaskRequest
+import com.mudhut.nudge.tasks.models.TaskResponse
+import com.mudhut.nudge.tasks.models.UpdateTaskRequest
+import com.mudhut.nudge.tasks.services.TaskService
+import com.mudhut.nudge.users.services.NudgeUserDetailsService
+import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.anyString
+import org.mockito.ArgumentMatchers.eq
+import org.mockito.ArgumentMatchers.isNull
+import org.mockito.Mockito
+import org.mockito.Mockito.`when`
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
+import org.springframework.context.annotation.Import
+import org.springframework.http.MediaType
+import org.springframework.security.test.context.support.WithMockUser
+import org.springframework.test.context.bean.override.mockito.MockitoBean
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers
+
+@WebMvcTest(TaskController::class)
+@Import(SecurityConfig::class, PassThroughJwtFilterConfig::class, JsonAuthenticationEntryPoint::class, JsonAccessDeniedHandler::class)
+@AutoConfigureMockMvc
+class TaskControllerTest {
+
+    @Autowired private lateinit var mockMvc: MockMvc
+    @Autowired private lateinit var objectMapper: ObjectMapper
+    @MockitoBean private lateinit var taskService: TaskService
+    @MockitoBean private lateinit var userDetailsService: NudgeUserDetailsService
+
+    private fun <T> anyObject(): T {
+        Mockito.any<T>()
+        @Suppress("UNCHECKED_CAST")
+        return null as T
+    }
+
+    private fun response() = TaskResponse(
+        id = 1L, title = "Prep kit", description = null, status = TaskStatus.TODO,
+        priority = TaskPriority.MEDIUM, dueDate = null, job = null, assignees = emptyList(),
+        createdAt = null,
+    )
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `GET lists tasks`() {
+        `when`(taskService.list(anyString(), eq(1L), isNull(), isNull(), isNull()))
+            .thenReturn(listOf(response()))
+
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/businesses/1/tasks"))
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$[0].title").value("Prep kit"))
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `POST creates a task`() {
+        `when`(taskService.create(anyString(), eq(1L), anyObject()))
+            .thenReturn(response())
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/businesses/1/tasks")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(CreateTaskRequest(title = "Prep kit"))),
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.title").value("Prep kit"))
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `PUT replaces a task`() {
+        `when`(taskService.update(anyString(), eq(1L), eq(1L), anyObject()))
+            .thenReturn(response())
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.put("/api/v1/businesses/1/tasks/1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(UpdateTaskRequest(title = "Prep kit"))),
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.title").value("Prep kit"))
+    }
+
+    @Test
+    fun `GET is unauthorized without auth`() {
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/businesses/1/tasks"))
+            .andExpect(MockMvcResultMatchers.status().isUnauthorized)
+    }
+}
