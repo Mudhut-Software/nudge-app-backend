@@ -126,6 +126,8 @@ class TaskServiceTest {
         val task = Task(id = 7L, business = Business(id = 1L), title = "A",
             createdBy = User(id = 1L, username = "M"))
         task.assignees.add(TaskAssignee(id = 1L, task = task, user = staff))
+        org.mockito.Mockito.doNothing().`when`(businessService)
+            .requireRole(1L, "sam@test.com", BusinessRole.STAFF)
         `when`(businessService.requireRole(1L, "sam@test.com", BusinessRole.MANAGER))
             .thenThrow(com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException("no"))
         `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
@@ -142,6 +144,8 @@ class TaskServiceTest {
     fun `changeStatus denied for a non-assignee STAFF`() {
         val task = Task(id = 7L, business = Business(id = 1L), title = "A",
             createdBy = User(id = 1L, username = "M"))
+        org.mockito.Mockito.doNothing().`when`(businessService)
+            .requireRole(1L, "other@test.com", BusinessRole.STAFF)
         `when`(businessService.requireRole(1L, "other@test.com", BusinessRole.MANAGER))
             .thenThrow(com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException("no"))
         `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
@@ -169,6 +173,57 @@ class TaskServiceTest {
 
         assertEquals("New", result.title)
         assertEquals(listOf(6L), result.assignees.map { it.userId })
+    }
+
+    @Test
+    fun `update clears nullable fields when the request sends explicit nulls`() {
+        val task = Task(
+            id = 7L, business = Business(id = 1L), title = "Old",
+            description = "Old description",
+            dueDate = java.time.LocalDate.of(2026, 1, 1),
+            jobRequestId = 100L,
+            createdBy = User(id = 1L, username = "M"),
+        )
+        `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
+        `when`(taskRepository.save(any(Task::class.java))).thenAnswer { it.arguments[0] as Task }
+        `when`(jobSummaryQuery.summaries(eq(1L), anySet())).thenReturn(emptyMap())
+
+        val result = service.update(
+            "mgr@test.com", 1L, 7L,
+            com.mudhut.nudge.tasks.models.UpdateTaskRequest(
+                title = null, description = null, dueDate = null, jobRequestId = null,
+            ),
+        )
+
+        assertEquals("Old", result.title)
+        assertEquals(null, result.description)
+        assertEquals(null, result.dueDate)
+        assertEquals(null, result.job)
+    }
+
+    @Test
+    fun `update rejects a blank title`() {
+        val task = Task(id = 7L, business = Business(id = 1L), title = "Old",
+            createdBy = User(id = 1L, username = "M"))
+        `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
+
+        assertThrows<IllegalArgumentException> {
+            service.update("mgr@test.com", 1L, 7L,
+                com.mudhut.nudge.tasks.models.UpdateTaskRequest(title = "   "))
+        }
+    }
+
+    @Test
+    fun `changeStatus denied for a non-member before the task is loaded`() {
+        `when`(businessService.requireRole(1L, "stranger@test.com", BusinessRole.STAFF))
+            .thenThrow(com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException("no"))
+
+        assertThrows<com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException> {
+            service.changeStatus("stranger@test.com", 1L, 7L, TaskStatus.DONE)
+        }
+
+        org.mockito.Mockito.verify(taskRepository, org.mockito.Mockito.never())
+            .findByIdAndBusinessId(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong())
     }
 
     @Test

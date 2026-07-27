@@ -75,14 +75,17 @@ class TaskService(
         val task = taskRepository.findByIdAndBusinessId(taskId, businessId)
             .orElseThrow { EntityNotFoundException("Task not found") }
 
-        req.title?.let { task.title = it }
-        if (req.description != null) task.description = req.description
+        req.title?.let {
+            require(it.isNotBlank()) { "Title must not be blank" }
+            task.title = it
+        }
+        task.description = req.description
         req.priority?.let { task.priority = it }
-        if (req.dueDate != null) task.dueDate = req.dueDate
+        task.dueDate = req.dueDate
         if (req.jobRequestId != null) {
             validateJob(businessId, req.jobRequestId)
-            task.jobRequestId = req.jobRequestId
         }
+        task.jobRequestId = req.jobRequestId
         req.assigneeIds?.let { ids ->
             validateAssignees(businessId, ids)
             setAssignees(task, ids)
@@ -95,6 +98,7 @@ class TaskService(
 
     @Transactional
     fun changeStatus(email: String, businessId: Long, taskId: Long, status: TaskStatus): TaskResponse {
+        businessService.requireRole(businessId, email, BusinessRole.STAFF)
         val task = taskRepository.findByIdAndBusinessId(taskId, businessId)
             .orElseThrow { EntityNotFoundException("Task not found") }
 
@@ -121,6 +125,8 @@ class TaskService(
             businessService.requireRole(businessId, email, BusinessRole.MANAGER)
             true
         } catch (_: BusinessAccessDeniedException) {
+            false
+        } catch (_: EntityNotFoundException) {
             false
         }
 
