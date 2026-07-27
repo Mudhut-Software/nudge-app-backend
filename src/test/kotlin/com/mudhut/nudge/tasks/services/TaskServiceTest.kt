@@ -1,0 +1,110 @@
+package com.mudhut.nudge.tasks.services
+
+import com.mudhut.nudge.businesses.entities.Business
+import com.mudhut.nudge.businesses.entities.BusinessMember
+import com.mudhut.nudge.businesses.entities.BusinessRole
+import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
+import com.mudhut.nudge.businesses.services.BusinessService
+import com.mudhut.nudge.tasks.entities.Task
+import com.mudhut.nudge.tasks.entities.TaskAssignee
+import com.mudhut.nudge.tasks.entities.TaskStatus
+import com.mudhut.nudge.tasks.models.CreateTaskRequest
+import com.mudhut.nudge.tasks.repositories.TaskRepository
+import com.mudhut.nudge.tasks.spi.JobSummary
+import com.mudhut.nudge.tasks.spi.JobSummaryQuery
+import com.mudhut.nudge.users.entities.User
+import com.mudhut.nudge.users.repositories.UserRepository
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.extension.ExtendWith
+import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyLong
+import org.mockito.ArgumentMatchers.anySet
+import org.mockito.ArgumentMatchers.eq
+import org.mockito.InjectMocks
+import org.mockito.Mock
+import org.mockito.Mockito.`when`
+import org.mockito.junit.jupiter.MockitoExtension
+import java.util.Optional
+
+@ExtendWith(MockitoExtension::class)
+class TaskServiceTest {
+
+    @Mock private lateinit var taskRepository: TaskRepository
+    @Mock private lateinit var businessService: BusinessService
+    @Mock private lateinit var businessMemberRepository: BusinessMemberRepository
+    @Mock private lateinit var userRepository: UserRepository
+    @Mock private lateinit var jobSummaryQuery: JobSummaryQuery
+
+    @InjectMocks private lateinit var service: TaskService
+
+    private fun member(userId: Long) = BusinessMember(
+        id = userId, user = User(id = userId), business = Business(id = 1L),
+        role = BusinessRole.STAFF, isActive = true,
+    )
+
+    @Test
+    fun `create persists task with validated assignees and job link`() {
+        `when`(userRepository.findByEmail("mgr@test.com"))
+            .thenReturn(Optional.of(User(id = 1L, username = "Mgr")))
+        `when`(businessMemberRepository.findByBusinessIdAndUserId(1L, 5L))
+            .thenReturn(Optional.of(member(5L)))
+        `when`(userRepository.findAllById(listOf(5L))).thenReturn(listOf(User(id = 5L, username = "Sam")))
+        `when`(jobSummaryQuery.summaries(1L, setOf(100L)))
+            .thenReturn(mapOf(100L to JobSummary(100L, "Deep clean", null, "CONFIRMED")))
+        `when`(taskRepository.save(any(Task::class.java))).thenAnswer {
+            (it.arguments[0] as Task).apply { id = 1L }
+        }
+
+        val req = CreateTaskRequest(title = "Prep kit", jobRequestId = 100L, assigneeIds = listOf(5L))
+        val result = service.create("mgr@test.com", 1L, req)
+
+        assertEquals("Prep kit", result.title)
+        assertEquals(TaskStatus.TODO, result.status)
+        assertEquals(100L, result.job?.requestId)
+        assertEquals(listOf(5L), result.assignees.map { it.userId })
+    }
+
+    @Test
+    fun `create rejects an assignee who is not an active member`() {
+        `when`(businessMemberRepository.findByBusinessIdAndUserId(1L, 9L)).thenReturn(Optional.empty())
+
+        val req = CreateTaskRequest(title = "x", assigneeIds = listOf(9L))
+        assertThrows<IllegalArgumentException> { service.create("mgr@test.com", 1L, req) }
+    }
+
+    @Test
+    fun `create rejects a job that does not belong to the business`() {
+        `when`(jobSummaryQuery.summaries(1L, setOf(404L))).thenReturn(emptyMap())
+
+        val req = CreateTaskRequest(title = "x", jobRequestId = 404L)
+        assertThrows<IllegalArgumentException> { service.create("mgr@test.com", 1L, req) }
+    }
+
+    @Test
+    fun `create requires MANAGER`() {
+        `when`(businessService.requireRole(1L, "staff@test.com", BusinessRole.MANAGER))
+            .thenThrow(RuntimeException("denied"))
+
+        assertThrows<RuntimeException> {
+            service.create("staff@test.com", 1L, CreateTaskRequest(title = "x"))
+        }
+    }
+
+    @Test
+    fun `list returns mapped tasks with batched job summaries`() {
+        val task = Task(id = 1L, business = Business(id = 1L), title = "A", jobRequestId = 100L,
+            createdBy = User(id = 5L, username = "Sam"))
+        task.assignees.add(TaskAssignee(id = 1L, task = task, user = User(id = 5L, username = "Sam")))
+        `when`(taskRepository.findFiltered(1L, null, null, null)).thenReturn(listOf(task))
+        `when`(jobSummaryQuery.summaries(1L, setOf(100L)))
+            .thenReturn(mapOf(100L to JobSummary(100L, "Deep clean", null, "CONFIRMED")))
+
+        val result = service.list("any@test.com", 1L, null, null, null)
+
+        assertEquals(1, result.size)
+        assertEquals("Deep clean", result[0].job?.title)
+        assertEquals("Sam", result[0].assignees[0].name)
+    }
+}
