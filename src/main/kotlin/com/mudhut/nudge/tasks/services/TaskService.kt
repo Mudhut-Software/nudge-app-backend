@@ -11,10 +11,12 @@ import com.mudhut.nudge.tasks.models.AssigneeDto
 import com.mudhut.nudge.tasks.models.CreateTaskRequest
 import com.mudhut.nudge.tasks.models.JobSummaryDto
 import com.mudhut.nudge.tasks.models.TaskResponse
+import com.mudhut.nudge.tasks.models.UpdateTaskRequest
 import com.mudhut.nudge.tasks.repositories.TaskRepository
 import com.mudhut.nudge.tasks.spi.JobSummary
 import com.mudhut.nudge.tasks.spi.JobSummaryQuery
 import com.mudhut.nudge.users.repositories.UserRepository
+import com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException
 import jakarta.persistence.EntityNotFoundException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -65,6 +67,66 @@ class TaskService(
             businessId, listOfNotNull(saved.jobRequestId).toSet(),
         )
         return toResponse(saved, summaries)
+    }
+
+    @Transactional
+    fun update(email: String, businessId: Long, taskId: Long, req: UpdateTaskRequest): TaskResponse {
+        businessService.requireRole(businessId, email, BusinessRole.MANAGER)
+        val task = taskRepository.findByIdAndBusinessId(taskId, businessId)
+            .orElseThrow { EntityNotFoundException("Task not found") }
+
+        req.title?.let { task.title = it }
+        if (req.description != null) task.description = req.description
+        req.priority?.let { task.priority = it }
+        if (req.dueDate != null) task.dueDate = req.dueDate
+        if (req.jobRequestId != null) {
+            validateJob(businessId, req.jobRequestId)
+            task.jobRequestId = req.jobRequestId
+        }
+        req.assigneeIds?.let { ids ->
+            validateAssignees(businessId, ids)
+            setAssignees(task, ids)
+        }
+
+        val saved = taskRepository.save(task)
+        val summaries = jobSummaryQuery.summaries(businessId, listOfNotNull(saved.jobRequestId).toSet())
+        return toResponse(saved, summaries)
+    }
+
+    @Transactional
+    fun changeStatus(email: String, businessId: Long, taskId: Long, status: TaskStatus): TaskResponse {
+        val task = taskRepository.findByIdAndBusinessId(taskId, businessId)
+            .orElseThrow { EntityNotFoundException("Task not found") }
+
+        if (!canManage(businessId, email) && !isAssignee(task, email)) {
+            throw BusinessAccessDeniedException("You can only change the status of tasks assigned to you")
+        }
+
+        task.status = status
+        val saved = taskRepository.save(task)
+        val summaries = jobSummaryQuery.summaries(businessId, listOfNotNull(saved.jobRequestId).toSet())
+        return toResponse(saved, summaries)
+    }
+
+    @Transactional
+    fun delete(email: String, businessId: Long, taskId: Long) {
+        businessService.requireRole(businessId, email, BusinessRole.MANAGER)
+        val task = taskRepository.findByIdAndBusinessId(taskId, businessId)
+            .orElseThrow { EntityNotFoundException("Task not found") }
+        taskRepository.delete(task)
+    }
+
+    private fun canManage(businessId: Long, email: String): Boolean =
+        try {
+            businessService.requireRole(businessId, email, BusinessRole.MANAGER)
+            true
+        } catch (_: BusinessAccessDeniedException) {
+            false
+        }
+
+    private fun isAssignee(task: Task, email: String): Boolean {
+        val user = userRepository.findByEmail(email).orElse(null) ?: return false
+        return task.assignees.any { it.user?.id == user.id }
     }
 
     // --- shared helpers (also used by Task 4) ---
