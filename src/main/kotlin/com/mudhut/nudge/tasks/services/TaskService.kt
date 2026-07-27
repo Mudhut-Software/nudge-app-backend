@@ -70,7 +70,7 @@ class TaskService(
     // --- shared helpers (also used by Task 4) ---
 
     internal fun validateAssignees(businessId: Long, assigneeIds: List<Long>) {
-        assigneeIds.forEach { userId ->
+        assigneeIds.distinct().forEach { userId ->
             val member = businessMemberRepository.findByBusinessIdAndUserId(businessId, userId)
                 .orElseThrow { IllegalArgumentException("User $userId is not a member of this business") }
             require(member.isActive) { "User $userId is not an active member" }

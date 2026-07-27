@@ -15,6 +15,8 @@ interface TaskRepository : JpaRepository<Task, Long> {
         """
         SELECT DISTINCT t FROM Task t
         LEFT JOIN t.assignees a
+        LEFT JOIN FETCH t.assignees fa
+        LEFT JOIN FETCH fa.user
         WHERE t.business.id = :businessId
           AND (:status IS NULL OR t.status = :status)
           AND (:assigneeId IS NULL OR a.user.id = :assigneeId)
