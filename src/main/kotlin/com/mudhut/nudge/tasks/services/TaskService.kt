@@ -75,21 +75,17 @@ class TaskService(
         val task = taskRepository.findByIdAndBusinessId(taskId, businessId)
             .orElseThrow { EntityNotFoundException("Task not found") }
 
-        req.title?.let {
-            require(it.isNotBlank()) { "Title must not be blank" }
-            task.title = it
-        }
+        require(req.title.isNotBlank()) { "Title must not be blank" }
+        task.title = req.title
         task.description = req.description
-        req.priority?.let { task.priority = it }
+        task.priority = req.priority
         task.dueDate = req.dueDate
         if (req.jobRequestId != null) {
             validateJob(businessId, req.jobRequestId)
         }
         task.jobRequestId = req.jobRequestId
-        req.assigneeIds?.let { ids ->
-            validateAssignees(businessId, ids)
-            setAssignees(task, ids)
-        }
+        validateAssignees(businessId, req.assigneeIds)
+        setAssignees(task, req.assigneeIds)
 
         val saved = taskRepository.save(task)
         val summaries = jobSummaryQuery.summaries(businessId, listOfNotNull(saved.jobRequestId).toSet())
@@ -125,8 +121,6 @@ class TaskService(
             businessService.requireRole(businessId, email, BusinessRole.MANAGER)
             true
         } catch (_: BusinessAccessDeniedException) {
-            false
-        } catch (_: EntityNotFoundException) {
             false
         }
 

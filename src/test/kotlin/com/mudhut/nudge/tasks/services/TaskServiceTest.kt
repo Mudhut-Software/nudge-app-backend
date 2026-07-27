@@ -176,7 +176,7 @@ class TaskServiceTest {
     }
 
     @Test
-    fun `update clears nullable fields when the request sends explicit nulls`() {
+    fun `update is a full replace, clearing description, dueDate, jobRequestId, and assignees absent from the request`() {
         val task = Task(
             id = 7L, business = Business(id = 1L), title = "Old",
             description = "Old description",
@@ -184,21 +184,23 @@ class TaskServiceTest {
             jobRequestId = 100L,
             createdBy = User(id = 1L, username = "M"),
         )
+        task.assignees.add(TaskAssignee(id = 1L, task = task, user = User(id = 5L, username = "Sam")))
         `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
         `when`(taskRepository.save(any(Task::class.java))).thenAnswer { it.arguments[0] as Task }
         `when`(jobSummaryQuery.summaries(eq(1L), anySet())).thenReturn(emptyMap())
 
+        // A conventional replace payload only sends title; description/dueDate/jobRequestId/assigneeIds
+        // are left at their DTO defaults (null/empty), which must clear the previously-set values.
         val result = service.update(
             "mgr@test.com", 1L, 7L,
-            com.mudhut.nudge.tasks.models.UpdateTaskRequest(
-                title = null, description = null, dueDate = null, jobRequestId = null,
-            ),
+            com.mudhut.nudge.tasks.models.UpdateTaskRequest(title = "Old"),
         )
 
         assertEquals("Old", result.title)
         assertEquals(null, result.description)
         assertEquals(null, result.dueDate)
         assertEquals(null, result.job)
+        assertEquals(emptyList<Long>(), result.assignees.map { it.userId })
     }
 
     @Test

@@ -43,12 +43,13 @@ data class CreateTaskRequest(
 )
 
 data class UpdateTaskRequest(
-    val title: String? = null,
+    @field:NotBlank
+    val title: String,
     val description: String? = null,
-    val priority: TaskPriority? = null,
+    val priority: TaskPriority = TaskPriority.MEDIUM,
     val dueDate: LocalDate? = null,
     val jobRequestId: Long? = null,
-    val assigneeIds: List<Long>? = null,
+    val assigneeIds: List<Long> = emptyList(),
 )
 
 data class ChangeStatusRequest(
