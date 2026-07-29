@@ -146,9 +146,17 @@ class TaskService(
     }
 
     internal fun setAssignees(task: Task, assigneeIds: List<Long>) {
-        task.assignees.clear()
-        val users = userRepository.findAllById(assigneeIds.distinct())
-        users.forEach { user -> task.assignees.add(TaskAssignee(task = task, user = user)) }
+        val desiredIds = assigneeIds.distinct().toSet()
+        // Diff instead of clear-and-recreate: Hibernate flushes new inserts before orphan-removal
+        // deletes, so clearing then re-adding an id that's still desired would insert a duplicate
+        // (task_id, user_id) row before the delete for the old row runs, violating the unique constraint.
+        task.assignees.removeIf { it.user?.id !in desiredIds }
+        val existingIds = task.assignees.mapNotNull { it.user?.id }.toSet()
+        val missingIds = desiredIds.filterNot { it in existingIds }
+        if (missingIds.isNotEmpty()) {
+            val users = userRepository.findAllById(missingIds)
+            users.forEach { user -> task.assignees.add(TaskAssignee(task = task, user = user)) }
+        }
     }
 
     internal fun toResponse(task: Task, summaries: Map<Long, JobSummary>): TaskResponse {

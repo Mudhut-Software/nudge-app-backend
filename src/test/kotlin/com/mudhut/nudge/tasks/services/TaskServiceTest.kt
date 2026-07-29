@@ -222,6 +222,30 @@ class TaskServiceTest {
     }
 
     @Test
+    fun `update keeps existing assignee rows when the new set overlaps`() {
+        val task = Task(id = 7L, business = Business(id = 1L), title = "Old",
+            createdBy = User(id = 1L, username = "M"))
+        val existingAssigneeForUser5 = TaskAssignee(id = 1L, task = task, user = User(id = 5L, username = "Sam"))
+        task.assignees.add(existingAssigneeForUser5)
+        task.assignees.add(TaskAssignee(id = 2L, task = task, user = User(id = 6L, username = "Bea")))
+        `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
+        `when`(businessMemberRepository.findByBusinessIdAndUserId(1L, 5L)).thenReturn(Optional.of(member(5L)))
+        `when`(businessMemberRepository.findByBusinessIdAndUserId(1L, 7L)).thenReturn(Optional.of(member(7L)))
+        `when`(userRepository.findAllById(listOf(7L))).thenReturn(listOf(User(id = 7L, username = "Lee")))
+        `when`(taskRepository.save(any(Task::class.java))).thenAnswer { it.arguments[0] as Task }
+        `when`(jobSummaryQuery.summaries(eq(1L), anySet())).thenReturn(emptyMap())
+
+        val result = service.update("mgr@test.com", 1L, 7L,
+            com.mudhut.nudge.tasks.models.UpdateTaskRequest(title = "New", assigneeIds = listOf(5L, 7L)))
+
+        assertEquals(setOf(5L, 7L), result.assignees.map { it.userId }.toSet())
+        org.mockito.Mockito.verify(userRepository, org.mockito.Mockito.never()).findAllById(listOf(5L))
+        assert(task.assignees.contains(existingAssigneeForUser5)) {
+            "expected the original user-5 TaskAssignee instance to survive the update untouched"
+        }
+    }
+
+    @Test
     fun `update rejects a blank title`() {
         val task = Task(id = 7L, business = Business(id = 1L), title = "Old",
             createdBy = User(id = 1L, username = "M"))
