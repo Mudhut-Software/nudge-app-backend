@@ -108,6 +108,24 @@ class TaskServiceTest {
     }
 
     @Test
+    fun `list requires STAFF membership`() {
+        org.mockito.Mockito.doThrow(com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException("no"))
+            .`when`(businessService).requireRole(1L, "stranger@test.com", BusinessRole.STAFF)
+
+        assertThrows<com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException> {
+            service.list("stranger@test.com", 1L, null, null, null)
+        }
+
+        org.mockito.Mockito.verify(taskRepository, org.mockito.Mockito.never())
+            .findFiltered(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(),
+            )
+    }
+
+    @Test
     fun `changeStatus allowed for MANAGER`() {
         val task = Task(id = 7L, business = Business(id = 1L), title = "A",
             createdBy = User(id = 1L, username = "M"))
@@ -212,6 +230,19 @@ class TaskServiceTest {
         assertThrows<IllegalArgumentException> {
             service.update("mgr@test.com", 1L, 7L,
                 com.mudhut.nudge.tasks.models.UpdateTaskRequest(title = "   "))
+        }
+    }
+
+    @Test
+    fun `update rejects a job that does not belong to the business`() {
+        val task = Task(id = 7L, business = Business(id = 1L), title = "Old",
+            createdBy = User(id = 1L, username = "M"))
+        `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
+        `when`(jobSummaryQuery.summaries(1L, setOf(404L))).thenReturn(emptyMap())
+
+        assertThrows<IllegalArgumentException> {
+            service.update("mgr@test.com", 1L, 7L,
+                com.mudhut.nudge.tasks.models.UpdateTaskRequest(title = "New", jobRequestId = 404L))
         }
     }
 

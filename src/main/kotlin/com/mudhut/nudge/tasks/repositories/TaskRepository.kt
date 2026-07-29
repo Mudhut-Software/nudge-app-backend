@@ -14,13 +14,14 @@ interface TaskRepository : JpaRepository<Task, Long> {
     @Query(
         """
         SELECT DISTINCT t FROM Task t
-        LEFT JOIN t.assignees a
         LEFT JOIN FETCH t.assignees fa
         LEFT JOIN FETCH fa.user
         WHERE t.business.id = :businessId
           AND (:status IS NULL OR t.status = :status)
-          AND (:assigneeId IS NULL OR a.user.id = :assigneeId)
+          AND (:assigneeId IS NULL OR EXISTS (
+              SELECT 1 FROM TaskAssignee ta WHERE ta.task = t AND ta.user.id = :assigneeId))
           AND (:jobRequestId IS NULL OR t.jobRequestId = :jobRequestId)
+        ORDER BY t.createdAt DESC, t.id DESC
         """
     )
     fun findFiltered(

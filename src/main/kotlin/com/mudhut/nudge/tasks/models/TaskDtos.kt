@@ -4,6 +4,7 @@ import com.mudhut.nudge.tasks.entities.TaskPriority
 import com.mudhut.nudge.tasks.entities.TaskStatus
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
+import jakarta.validation.constraints.Size
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -34,6 +35,7 @@ data class TaskResponse(
 
 data class CreateTaskRequest(
     @field:NotBlank
+    @field:Size(max = 200)
     val title: String,
     val description: String? = null,
     val priority: TaskPriority? = null,
@@ -44,6 +46,7 @@ data class CreateTaskRequest(
 
 data class UpdateTaskRequest(
     @field:NotBlank
+    @field:Size(max = 200)
     val title: String,
     val description: String? = null,
     val priority: TaskPriority = TaskPriority.MEDIUM,
