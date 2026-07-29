@@ -60,7 +60,7 @@ class TaskControllerTest {
     @Test
     @WithMockUser(username = "mgr@test.com")
     fun `GET lists tasks`() {
-        `when`(taskService.list(anyString(), eq(1L), isNull(), isNull(), isNull()))
+        `when`(taskService.list(anyString(), eq(1L), isNull(), isNull(), isNull(), eq(false)))
             .thenReturn(listOf(response()))
 
         mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/businesses/1/tasks"))
@@ -154,7 +154,7 @@ class TaskControllerTest {
     @Test
     @WithMockUser(username = "mgr@test.com")
     fun `GET binds populated query params`() {
-        `when`(taskService.list(anyString(), eq(1L), eq(TaskStatus.TODO), eq(5L), eq(100L)))
+        `when`(taskService.list(anyString(), eq(1L), eq(TaskStatus.TODO), eq(5L), eq(100L), eq(false)))
             .thenReturn(listOf(response()))
 
         mockMvc.perform(

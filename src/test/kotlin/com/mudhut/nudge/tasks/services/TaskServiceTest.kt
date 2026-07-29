@@ -96,11 +96,11 @@ class TaskServiceTest {
         val task = Task(id = 1L, business = Business(id = 1L), title = "A", jobRequestId = 100L,
             createdBy = User(id = 5L, username = "Sam"))
         task.assignees.add(TaskAssignee(id = 1L, task = task, user = User(id = 5L, username = "Sam")))
-        `when`(taskRepository.findFiltered(1L, null, null, null)).thenReturn(listOf(task))
+        `when`(taskRepository.findFiltered(1L, null, null, null, false)).thenReturn(listOf(task))
         `when`(jobSummaryQuery.summaries(1L, setOf(100L)))
             .thenReturn(mapOf(100L to JobSummary(100L, "Deep clean", null, "CONFIRMED")))
 
-        val result = service.list("any@test.com", 1L, null, null, null)
+        val result = service.list("any@test.com", 1L, null, null, null, false)
 
         assertEquals(1, result.size)
         assertEquals("Deep clean", result[0].job?.title)
@@ -113,7 +113,7 @@ class TaskServiceTest {
             .`when`(businessService).requireRole(1L, "stranger@test.com", BusinessRole.STAFF)
 
         assertThrows<com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException> {
-            service.list("stranger@test.com", 1L, null, null, null)
+            service.list("stranger@test.com", 1L, null, null, null, false)
         }
 
         org.mockito.Mockito.verify(taskRepository, org.mockito.Mockito.never())
@@ -122,6 +122,7 @@ class TaskServiceTest {
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyBoolean(),
             )
     }
 
@@ -291,5 +292,88 @@ class TaskServiceTest {
         assertThrows<com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException> {
             service.delete("staff@test.com", 1L, 7L)
         }
+    }
+
+    @Test
+    fun `archive stamps archivedAt on a DONE task`() {
+        val task = Task(id = 7L, business = Business(id = 1L), title = "A",
+            status = TaskStatus.DONE, createdBy = User(id = 1L, username = "M"))
+        `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
+        `when`(taskRepository.save(any(Task::class.java))).thenAnswer { it.arguments[0] as Task }
+        `when`(jobSummaryQuery.summaries(eq(1L), anySet())).thenReturn(emptyMap())
+
+        val result = service.archive("mgr@test.com", 1L, 7L)
+
+        org.junit.jupiter.api.Assertions.assertNotNull(result.archivedAt)
+    }
+
+    @Test
+    fun `archive rejects a task that is not DONE`() {
+        val task = Task(id = 7L, business = Business(id = 1L), title = "A",
+            status = TaskStatus.IN_PROGRESS, createdBy = User(id = 1L, username = "M"))
+        `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
+
+        assertThrows<IllegalArgumentException> { service.archive("mgr@test.com", 1L, 7L) }
+    }
+
+    @Test
+    fun `archive rejects an already-archived task`() {
+        val task = Task(id = 7L, business = Business(id = 1L), title = "A",
+            status = TaskStatus.DONE, createdBy = User(id = 1L, username = "M"))
+        task.archivedAt = java.time.LocalDateTime.now()
+        `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
+
+        assertThrows<IllegalArgumentException> { service.archive("mgr@test.com", 1L, 7L) }
+    }
+
+    @Test
+    fun `archive requires MANAGER`() {
+        `when`(businessService.requireRole(1L, "staff@test.com", BusinessRole.MANAGER))
+            .thenThrow(com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException("no"))
+
+        assertThrows<com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException> {
+            service.archive("staff@test.com", 1L, 7L)
+        }
+    }
+
+    @Test
+    fun `unarchive clears archivedAt`() {
+        val task = Task(id = 7L, business = Business(id = 1L), title = "A",
+            status = TaskStatus.DONE, createdBy = User(id = 1L, username = "M"))
+        task.archivedAt = java.time.LocalDateTime.now()
+        `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
+        `when`(taskRepository.save(any(Task::class.java))).thenAnswer { it.arguments[0] as Task }
+        `when`(jobSummaryQuery.summaries(eq(1L), anySet())).thenReturn(emptyMap())
+
+        val result = service.unarchive("mgr@test.com", 1L, 7L)
+
+        org.junit.jupiter.api.Assertions.assertNull(result.archivedAt)
+    }
+
+    @Test
+    fun `unarchive rejects a task that is not archived`() {
+        val task = Task(id = 7L, business = Business(id = 1L), title = "A",
+            status = TaskStatus.DONE, createdBy = User(id = 1L, username = "M"))
+        `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
+
+        assertThrows<IllegalArgumentException> { service.unarchive("mgr@test.com", 1L, 7L) }
+    }
+
+    @Test
+    fun `archiveDone archives every live DONE task and returns the count`() {
+        val t1 = Task(id = 1L, business = Business(id = 1L), title = "A",
+            status = TaskStatus.DONE, createdBy = User(id = 1L, username = "M"))
+        val t2 = Task(id = 2L, business = Business(id = 1L), title = "B",
+            status = TaskStatus.DONE, createdBy = User(id = 1L, username = "M"))
+        `when`(taskRepository.findAllByBusinessIdAndStatusAndArchivedAtIsNull(1L, TaskStatus.DONE))
+            .thenReturn(listOf(t1, t2))
+        `when`(taskRepository.saveAll(org.mockito.ArgumentMatchers.anyList<Task>()))
+            .thenAnswer { it.arguments[0] }
+
+        val count = service.archiveDone("mgr@test.com", 1L)
+
+        assertEquals(2, count)
+        org.junit.jupiter.api.Assertions.assertNotNull(t1.archivedAt)
+        org.junit.jupiter.api.Assertions.assertNotNull(t2.archivedAt)
     }
 }

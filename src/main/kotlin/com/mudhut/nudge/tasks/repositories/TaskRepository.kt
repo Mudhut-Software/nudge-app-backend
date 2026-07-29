@@ -21,6 +21,8 @@ interface TaskRepository : JpaRepository<Task, Long> {
           AND (:assigneeId IS NULL OR EXISTS (
               SELECT 1 FROM TaskAssignee ta WHERE ta.task = t AND ta.user.id = :assigneeId))
           AND (:jobRequestId IS NULL OR t.jobRequestId = :jobRequestId)
+          AND ((:archived = true AND t.archivedAt IS NOT NULL)
+            OR (:archived = false AND t.archivedAt IS NULL))
         ORDER BY t.createdAt DESC, t.id DESC
         """
     )
@@ -29,7 +31,10 @@ interface TaskRepository : JpaRepository<Task, Long> {
         @Param("status") status: TaskStatus?,
         @Param("assigneeId") assigneeId: Long?,
         @Param("jobRequestId") jobRequestId: Long?,
+        @Param("archived") archived: Boolean,
     ): List<Task>
 
     fun findByIdAndBusinessId(id: Long, businessId: Long): Optional<Task>
+
+    fun findAllByBusinessIdAndStatusAndArchivedAtIsNull(businessId: Long, status: TaskStatus): List<Task>
 }

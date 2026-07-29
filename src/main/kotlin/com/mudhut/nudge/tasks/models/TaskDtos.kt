@@ -31,6 +31,7 @@ data class TaskResponse(
     val job: JobSummaryDto?,
     val assignees: List<AssigneeDto>,
     val createdAt: LocalDateTime?,
+    val archivedAt: LocalDateTime? = null,
 )
 
 data class CreateTaskRequest(

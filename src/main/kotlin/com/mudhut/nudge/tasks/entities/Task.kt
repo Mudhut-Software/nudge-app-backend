@@ -54,6 +54,10 @@ class Task(
     @Column(name = "job_request_id")
     var jobRequestId: Long? = null,
 
+    // Set when a DONE task is archived off the board; null = live.
+    @Column(name = "archived_at")
+    var archivedAt: LocalDateTime? = null,
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "created_by", nullable = false)
     var createdBy: User? = null,

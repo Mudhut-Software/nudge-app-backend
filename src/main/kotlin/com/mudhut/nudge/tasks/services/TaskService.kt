@@ -20,6 +20,7 @@ import com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException
 import jakarta.persistence.EntityNotFoundException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.LocalDateTime
 
 @Service
 class TaskService(
@@ -37,9 +38,10 @@ class TaskService(
         status: TaskStatus?,
         assigneeId: Long?,
         jobRequestId: Long?,
+        archived: Boolean,
     ): List<TaskResponse> {
         businessService.requireRole(businessId, email, BusinessRole.STAFF)
-        val tasks = taskRepository.findFiltered(businessId, status, assigneeId, jobRequestId)
+        val tasks = taskRepository.findFiltered(businessId, status, assigneeId, jobRequestId, archived)
         val summaries = jobSummaryQuery.summaries(businessId, tasks.mapNotNull { it.jobRequestId }.toSet())
         return tasks.map { toResponse(it, summaries) }
     }
@@ -116,6 +118,41 @@ class TaskService(
         taskRepository.delete(task)
     }
 
+    @Transactional
+    fun archive(email: String, businessId: Long, taskId: Long): TaskResponse {
+        businessService.requireRole(businessId, email, BusinessRole.MANAGER)
+        val task = taskRepository.findByIdAndBusinessId(taskId, businessId)
+            .orElseThrow { EntityNotFoundException("Task not found") }
+        require(task.status == TaskStatus.DONE) { "Only DONE tasks can be archived" }
+        require(task.archivedAt == null) { "Task is already archived" }
+        task.archivedAt = LocalDateTime.now()
+        val saved = taskRepository.save(task)
+        val summaries = jobSummaryQuery.summaries(businessId, listOfNotNull(saved.jobRequestId).toSet())
+        return toResponse(saved, summaries)
+    }
+
+    @Transactional
+    fun unarchive(email: String, businessId: Long, taskId: Long): TaskResponse {
+        businessService.requireRole(businessId, email, BusinessRole.MANAGER)
+        val task = taskRepository.findByIdAndBusinessId(taskId, businessId)
+            .orElseThrow { EntityNotFoundException("Task not found") }
+        require(task.archivedAt != null) { "Task is not archived" }
+        task.archivedAt = null
+        val saved = taskRepository.save(task)
+        val summaries = jobSummaryQuery.summaries(businessId, listOfNotNull(saved.jobRequestId).toSet())
+        return toResponse(saved, summaries)
+    }
+
+    @Transactional
+    fun archiveDone(email: String, businessId: Long): Int {
+        businessService.requireRole(businessId, email, BusinessRole.MANAGER)
+        val done = taskRepository.findAllByBusinessIdAndStatusAndArchivedAtIsNull(businessId, TaskStatus.DONE)
+        val now = LocalDateTime.now()
+        done.forEach { it.archivedAt = now }
+        taskRepository.saveAll(done)
+        return done.size
+    }
+
     private fun canManage(businessId: Long, email: String): Boolean =
         try {
             businessService.requireRole(businessId, email, BusinessRole.MANAGER)
@@ -175,6 +212,7 @@ class TaskService(
                 AssigneeDto(it.user!!.id!!, it.user!!.username, it.user!!.avatarUrl)
             },
             createdAt = task.createdAt,
+            archivedAt = task.archivedAt,
         )
     }
 }

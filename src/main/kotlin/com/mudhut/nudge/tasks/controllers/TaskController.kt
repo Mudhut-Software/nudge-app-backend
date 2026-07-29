@@ -34,7 +34,7 @@ class TaskController(
         @RequestParam(required = false) jobRequestId: Long?,
         authentication: Authentication,
     ): ResponseEntity<List<TaskResponse>> =
-        ResponseEntity.ok(taskService.list(authentication.name, businessId, status, assigneeId, jobRequestId))
+        ResponseEntity.ok(taskService.list(authentication.name, businessId, status, assigneeId, jobRequestId, false))
 
     @PostMapping
     fun create(
