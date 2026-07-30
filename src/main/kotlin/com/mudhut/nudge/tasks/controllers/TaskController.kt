@@ -32,9 +32,10 @@ class TaskController(
         @RequestParam(required = false) status: TaskStatus?,
         @RequestParam(required = false) assigneeId: Long?,
         @RequestParam(required = false) jobRequestId: Long?,
+        @RequestParam(required = false, defaultValue = "false") archived: Boolean,
         authentication: Authentication,
     ): ResponseEntity<List<TaskResponse>> =
-        ResponseEntity.ok(taskService.list(authentication.name, businessId, status, assigneeId, jobRequestId, false))
+        ResponseEntity.ok(taskService.list(authentication.name, businessId, status, assigneeId, jobRequestId, archived))
 
     @PostMapping
     fun create(
@@ -75,4 +76,27 @@ class TaskController(
         taskService.delete(authentication.name, businessId, taskId)
         return ResponseEntity.noContent().build()
     }
+
+    @PatchMapping("/{taskId}/archive")
+    fun archive(
+        @PathVariable businessId: Long,
+        @PathVariable taskId: Long,
+        authentication: Authentication,
+    ): ResponseEntity<TaskResponse> =
+        ResponseEntity.ok(taskService.archive(authentication.name, businessId, taskId))
+
+    @PatchMapping("/{taskId}/unarchive")
+    fun unarchive(
+        @PathVariable businessId: Long,
+        @PathVariable taskId: Long,
+        authentication: Authentication,
+    ): ResponseEntity<TaskResponse> =
+        ResponseEntity.ok(taskService.unarchive(authentication.name, businessId, taskId))
+
+    @PatchMapping("/archive-done")
+    fun archiveDone(
+        @PathVariable businessId: Long,
+        authentication: Authentication,
+    ): ResponseEntity<Map<String, Int>> =
+        ResponseEntity.ok(mapOf("archived" to taskService.archiveDone(authentication.name, businessId)))
 }

@@ -166,4 +166,45 @@ class TaskControllerTest {
             .andExpect(MockMvcResultMatchers.status().isOk)
             .andExpect(MockMvcResultMatchers.jsonPath("$[0].title").value("Prep kit"))
     }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `GET passes archived=true through`() {
+        `when`(taskService.list(anyString(), eq(1L), isNull(), isNull(), isNull(), eq(true)))
+            .thenReturn(listOf(response()))
+
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/businesses/1/tasks?archived=true"))
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$[0].title").value("Prep kit"))
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `PATCH archive routes`() {
+        `when`(taskService.archive(anyString(), eq(1L), eq(1L))).thenReturn(response())
+
+        mockMvc.perform(MockMvcRequestBuilders.patch("/api/v1/businesses/1/tasks/1/archive"))
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.id").value(1))
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `PATCH unarchive routes`() {
+        `when`(taskService.unarchive(anyString(), eq(1L), eq(1L))).thenReturn(response())
+
+        mockMvc.perform(MockMvcRequestBuilders.patch("/api/v1/businesses/1/tasks/1/unarchive"))
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.id").value(1))
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `PATCH archive-done returns the count`() {
+        `when`(taskService.archiveDone(anyString(), eq(1L))).thenReturn(3)
+
+        mockMvc.perform(MockMvcRequestBuilders.patch("/api/v1/businesses/1/tasks/archive-done"))
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.archived").value(3))
+    }
 }
