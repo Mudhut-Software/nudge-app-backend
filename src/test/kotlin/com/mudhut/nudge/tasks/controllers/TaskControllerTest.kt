@@ -207,4 +207,53 @@ class TaskControllerTest {
             .andExpect(MockMvcResultMatchers.status().isOk)
             .andExpect(MockMvcResultMatchers.jsonPath("$.archived").value(3))
     }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `POST subtask routes and validates blank title`() {
+        `when`(taskService.addSubtask(anyString(), eq(1L), eq(1L), eqObject("buy supplies")))
+            .thenReturn(response())
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/businesses/1/tasks/1/subtasks")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(mapOf("title" to "buy supplies"))),
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.id").value(1))
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/businesses/1/tasks/1/subtasks")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(mapOf("title" to ""))),
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+        org.mockito.Mockito.verify(taskService, org.mockito.Mockito.never())
+            .addSubtask(anyString(), eq(1L), eq(1L), eqObject(""))
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `PATCH subtask toggles done`() {
+        `when`(taskService.toggleSubtask(anyString(), eq(1L), eq(1L), eq(21L), eq(true)))
+            .thenReturn(response())
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.patch("/api/v1/businesses/1/tasks/1/subtasks/21")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(mapOf("done" to true))),
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.id").value(1))
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `DELETE subtask routes`() {
+        `when`(taskService.deleteSubtask(anyString(), eq(1L), eq(1L), eq(21L))).thenReturn(response())
+
+        mockMvc.perform(MockMvcRequestBuilders.delete("/api/v1/businesses/1/tasks/1/subtasks/21"))
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.id").value(1))
+    }
 }

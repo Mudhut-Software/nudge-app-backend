@@ -2,8 +2,10 @@ package com.mudhut.nudge.tasks.controllers
 
 import com.mudhut.nudge.tasks.entities.TaskStatus
 import com.mudhut.nudge.tasks.models.ChangeStatusRequest
+import com.mudhut.nudge.tasks.models.CreateSubtaskRequest
 import com.mudhut.nudge.tasks.models.CreateTaskRequest
 import com.mudhut.nudge.tasks.models.TaskResponse
+import com.mudhut.nudge.tasks.models.ToggleSubtaskRequest
 import com.mudhut.nudge.tasks.models.UpdateTaskRequest
 import com.mudhut.nudge.tasks.services.TaskService
 import jakarta.validation.Valid
@@ -99,4 +101,32 @@ class TaskController(
         authentication: Authentication,
     ): ResponseEntity<Map<String, Int>> =
         ResponseEntity.ok(mapOf("archived" to taskService.archiveDone(authentication.name, businessId)))
+
+    @PostMapping("/{taskId}/subtasks")
+    fun addSubtask(
+        @PathVariable businessId: Long,
+        @PathVariable taskId: Long,
+        @Valid @RequestBody request: CreateSubtaskRequest,
+        authentication: Authentication,
+    ): ResponseEntity<TaskResponse> =
+        ResponseEntity.ok(taskService.addSubtask(authentication.name, businessId, taskId, request.title))
+
+    @PatchMapping("/{taskId}/subtasks/{subtaskId}")
+    fun toggleSubtask(
+        @PathVariable businessId: Long,
+        @PathVariable taskId: Long,
+        @PathVariable subtaskId: Long,
+        @Valid @RequestBody request: ToggleSubtaskRequest,
+        authentication: Authentication,
+    ): ResponseEntity<TaskResponse> =
+        ResponseEntity.ok(taskService.toggleSubtask(authentication.name, businessId, taskId, subtaskId, request.done))
+
+    @DeleteMapping("/{taskId}/subtasks/{subtaskId}")
+    fun deleteSubtask(
+        @PathVariable businessId: Long,
+        @PathVariable taskId: Long,
+        @PathVariable subtaskId: Long,
+        authentication: Authentication,
+    ): ResponseEntity<TaskResponse> =
+        ResponseEntity.ok(taskService.deleteSubtask(authentication.name, businessId, taskId, subtaskId))
 }
