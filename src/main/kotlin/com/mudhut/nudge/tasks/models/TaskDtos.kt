@@ -21,6 +21,12 @@ data class JobSummaryDto(
     val status: String,
 )
 
+data class SubtaskDto(
+    val id: Long,
+    val title: String,
+    val done: Boolean,
+)
+
 data class TaskResponse(
     val id: Long,
     val title: String,
@@ -32,6 +38,7 @@ data class TaskResponse(
     val assignees: List<AssigneeDto>,
     val createdAt: LocalDateTime?,
     val archivedAt: LocalDateTime? = null,
+    val subtasks: List<SubtaskDto> = emptyList(),
 )
 
 data class CreateTaskRequest(
@@ -59,4 +66,15 @@ data class UpdateTaskRequest(
 data class ChangeStatusRequest(
     @field:NotNull
     val status: TaskStatus,
+)
+
+data class CreateSubtaskRequest(
+    @field:NotBlank
+    @field:Size(max = 200)
+    val title: String,
+)
+
+data class ToggleSubtaskRequest(
+    @field:NotNull
+    val done: Boolean,
 )

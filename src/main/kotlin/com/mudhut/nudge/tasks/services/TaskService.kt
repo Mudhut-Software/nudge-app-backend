@@ -7,9 +7,11 @@ import com.mudhut.nudge.businesses.services.BusinessService
 import com.mudhut.nudge.tasks.entities.Task
 import com.mudhut.nudge.tasks.entities.TaskAssignee
 import com.mudhut.nudge.tasks.entities.TaskStatus
+import com.mudhut.nudge.tasks.entities.TaskSubtask
 import com.mudhut.nudge.tasks.models.AssigneeDto
 import com.mudhut.nudge.tasks.models.CreateTaskRequest
 import com.mudhut.nudge.tasks.models.JobSummaryDto
+import com.mudhut.nudge.tasks.models.SubtaskDto
 import com.mudhut.nudge.tasks.models.TaskResponse
 import com.mudhut.nudge.tasks.models.UpdateTaskRequest
 import com.mudhut.nudge.tasks.repositories.TaskRepository
@@ -64,11 +66,7 @@ class TaskService(
             createdBy = creator,
         )
         setAssignees(task, req.assigneeIds)
-        val saved = taskRepository.save(task)
-        val summaries = jobSummaryQuery.summaries(
-            businessId, listOfNotNull(saved.jobRequestId).toSet(),
-        )
-        return toResponse(saved, summaries)
+        return saveAndMap(businessId, task)
     }
 
     @Transactional
@@ -89,9 +87,7 @@ class TaskService(
         validateAssignees(businessId, req.assigneeIds)
         setAssignees(task, req.assigneeIds)
 
-        val saved = taskRepository.save(task)
-        val summaries = jobSummaryQuery.summaries(businessId, listOfNotNull(saved.jobRequestId).toSet())
-        return toResponse(saved, summaries)
+        return saveAndMap(businessId, task)
     }
 
     @Transactional
@@ -100,14 +96,10 @@ class TaskService(
         val task = taskRepository.findByIdAndBusinessId(taskId, businessId)
             .orElseThrow { EntityNotFoundException("Task not found") }
 
-        if (!canManage(businessId, email) && !isAssignee(task, email)) {
-            throw BusinessAccessDeniedException("You can only change the status of tasks assigned to you")
-        }
+        requireManagerOrAssignee(businessId, email, task)
 
         task.status = status
-        val saved = taskRepository.save(task)
-        val summaries = jobSummaryQuery.summaries(businessId, listOfNotNull(saved.jobRequestId).toSet())
-        return toResponse(saved, summaries)
+        return saveAndMap(businessId, task)
     }
 
     @Transactional
@@ -119,6 +111,38 @@ class TaskService(
     }
 
     @Transactional
+    fun addSubtask(email: String, businessId: Long, taskId: Long, title: String): TaskResponse {
+        businessService.requireRole(businessId, email, BusinessRole.MANAGER)
+        val task = taskRepository.findByIdAndBusinessId(taskId, businessId)
+            .orElseThrow { EntityNotFoundException("Task not found") }
+        task.subtasks.add(TaskSubtask(task = task, title = title))
+        return saveAndMap(businessId, task)
+    }
+
+    @Transactional
+    fun toggleSubtask(email: String, businessId: Long, taskId: Long, subtaskId: Long, done: Boolean): TaskResponse {
+        businessService.requireRole(businessId, email, BusinessRole.STAFF)
+        val task = taskRepository.findByIdAndBusinessId(taskId, businessId)
+            .orElseThrow { EntityNotFoundException("Task not found") }
+        requireManagerOrAssignee(businessId, email, task)
+        val subtask = task.subtasks.find { it.id == subtaskId }
+            ?: throw EntityNotFoundException("Subtask not found")
+        subtask.done = done
+        return saveAndMap(businessId, task)
+    }
+
+    @Transactional
+    fun deleteSubtask(email: String, businessId: Long, taskId: Long, subtaskId: Long): TaskResponse {
+        businessService.requireRole(businessId, email, BusinessRole.MANAGER)
+        val task = taskRepository.findByIdAndBusinessId(taskId, businessId)
+            .orElseThrow { EntityNotFoundException("Task not found") }
+        val subtask = task.subtasks.find { it.id == subtaskId }
+            ?: throw EntityNotFoundException("Subtask not found")
+        task.subtasks.remove(subtask)
+        return saveAndMap(businessId, task)
+    }
+
+    @Transactional
     fun archive(email: String, businessId: Long, taskId: Long): TaskResponse {
         businessService.requireRole(businessId, email, BusinessRole.MANAGER)
         val task = taskRepository.findByIdAndBusinessId(taskId, businessId)
@@ -126,9 +150,7 @@ class TaskService(
         require(task.status == TaskStatus.DONE) { "Only DONE tasks can be archived" }
         require(task.archivedAt == null) { "Task is already archived" }
         task.archivedAt = LocalDateTime.now()
-        val saved = taskRepository.save(task)
-        val summaries = jobSummaryQuery.summaries(businessId, listOfNotNull(saved.jobRequestId).toSet())
-        return toResponse(saved, summaries)
+        return saveAndMap(businessId, task)
     }
 
     @Transactional
@@ -138,9 +160,7 @@ class TaskService(
             .orElseThrow { EntityNotFoundException("Task not found") }
         require(task.archivedAt != null) { "Task is not archived" }
         task.archivedAt = null
-        val saved = taskRepository.save(task)
-        val summaries = jobSummaryQuery.summaries(businessId, listOfNotNull(saved.jobRequestId).toSet())
-        return toResponse(saved, summaries)
+        return saveAndMap(businessId, task)
     }
 
     @Transactional
@@ -164,6 +184,18 @@ class TaskService(
     private fun isAssignee(task: Task, email: String): Boolean {
         val user = userRepository.findByEmail(email).orElse(null) ?: return false
         return task.assignees.any { it.user?.id == user.id }
+    }
+
+    private fun requireManagerOrAssignee(businessId: Long, email: String, task: Task) {
+        if (!canManage(businessId, email) && !isAssignee(task, email)) {
+            throw BusinessAccessDeniedException("You can only modify tasks assigned to you")
+        }
+    }
+
+    private fun saveAndMap(businessId: Long, task: Task): TaskResponse {
+        val saved = taskRepository.save(task)
+        val summaries = jobSummaryQuery.summaries(businessId, listOfNotNull(saved.jobRequestId).toSet())
+        return toResponse(saved, summaries)
     }
 
     // --- shared helpers (also used by Task 4) ---
@@ -213,6 +245,7 @@ class TaskService(
             },
             createdAt = task.createdAt,
             archivedAt = task.archivedAt,
+            subtasks = task.subtasks.map { SubtaskDto(it.id!!, it.title!!, it.done) },
         )
     }
 }

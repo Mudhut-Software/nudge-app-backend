@@ -14,8 +14,10 @@ import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
 import jakarta.persistence.OneToMany
+import jakarta.persistence.OrderBy
 import jakarta.persistence.Table
 import jakarta.validation.constraints.NotBlank
+import org.hibernate.annotations.BatchSize
 import org.hibernate.annotations.CreationTimestamp
 import org.hibernate.annotations.UpdateTimestamp
 import java.time.LocalDate
@@ -69,6 +71,18 @@ class Task(
         fetch = FetchType.LAZY,
     )
     var assignees: MutableList<TaskAssignee> = mutableListOf(),
+
+    // Checklist items. Batch-loaded, NOT fetch-joined: findFiltered already fetch-joins the
+    // assignees list-bag and Hibernate cannot fetch-join two list-bags in one query.
+    @OneToMany(
+        mappedBy = "task",
+        cascade = [CascadeType.ALL],
+        orphanRemoval = true,
+        fetch = FetchType.LAZY,
+    )
+    @OrderBy("id ASC")
+    @BatchSize(size = 100)
+    var subtasks: MutableList<TaskSubtask> = mutableListOf(),
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

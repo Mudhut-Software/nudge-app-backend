@@ -8,6 +8,7 @@ import com.mudhut.nudge.businesses.services.BusinessService
 import com.mudhut.nudge.tasks.entities.Task
 import com.mudhut.nudge.tasks.entities.TaskAssignee
 import com.mudhut.nudge.tasks.entities.TaskStatus
+import com.mudhut.nudge.tasks.entities.TaskSubtask
 import com.mudhut.nudge.tasks.models.CreateTaskRequest
 import com.mudhut.nudge.tasks.repositories.TaskRepository
 import com.mudhut.nudge.tasks.spi.JobSummary
@@ -375,5 +376,118 @@ class TaskServiceTest {
         assertEquals(2, count)
         org.junit.jupiter.api.Assertions.assertNotNull(t1.archivedAt)
         org.junit.jupiter.api.Assertions.assertNotNull(t2.archivedAt)
+    }
+
+    private fun taskWithSubtask(done: Boolean = false): Task {
+        val task = Task(id = 7L, business = Business(id = 1L), title = "A",
+            createdBy = User(id = 1L, username = "M"))
+        task.subtasks.add(TaskSubtask(id = 21L, task = task, title = "step one", done = done))
+        return task
+    }
+
+    @Test
+    fun `addSubtask appends and returns the subtask in the response`() {
+        val task = Task(id = 7L, business = Business(id = 1L), title = "A",
+            createdBy = User(id = 1L, username = "M"))
+        `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
+        // Real IDENTITY-strategy saves assign a generated id synchronously; simulate that here so
+        // the mapped SubtaskDto (whose id is non-nullable) has something to read.
+        `when`(taskRepository.save(any(Task::class.java))).thenAnswer {
+            val saved = it.arguments[0] as Task
+            saved.subtasks.filter { s -> s.id == null }.forEach { s -> s.id = 21L }
+            saved
+        }
+        `when`(jobSummaryQuery.summaries(eq(1L), anySet())).thenReturn(emptyMap())
+
+        val result = service.addSubtask("mgr@test.com", 1L, 7L, "buy supplies")
+
+        assertEquals(listOf("buy supplies"), result.subtasks.map { it.title })
+        assertEquals(listOf(false), result.subtasks.map { it.done })
+    }
+
+    @Test
+    fun `addSubtask requires MANAGER`() {
+        `when`(businessService.requireRole(1L, "staff@test.com", BusinessRole.MANAGER))
+            .thenThrow(com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException("no"))
+
+        assertThrows<com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException> {
+            service.addSubtask("staff@test.com", 1L, 7L, "x")
+        }
+    }
+
+    @Test
+    fun `toggleSubtask allowed for a STAFF assignee`() {
+        val staff = User(id = 5L, username = "Sam")
+        val task = taskWithSubtask()
+        task.assignees.add(TaskAssignee(id = 1L, task = task, user = staff))
+        org.mockito.Mockito.doNothing().`when`(businessService)
+            .requireRole(1L, "sam@test.com", BusinessRole.STAFF)
+        `when`(businessService.requireRole(1L, "sam@test.com", BusinessRole.MANAGER))
+            .thenThrow(com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException("no"))
+        `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
+        `when`(userRepository.findByEmail("sam@test.com")).thenReturn(Optional.of(staff))
+        `when`(taskRepository.save(any(Task::class.java))).thenAnswer { it.arguments[0] as Task }
+        `when`(jobSummaryQuery.summaries(eq(1L), anySet())).thenReturn(emptyMap())
+
+        val result = service.toggleSubtask("sam@test.com", 1L, 7L, 21L, true)
+
+        assertEquals(listOf(true), result.subtasks.map { it.done })
+    }
+
+    @Test
+    fun `toggleSubtask denied for a non-assignee STAFF`() {
+        val task = taskWithSubtask()
+        org.mockito.Mockito.doNothing().`when`(businessService)
+            .requireRole(1L, "other@test.com", BusinessRole.STAFF)
+        `when`(businessService.requireRole(1L, "other@test.com", BusinessRole.MANAGER))
+            .thenThrow(com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException("no"))
+        `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
+        `when`(userRepository.findByEmail("other@test.com"))
+            .thenReturn(Optional.of(User(id = 8L, username = "Other")))
+
+        assertThrows<com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException> {
+            service.toggleSubtask("other@test.com", 1L, 7L, 21L, true)
+        }
+    }
+
+    @Test
+    fun `toggleSubtask denied for a non-member before the task is loaded`() {
+        `when`(businessService.requireRole(1L, "stranger@test.com", BusinessRole.STAFF))
+            .thenThrow(com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException("no"))
+
+        assertThrows<com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException> {
+            service.toggleSubtask("stranger@test.com", 1L, 7L, 21L, true)
+        }
+
+        org.mockito.Mockito.verify(taskRepository, org.mockito.Mockito.never())
+            .findByIdAndBusinessId(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyLong())
+    }
+
+    @Test
+    fun `toggleSubtask 404s for a subtask that is not on the task`() {
+        val task = taskWithSubtask()
+        `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
+
+        assertThrows<jakarta.persistence.EntityNotFoundException> {
+            service.toggleSubtask("mgr@test.com", 1L, 7L, 999L, true)
+        }
+    }
+
+    @Test
+    fun `deleteSubtask removes the row and requires MANAGER`() {
+        val task = taskWithSubtask()
+        `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
+        `when`(taskRepository.save(any(Task::class.java))).thenAnswer { it.arguments[0] as Task }
+        `when`(jobSummaryQuery.summaries(eq(1L), anySet())).thenReturn(emptyMap())
+
+        val result = service.deleteSubtask("mgr@test.com", 1L, 7L, 21L)
+
+        assertEquals(emptyList<Long>(), result.subtasks.map { it.id })
+
+        `when`(businessService.requireRole(1L, "staff@test.com", BusinessRole.MANAGER))
+            .thenThrow(com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException("no"))
+        assertThrows<com.mudhut.nudge.utils.exceptions.BusinessAccessDeniedException> {
+            service.deleteSubtask("staff@test.com", 1L, 7L, 21L)
+        }
     }
 }
