@@ -249,6 +249,20 @@ class TaskControllerTest {
 
     @Test
     @WithMockUser(username = "mgr@test.com")
+    fun `PATCH subtask without a done flag returns 400`() {
+        mockMvc.perform(
+            MockMvcRequestBuilders.patch("/api/v1/businesses/1/tasks/1/subtasks/21")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(emptyMap<String, Any>())),
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+
+        Mockito.verify(taskService, Mockito.never())
+            .toggleSubtask(anyString(), anyLong(), anyLong(), anyLong(), Mockito.anyBoolean())
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
     fun `DELETE subtask routes`() {
         `when`(taskService.deleteSubtask(anyString(), eq(1L), eq(1L), eq(21L))).thenReturn(response())
 

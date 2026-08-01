@@ -76,5 +76,5 @@ data class CreateSubtaskRequest(
 
 data class ToggleSubtaskRequest(
     @field:NotNull
-    val done: Boolean,
+    val done: Boolean? = null,
 )

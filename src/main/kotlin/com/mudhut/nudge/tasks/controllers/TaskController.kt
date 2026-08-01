@@ -119,7 +119,7 @@ class TaskController(
         @Valid @RequestBody request: ToggleSubtaskRequest,
         authentication: Authentication,
     ): ResponseEntity<TaskResponse> =
-        ResponseEntity.ok(taskService.toggleSubtask(authentication.name, businessId, taskId, subtaskId, request.done))
+        ResponseEntity.ok(taskService.toggleSubtask(authentication.name, businessId, taskId, subtaskId, request.done!!))
 
     @DeleteMapping("/{taskId}/subtasks/{subtaskId}")
     fun deleteSubtask(
