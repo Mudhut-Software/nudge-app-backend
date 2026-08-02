@@ -85,6 +85,38 @@ class TaskControllerTest {
 
     @Test
     @WithMockUser(username = "mgr@test.com")
+    fun `POST create accepts inline subtasks`() {
+        `when`(taskService.create(anyString(), eq(1L), anyObject()))
+            .thenReturn(response())
+
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/businesses/1/tasks")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(
+                    mapOf("title" to "Deep clean", "subtasks" to listOf(mapOf("title" to "buy mops"))),
+                )),
+        )
+            .andExpect(MockMvcResultMatchers.status().isOk)
+            .andExpect(MockMvcResultMatchers.jsonPath("$.title").value("Prep kit"))
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
+    fun `POST create rejects a blank inline subtask title`() {
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/businesses/1/tasks")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(
+                    mapOf("title" to "Deep clean", "subtasks" to listOf(mapOf("title" to ""))),
+                )),
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+        org.mockito.Mockito.verify(taskService, org.mockito.Mockito.never())
+            .create(anyString(), org.mockito.ArgumentMatchers.anyLong(), anyObject())
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
     fun `PUT replaces a task`() {
         `when`(taskService.update(anyString(), eq(1L), eq(1L), anyObject()))
             .thenReturn(response())

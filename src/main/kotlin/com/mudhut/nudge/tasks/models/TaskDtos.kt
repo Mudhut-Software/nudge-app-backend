@@ -2,6 +2,7 @@ package com.mudhut.nudge.tasks.models
 
 import com.mudhut.nudge.tasks.entities.TaskPriority
 import com.mudhut.nudge.tasks.entities.TaskStatus
+import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
@@ -50,6 +51,8 @@ data class CreateTaskRequest(
     val dueDate: LocalDate? = null,
     val jobRequestId: Long? = null,
     val assigneeIds: List<Long> = emptyList(),
+    @field:Valid
+    val subtasks: List<CreateSubtaskRequest> = emptyList(),
 )
 
 data class UpdateTaskRequest(

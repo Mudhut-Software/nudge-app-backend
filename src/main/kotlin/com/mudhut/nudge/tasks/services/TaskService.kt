@@ -66,6 +66,7 @@ class TaskService(
             createdBy = creator,
         )
         setAssignees(task, req.assigneeIds)
+        req.subtasks.forEach { task.subtasks.add(TaskSubtask(task = task, title = it.title)) }
         return saveAndMap(businessId, task)
     }
 

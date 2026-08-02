@@ -474,6 +474,31 @@ class TaskServiceTest {
     }
 
     @Test
+    fun `create persists inline subtasks in order`() {
+        `when`(userRepository.findByEmail("mgr@test.com"))
+            .thenReturn(Optional.of(User(id = 1L, username = "Mgr")))
+        `when`(taskRepository.save(any(Task::class.java))).thenAnswer {
+            (it.arguments[0] as Task).apply {
+                id = 1L
+                subtasks.forEachIndexed { i, s -> s.id = (i + 1).toLong() }
+            }
+        }
+        `when`(jobSummaryQuery.summaries(eq(1L), anySet())).thenReturn(emptyMap())
+
+        val req = CreateTaskRequest(
+            title = "Deep clean",
+            subtasks = listOf(
+                com.mudhut.nudge.tasks.models.CreateSubtaskRequest("buy mops"),
+                com.mudhut.nudge.tasks.models.CreateSubtaskRequest("mix solution"),
+            ),
+        )
+        val result = service.create("mgr@test.com", 1L, req)
+
+        assertEquals(listOf("buy mops", "mix solution"), result.subtasks.map { it.title })
+        assertEquals(listOf(false, false), result.subtasks.map { it.done })
+    }
+
+    @Test
     fun `deleteSubtask removes the row and requires MANAGER`() {
         val task = taskWithSubtask()
         `when`(taskRepository.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(task))
