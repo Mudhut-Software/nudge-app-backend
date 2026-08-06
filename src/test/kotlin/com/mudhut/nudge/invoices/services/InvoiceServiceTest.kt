@@ -99,4 +99,21 @@ class InvoiceServiceTest {
         assertTrue(result[0].overdue)
         assertEquals(BigDecimal.ZERO.setScale(2), result[0].total.setScale(2))
     }
+
+    @Test
+    fun `toResponse normalizes invoice total to scale 2 when no lines`() {
+        val invoice = Invoice(
+            id = 1L,
+            business = Business(id = 1L, name = "Acme"),
+            customer = User(id = 9L, username = "Cust"),
+            createdBy = User(id = 1L, username = "M"),
+            currency = "USD",
+        )
+        val business = com.mudhut.nudge.invoices.models.BusinessDto(id = 1L, name = "Acme")
+
+        val result = service.toResponse(invoice, business)
+
+        assertEquals(BigDecimal("0.00"), result.total)
+        assertEquals(2, result.total.scale())
+    }
 }

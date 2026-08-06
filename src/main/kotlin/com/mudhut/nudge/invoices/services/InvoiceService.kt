@@ -21,6 +21,7 @@ import jakarta.persistence.EntityNotFoundException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.LocalDate
 
 @Service
@@ -145,10 +146,10 @@ class InvoiceService(
                 description = it.description!!,
                 unitAmount = it.unitAmount!!,
                 quantity = it.quantity,
-                lineTotal = it.unitAmount!!.multiply(BigDecimal(it.quantity)),
+                lineTotal = it.unitAmount!!.multiply(BigDecimal(it.quantity)).setScale(2, RoundingMode.HALF_UP),
             )
         }
-        val total = lines.fold(BigDecimal.ZERO) { acc, l -> acc.add(l.lineTotal) }
+        val total = lines.fold(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)) { acc, l -> acc.add(l.lineTotal) }
         val overdue = invoice.status == InvoiceStatus.SENT &&
             invoice.dueDate != null &&
             invoice.dueDate!!.isBefore(LocalDate.now())
