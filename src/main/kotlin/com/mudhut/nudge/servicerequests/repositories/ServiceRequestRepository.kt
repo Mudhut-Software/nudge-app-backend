@@ -9,11 +9,14 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
 import java.time.LocalDateTime
+import java.util.Optional
 
 @Repository
 interface ServiceRequestRepository : JpaRepository<ServiceRequest, Long> {
 
     fun findByBusinessIdAndIdIn(businessId: Long, ids: Collection<Long>): List<ServiceRequest>
+
+    fun findByIdAndBusinessId(id: Long, businessId: Long): Optional<ServiceRequest>
 
     fun findAllByCustomerId(customerId: Long, pageable: Pageable): Page<ServiceRequest>
     fun findAllByCustomerIdAndBusinessId(customerId: Long, businessId: Long, pageable: Pageable): Page<ServiceRequest>
@@ -71,6 +74,8 @@ interface ServiceRequestRepository : JpaRepository<ServiceRequest, Long> {
         businessId: Long,
         status: ServiceRequestStatus,
     ): Boolean
+
+    fun existsByBusinessIdAndCustomerId(businessId: Long, customerId: Long): Boolean
 
     @Query(
         """
