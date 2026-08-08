@@ -12,6 +12,7 @@ import com.mudhut.nudge.invoices.models.CreateInvoiceRequest
 import com.mudhut.nudge.invoices.models.LineInput
 import com.mudhut.nudge.invoices.models.UpdateInvoiceRequest
 import com.mudhut.nudge.invoices.repositories.InvoiceRepository
+import com.mudhut.nudge.invoices.spi.CustomerDirectoryQuery
 import com.mudhut.nudge.invoices.spi.RequestLineData
 import com.mudhut.nudge.invoices.spi.RequestLineItem
 import com.mudhut.nudge.invoices.spi.RequestLineQuery
@@ -43,6 +44,7 @@ class InvoiceServiceTest {
     @Mock private lateinit var businessRepository: BusinessRepository
     @Mock private lateinit var userRepository: UserRepository
     @Mock private lateinit var requestLineQuery: RequestLineQuery
+    @Mock private lateinit var customerDirectoryQuery: CustomerDirectoryQuery
     @Mock private lateinit var eventPublisher: ApplicationEventPublisher
 
     @InjectMocks private lateinit var service: InvoiceService
@@ -99,6 +101,60 @@ class InvoiceServiceTest {
 
         val req = CreateInvoiceRequest(customerId = 9L, currency = "USD")
         assertThrows<BusinessAccessDeniedException> { service.createBlank("staff@test.com", 1L, req) }
+    }
+
+    @Test
+    fun `createBlank 400s when the customer has no relationship with the business`() {
+        `when`(userRepository.findByEmail("mgr@test.com")).thenReturn(Optional.of(User(id = 1L, username = "M")))
+        `when`(businessRepository.findById(1L)).thenReturn(Optional.of(Business(id = 1L, name = "Acme")))
+        `when`(userRepository.findById(9L)).thenReturn(Optional.of(User(id = 9L, username = "Cust")))
+        `when`(customerDirectoryQuery.isCustomerOfBusiness(1L, 9L)).thenReturn(false)
+
+        val req = CreateInvoiceRequest(customerId = 9L, currency = "USD")
+        assertThrows<IllegalArgumentException> { service.createBlank("mgr@test.com", 1L, req) }
+        Mockito.verify(invoiceRepository, Mockito.never()).save(any(Invoice::class.java))
+    }
+
+    @Test
+    fun `createBlank succeeds when the customer belongs to the business`() {
+        `when`(userRepository.findByEmail("mgr@test.com")).thenReturn(Optional.of(User(id = 1L, username = "M")))
+        `when`(businessRepository.findById(1L)).thenReturn(Optional.of(Business(id = 1L, name = "Acme")))
+        `when`(userRepository.findById(9L)).thenReturn(Optional.of(User(id = 9L, username = "Cust")))
+        `when`(customerDirectoryQuery.isCustomerOfBusiness(1L, 9L)).thenReturn(true)
+        `when`(invoiceRepository.save(any(Invoice::class.java))).thenAnswer {
+            (it.arguments[0] as Invoice).apply { id = 1L; lines.forEachIndexed { i, l -> l.id = (i + 1).toLong() } }
+        }
+
+        val req = CreateInvoiceRequest(
+            customerId = 9L,
+            currency = "USD",
+            lines = listOf(LineInput(description = "Labor", unitAmount = BigDecimal("50.00"))),
+        )
+        val result = service.createBlank("mgr@test.com", 1L, req)
+
+        assertEquals(InvoiceStatus.DRAFT, result.status)
+        assertEquals(9L, result.customer.userId)
+    }
+
+    @Test
+    fun `createBlank normalizes a fractional-cent unitAmount to scale 2`() {
+        `when`(userRepository.findByEmail("mgr@test.com")).thenReturn(Optional.of(User(id = 1L, username = "M")))
+        `when`(businessRepository.findById(1L)).thenReturn(Optional.of(Business(id = 1L, name = "Acme")))
+        `when`(userRepository.findById(9L)).thenReturn(Optional.of(User(id = 9L, username = "Cust")))
+        `when`(customerDirectoryQuery.isCustomerOfBusiness(1L, 9L)).thenReturn(true)
+        `when`(invoiceRepository.save(any(Invoice::class.java))).thenAnswer {
+            (it.arguments[0] as Invoice).apply { id = 1L; lines.forEachIndexed { i, l -> l.id = (i + 1).toLong() } }
+        }
+
+        val req = CreateInvoiceRequest(
+            customerId = 9L,
+            currency = "USD",
+            lines = listOf(LineInput(description = "Labor", unitAmount = BigDecimal("50.999"))),
+        )
+        val result = service.createBlank("mgr@test.com", 1L, req)
+
+        assertEquals(BigDecimal("51.00"), result.lines[0].unitAmount)
+        assertEquals(2, result.lines[0].unitAmount.scale())
     }
 
     @Test

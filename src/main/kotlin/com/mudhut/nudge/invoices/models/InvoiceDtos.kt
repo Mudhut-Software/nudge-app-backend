@@ -2,6 +2,7 @@ package com.mudhut.nudge.invoices.models
 
 import com.mudhut.nudge.invoices.entities.InvoiceStatus
 import jakarta.validation.Valid
+import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
@@ -42,19 +43,19 @@ data class InvoiceResponse(
 data class LineInput(
     @field:NotBlank @field:Size(max = 200) val description: String,
     @field:NotNull val unitAmount: BigDecimal,
-    val quantity: Int = 1,
+    @field:Min(1) val quantity: Int = 1,
 )
 
 data class CreateInvoiceRequest(
     @field:NotNull val customerId: Long,
-    @field:NotBlank @field:Size(max = 3) val currency: String,
+    @field:NotBlank @field:Size(min = 3, max = 3) val currency: String,
     val dueDate: LocalDate? = null,
     val notes: String? = null,
     @field:Valid val lines: List<LineInput> = emptyList(),
 )
 
 data class UpdateInvoiceRequest(
-    @field:NotBlank @field:Size(max = 3) val currency: String,
+    @field:NotBlank @field:Size(min = 3, max = 3) val currency: String,
     val dueDate: LocalDate? = null,
     val notes: String? = null,
     @field:Valid val lines: List<LineInput> = emptyList(),

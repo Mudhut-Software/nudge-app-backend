@@ -16,6 +16,7 @@ import com.mudhut.nudge.invoices.models.LineInput
 import com.mudhut.nudge.invoices.models.LineResponse
 import com.mudhut.nudge.invoices.models.UpdateInvoiceRequest
 import com.mudhut.nudge.invoices.repositories.InvoiceRepository
+import com.mudhut.nudge.invoices.spi.CustomerDirectoryQuery
 import com.mudhut.nudge.invoices.spi.RequestLineItem
 import com.mudhut.nudge.invoices.spi.RequestLineQuery
 import com.mudhut.nudge.users.repositories.UserRepository
@@ -36,6 +37,7 @@ class InvoiceService(
     private val businessRepository: BusinessRepository,
     private val userRepository: UserRepository,
     private val requestLineQuery: RequestLineQuery,
+    private val customerDirectoryQuery: CustomerDirectoryQuery,
     private val eventPublisher: ApplicationEventPublisher,
 ) {
 
@@ -65,6 +67,9 @@ class InvoiceService(
         val business = requireBusiness(businessId)
         val customer = userRepository.findById(req.customerId)
             .orElseThrow { IllegalArgumentException("Customer ${req.customerId} not found") }
+        require(customerDirectoryQuery.isCustomerOfBusiness(businessId, req.customerId)) {
+            "Customer has no relationship with this business"
+        }
 
         val invoice = Invoice(
             business = business,
@@ -209,7 +214,7 @@ class InvoiceService(
                 InvoiceLine(
                     invoice = invoice,
                     description = li.description,
-                    unitAmount = li.unitAmount,
+                    unitAmount = li.unitAmount.setScale(2, RoundingMode.HALF_UP),
                     quantity = li.quantity.coerceAtLeast(1),
                     position = i,
                 ),
@@ -224,7 +229,7 @@ class InvoiceService(
                 InvoiceLine(
                     invoice = invoice,
                     description = item.description,
-                    unitAmount = item.unitAmount,
+                    unitAmount = item.unitAmount.setScale(2, RoundingMode.HALF_UP),
                     quantity = item.quantity.coerceAtLeast(1),
                     position = i,
                 ),

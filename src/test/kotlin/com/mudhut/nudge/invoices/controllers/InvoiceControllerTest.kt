@@ -149,6 +149,27 @@ class InvoiceControllerTest {
 
     @Test
     @WithMockUser(username = "mgr@test.com")
+    fun `POST create rejects a non-positive line quantity`() {
+        mockMvc.perform(
+            MockMvcRequestBuilders.post("/api/v1/businesses/1/invoices")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    objectMapper.writeValueAsString(
+                        CreateInvoiceRequest(
+                            customerId = 2L,
+                            currency = "USD",
+                            lines = listOf(LineInput(description = "Labor", unitAmount = BigDecimal("50.00"), quantity = 0)),
+                        ),
+                    ),
+                ),
+        )
+            .andExpect(MockMvcResultMatchers.status().isBadRequest)
+
+        Mockito.verify(invoiceService, Mockito.never()).createBlank(anyString(), Mockito.anyLong(), anyObject())
+    }
+
+    @Test
+    @WithMockUser(username = "mgr@test.com")
     fun `POST creates an invoice from a request`() {
         `when`(invoiceService.createFromRequest(anyString(), eq(1L), eq(9L))).thenReturn(response())
 

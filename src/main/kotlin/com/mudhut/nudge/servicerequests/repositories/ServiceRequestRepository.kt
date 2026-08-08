@@ -75,6 +75,8 @@ interface ServiceRequestRepository : JpaRepository<ServiceRequest, Long> {
         status: ServiceRequestStatus,
     ): Boolean
 
+    fun existsByBusinessIdAndCustomerId(businessId: Long, customerId: Long): Boolean
+
     @Query(
         """
         SELECT r FROM ServiceRequest r
