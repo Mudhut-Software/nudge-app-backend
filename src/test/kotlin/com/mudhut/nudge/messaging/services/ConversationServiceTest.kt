@@ -349,6 +349,31 @@ class ConversationServiceTest {
     }
 
     @Test
+    fun `postInvoiceMessage posts a BUSINESS-side message with invoice fields`() {
+        val customer = user(9)
+        val issuer = user(5)
+        val convo = Conversation(id = 50L, customer = customer, business = business(1L), assignedMember = issuer)
+        whenever(userRepo.findById(9L)).thenReturn(Optional.of(customer))
+        whenever(businessRepo.findById(1L)).thenReturn(Optional.of(business(1L)))
+        whenever(conversationRepo.findByCustomerIdAndBusinessId(9L, 1L)).thenReturn(Optional.of(convo))
+        whenever(userRepo.findById(5L)).thenReturn(Optional.of(issuer))
+        whenever(messageRepo.save(any<Message>())).thenAnswer {
+            (it.arguments[0] as Message).apply { id = 7L; sentAt = LocalDateTime.now() }
+        }
+
+        val (msg, _) = sut.postInvoiceMessage(1L, 9L, 5L, 100L, "INV-0001", java.math.BigDecimal("150.00"), "UGX")
+
+        assertThat(msg.senderId).isEqualTo(5L)
+        assertThat(msg.senderSide).isEqualTo(SenderSide.BUSINESS)
+        assertThat(msg.invoiceId).isEqualTo(100L)
+        assertThat(msg.invoiceNumber).isEqualTo("INV-0001")
+        assertThat(msg.invoiceTotal).isEqualTo(java.math.BigDecimal("150.00"))
+        assertThat(msg.invoiceCurrency).isEqualTo("UGX")
+        assertThat(msg.body).isNotBlank()
+        assertThat(convo.lastMessageAt).isNotNull()
+    }
+
+    @Test
     fun `send by a non-participant is rejected`() {
         val stranger = user(99)
         val convo = Conversation(id = 50L, customer = user(1), business = business(), assignedMember = user(9))

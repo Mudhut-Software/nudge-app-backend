@@ -54,6 +54,7 @@ class InvoiceEmailListenerTest {
             number = "INV-0009",
             total = BigDecimal("125.50"),
             currency = "USD",
+            issuedByUserId = 1L,
         )
 
         sut.onInvoiceIssued(event)
@@ -92,7 +93,7 @@ class InvoiceEmailListenerTest {
         whenever(userRepository.findById(404L)).thenReturn(Optional.empty())
 
         sut.onInvoiceIssued(
-            InvoiceIssuedEvent(1L, 1L, 404L, "INV-0001", BigDecimal("10.00"), "USD"),
+            InvoiceIssuedEvent(1L, 1L, 404L, "INV-0001", BigDecimal("10.00"), "USD", 1L),
         )
 
         verifyNoInteractions(emailService)
@@ -103,7 +104,7 @@ class InvoiceEmailListenerTest {
         whenever(userRepository.findById(99L)).thenReturn(Optional.of(User(id = 99L, email = null)))
 
         sut.onInvoiceIssued(
-            InvoiceIssuedEvent(2L, 1L, 99L, "INV-0002", BigDecimal("10.00"), "USD"),
+            InvoiceIssuedEvent(2L, 1L, 99L, "INV-0002", BigDecimal("10.00"), "USD", 1L),
         )
 
         verifyNoInteractions(emailService)

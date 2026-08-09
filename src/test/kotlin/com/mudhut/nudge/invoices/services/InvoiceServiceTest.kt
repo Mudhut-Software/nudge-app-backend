@@ -246,13 +246,16 @@ class InvoiceServiceTest {
         `when`(invoiceRepository.findMaxSequenceForBusiness(1L)).thenReturn(null)
         `when`(invoiceRepository.save(any(Invoice::class.java))).thenAnswer { it.arguments[0] as Invoice }
         `when`(businessRepository.findById(1L)).thenReturn(Optional.of(Business(id = 1L, name = "Acme")))
+        `when`(userRepository.findByEmail("mgr@test.com")).thenReturn(Optional.of(User(id = 1L, username = "M")))
 
         val result = service.issue("mgr@test.com", 1L, 7L)
 
         assertEquals(InvoiceStatus.SENT, result.status)
         assertEquals("INV-0001", result.number)
         assertEquals(LocalDate.now(), result.issueDate)
-        Mockito.verify(eventPublisher).publishEvent(any(InvoiceIssuedEvent::class.java))
+        val captor = org.mockito.kotlin.argumentCaptor<InvoiceIssuedEvent>()
+        Mockito.verify(eventPublisher).publishEvent(captor.capture())
+        assertEquals(1L, captor.firstValue.issuedByUserId)
     }
 
     @Test
@@ -262,6 +265,7 @@ class InvoiceServiceTest {
         `when`(invoiceRepository.findMaxSequenceForBusiness(1L)).thenReturn(3)
         `when`(invoiceRepository.save(any(Invoice::class.java))).thenAnswer { it.arguments[0] as Invoice }
         `when`(businessRepository.findById(1L)).thenReturn(Optional.of(Business(id = 1L, name = "Acme")))
+        `when`(userRepository.findByEmail("mgr@test.com")).thenReturn(Optional.of(User(id = 1L, username = "M")))
 
         val result = service.issue("mgr@test.com", 1L, 7L)
 

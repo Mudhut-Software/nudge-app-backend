@@ -107,6 +107,40 @@ class ConversationService(
         return toMessage(message) to convo
     }
 
+    /** Posts a system-authored BUSINESS-side message referencing a just-issued invoice. No STOMP push here. */
+    @Transactional
+    fun postInvoiceMessage(
+        businessId: Long,
+        customerId: Long,
+        issuedByUserId: Long,
+        invoiceId: Long,
+        number: String,
+        total: java.math.BigDecimal,
+        currency: String,
+    ): Pair<MessageResponse, Conversation> {
+        val customer = userRepo.findById(customerId).orElseThrow { UserNotFoundException("Customer not found") }
+        val business = requireBusiness(businessId)
+        val issuer = userRepo.findById(issuedByUserId).orElseThrow { UserNotFoundException("Issuer not found") }
+        val convo = getOrCreate(customer, business, issuer)
+        if (convo.assignedMember == null) convo.assignedMember = issuer
+
+        val unsaved = Message(
+            conversation = convo,
+            sender = issuer,
+            senderSide = SenderSide.BUSINESS,
+            body = "Invoice $number · $total $currency",
+            invoiceId = invoiceId,
+            invoiceNumber = number,
+            invoiceTotal = total,
+            invoiceCurrency = currency,
+        )
+        val message = messageRepo.save(unsaved)
+        val at = message.sentAt ?: LocalDateTime.now()
+        convo.lastMessageAt = at
+        conversationRepo.save(convo)
+        return toMessage(message) to convo
+    }
+
     /**
      * Hand a thread to another active member (OWNER/ADMIN only). Returns the updated
      * conversation plus the distinct emails to notify: old assignee, new assignee, customer.
@@ -257,5 +291,9 @@ class ConversationService(
         body = m.body,
         sentAt = m.sentAt ?: LocalDateTime.now(),
         attachments = m.attachments.map { AttachmentResponse(it.url, it.publicId, it.width, it.height) },
+        invoiceId = m.invoiceId,
+        invoiceNumber = m.invoiceNumber,
+        invoiceTotal = m.invoiceTotal,
+        invoiceCurrency = m.invoiceCurrency,
     )
 }
