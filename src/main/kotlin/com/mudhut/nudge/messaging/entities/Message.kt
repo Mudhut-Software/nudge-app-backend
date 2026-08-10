@@ -49,4 +49,16 @@ class Message(
     @OneToMany(mappedBy = "message", cascade = [CascadeType.ALL], orphanRemoval = true)
     @OrderBy("position ASC")
     var attachments: MutableList<MessageAttachment> = mutableListOf(),
+
+    @Column(name = "invoice_id")
+    var invoiceId: Long? = null,
+
+    @Column(name = "invoice_number", length = 32)
+    var invoiceNumber: String? = null,
+
+    @Column(name = "invoice_total", precision = 19, scale = 2)
+    var invoiceTotal: java.math.BigDecimal? = null,
+
+    @Column(name = "invoice_currency", length = 3)
+    var invoiceCurrency: String? = null,
 )

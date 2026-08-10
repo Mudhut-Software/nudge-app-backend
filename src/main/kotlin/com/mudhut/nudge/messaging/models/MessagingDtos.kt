@@ -40,6 +40,10 @@ data class MessageResponse(
     val body: String,
     val sentAt: LocalDateTime,
     val attachments: List<AttachmentResponse> = emptyList(),
+    val invoiceId: Long? = null,
+    val invoiceNumber: String? = null,
+    val invoiceTotal: java.math.BigDecimal? = null,
+    val invoiceCurrency: String? = null,
 )
 
 data class AttachmentInput(

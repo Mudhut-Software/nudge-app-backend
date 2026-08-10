@@ -129,6 +129,8 @@ class InvoiceService(
         val invoice = requireInvoice(businessId, id)
         require(invoice.status == InvoiceStatus.DRAFT) { "Only draft invoices can be issued" }
         require(invoice.lines.isNotEmpty()) { "Add at least one line before issuing" }
+        val issuer = userRepository.findByEmail(email)
+            .orElseThrow { EntityNotFoundException("User not found") }
 
         val seq = (invoiceRepository.findMaxSequenceForBusiness(businessId) ?: 0) + 1
         invoice.sequenceNo = seq
@@ -146,6 +148,7 @@ class InvoiceService(
                 number = saved.number!!,
                 total = total(saved),
                 currency = saved.currency,
+                issuedByUserId = issuer.id!!,
             ),
         )
         return toResponse(saved, businessDto(businessId))

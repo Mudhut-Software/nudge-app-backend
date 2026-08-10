@@ -10,4 +10,5 @@ data class InvoiceIssuedEvent(
     val number: String,
     val total: BigDecimal,
     val currency: String,
+    val issuedByUserId: Long,
 )
