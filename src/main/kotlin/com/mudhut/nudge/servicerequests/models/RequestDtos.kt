@@ -33,6 +33,9 @@ data class UpdateRequestPayload(
     @field:Size(max = 2000)
     val note: String? = null,
 
+    @field:Size(max = 2000)
+    val accessDirections: String? = null,
+
     @field:Size(max = 8, message = "At most 8 attachments")
     @field:Valid
     val attachments: List<AttachmentInput>? = null,
@@ -98,6 +101,7 @@ data class ServiceRequestResponse(
     val serviceLatitude: Double?,
     val serviceLongitude: Double?,
     val note: String?,
+    val accessDirections: String?,
     val attachments: List<AttachmentResponse>,
     val submittedAt: LocalDateTime?,
     val respondedAt: LocalDateTime?,

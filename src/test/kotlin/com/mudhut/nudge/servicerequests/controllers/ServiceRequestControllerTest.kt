@@ -77,6 +77,7 @@ class ServiceRequestControllerTest {
             serviceLocation = null,
             serviceLatitude = null, serviceLongitude = null,
             note = null,
+            accessDirections = null,
             attachments = emptyList<AttachmentResponse>(),
             submittedAt = null,
             respondedAt = null,

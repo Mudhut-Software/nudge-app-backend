@@ -54,6 +54,15 @@ class ServiceRequest(
     @Column(name = "note", columnDefinition = "TEXT")
     var note: String? = null,
 
+    /**
+     * How to reach the customer once on site ("keys are with the gateman at the
+     * side gate"). Distinct from [note], which is the customer's message to the
+     * provider: the wizard collects them on different steps and they previously
+     * shared this column, so answering the second question destroyed the first.
+     */
+    @Column(name = "access_directions", columnDefinition = "TEXT")
+    var accessDirections: String? = null,
+
     @Column(name = "submitted_at")
     var submittedAt: LocalDateTime? = null,
 

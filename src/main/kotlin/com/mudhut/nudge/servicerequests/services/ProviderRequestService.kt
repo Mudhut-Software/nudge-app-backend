@@ -161,6 +161,7 @@ class ProviderRequestService(
             serviceLatitude = request.serviceLatitude,
             serviceLongitude = request.serviceLongitude,
             note = request.note,
+            accessDirections = request.accessDirections,
             attachments = request.attachments
                 .sortedBy { it.position }
                 .map {

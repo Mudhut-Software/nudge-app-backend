@@ -180,6 +180,57 @@ class ServiceRequestServiceTest {
     }
 
     @Test
+    fun `patch keeps accessDirections and note independent across successive patches`() {
+        // Regression: the wizard collects access directions on step 3 and the note
+        // to the provider on step 4. Both used to read and write `note`, so
+        // answering step 4 destroyed the step-3 directions and the provider
+        // arrived at a locked gate.
+        val alice = user()
+        val req = ServiceRequest(
+            id = 1L,
+            customer = alice,
+            business = business(),
+            status = ServiceRequestStatus.DRAFT,
+        )
+
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        // Step 3 writes the directions.
+        sut.patch(
+            email = alice.email!!,
+            id = 1L,
+            payload = UpdateRequestPayload(
+                accessDirections = "The keys will be with the gateman at the side gate",
+            ),
+        )
+
+        // Step 4 writes the note and must not disturb the directions.
+        val afterNote = sut.patch(
+            email = alice.email!!,
+            id = 1L,
+            payload = UpdateRequestPayload(note = "Please call when you arrive"),
+        )
+
+        assertEquals("Please call when you arrive", afterNote.note)
+        assertEquals(
+            "The keys will be with the gateman at the side gate",
+            afterNote.accessDirections,
+        )
+
+        // And editing the directions afterwards must not disturb the note.
+        val afterDirections = sut.patch(
+            email = alice.email!!,
+            id = 1L,
+            payload = UpdateRequestPayload(accessDirections = "Gate code is 4417"),
+        )
+
+        assertEquals("Gate code is 4417", afterDirections.accessDirections)
+        assertEquals("Please call when you arrive", afterDirections.note)
+    }
+
+    @Test
     fun `patch rejects on non-DRAFT request`() {
         val alice = user()
         val req = ServiceRequest(
