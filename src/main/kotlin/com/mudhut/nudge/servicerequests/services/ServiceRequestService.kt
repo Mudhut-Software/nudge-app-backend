@@ -85,6 +85,7 @@ class ServiceRequestService(
         payload.serviceLatitude?.let { request.serviceLatitude = it }
         payload.serviceLongitude?.let { request.serviceLongitude = it }
         payload.note?.let { request.note = it }
+        payload.accessDirections?.let { request.accessDirections = it }
         payload.attachments?.let { incoming ->
             require(incoming.size <= MAX_ATTACHMENTS) { "At most $MAX_ATTACHMENTS attachments" }
             request.attachments.clear()
@@ -418,6 +419,7 @@ class ServiceRequestService(
             serviceLatitude = request.serviceLatitude,
             serviceLongitude = request.serviceLongitude,
             note = request.note,
+            accessDirections = request.accessDirections,
             attachments = request.attachments
                 .sortedBy { it.position }
                 .map {
