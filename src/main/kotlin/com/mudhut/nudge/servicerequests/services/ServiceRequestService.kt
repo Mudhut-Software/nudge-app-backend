@@ -174,8 +174,7 @@ class ServiceRequestService(
 
         request.status = ServiceRequestStatus.CANCELLED
         request.cancelledAt = LocalDateTime.now()
-        @Suppress("UNUSED_PARAMETER", "UNUSED_VARIABLE")
-        val ignoredReason = reason
+        request.cancellationReason = reason?.trim()?.takeIf { it.isNotEmpty() }
         val saved = repo.save(request)
         request.business?.id?.let { popularityPublisher.recomputeAndPublish(it) }
         return toResponse(saved)
@@ -420,6 +419,8 @@ class ServiceRequestService(
             serviceLongitude = request.serviceLongitude,
             note = request.note,
             accessDirections = request.accessDirections,
+            declineReason = request.declineReason,
+            cancellationReason = request.cancellationReason,
             attachments = request.attachments
                 .sortedBy { it.position }
                 .map {

@@ -94,8 +94,7 @@ class ProviderRequestService(
 
         request.status = ServiceRequestStatus.DECLINED
         request.respondedAt = LocalDateTime.now()
-        @Suppress("UNUSED_PARAMETER", "UNUSED_VARIABLE")
-        val ignoredReason = reason
+        request.declineReason = reason?.trim()?.takeIf { it.isNotEmpty() }
         return toResponse(repo.save(request))
     }
 
@@ -162,6 +161,8 @@ class ProviderRequestService(
             serviceLongitude = request.serviceLongitude,
             note = request.note,
             accessDirections = request.accessDirections,
+            declineReason = request.declineReason,
+            cancellationReason = request.cancellationReason,
             attachments = request.attachments
                 .sortedBy { it.position }
                 .map {

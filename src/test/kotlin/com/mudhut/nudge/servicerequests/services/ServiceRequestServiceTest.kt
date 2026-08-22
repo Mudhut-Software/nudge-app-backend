@@ -180,6 +180,31 @@ class ServiceRequestServiceTest {
     }
 
     @Test
+    fun `cancel persists the reason and normalises blank to null`() {
+        // The endpoint accepted `reason` and discarded it via an `ignoredReason`
+        // local, so a cancellation was never explained to the provider.
+        val alice = user()
+        val req = ServiceRequest(
+            id = 1L,
+            customer = alice,
+            business = business(),
+            status = ServiceRequestStatus.CONFIRMED,
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val withReason = sut.cancel(alice.email!!, 1L, "  Something came up  ")
+        assertEquals("Something came up", withReason.cancellationReason)
+
+        // Blank input must normalise to null so "no reason" has one representation.
+        req.status = ServiceRequestStatus.CONFIRMED
+        req.cancellationReason = null
+        val blank = sut.cancel(alice.email!!, 1L, "   ")
+        assertNull(blank.cancellationReason)
+    }
+
+    @Test
     fun `patch keeps accessDirections and note independent across successive patches`() {
         // Regression: the wizard collects access directions on step 3 and the note
         // to the provider on step 4. Both used to read and write `note`, so
