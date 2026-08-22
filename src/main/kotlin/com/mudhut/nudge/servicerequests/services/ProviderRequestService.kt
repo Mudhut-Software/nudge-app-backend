@@ -21,6 +21,7 @@ class ProviderRequestService(
     private val repo: ServiceRequestRepository,
     private val businessService: BusinessService,
     private val popularityPublisher: RequestPopularityPublisher,
+    private val eventPublisher: ServiceRequestEventPublisher,
 ) {
 
     fun list(
@@ -77,12 +78,14 @@ class ProviderRequestService(
     fun accept(email: String, businessId: Long, requestId: Long): ServiceRequestResponse {
         businessService.requireRole(businessId, email, BusinessRole.MANAGER)
         val request = requireSameBusiness(businessId, requestId)
-        ServiceRequestStateMachine.requireTransition(request.status, ServiceRequestStatus.CONFIRMED)
+        val from = request.status
+        ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CONFIRMED)
 
         request.status = ServiceRequestStatus.CONFIRMED
         request.respondedAt = LocalDateTime.now()
         val saved = repo.save(request)
         popularityPublisher.recomputeAndPublish(businessId)
+        eventPublisher.statusChanged(saved, from = from)
         return toResponse(saved)
     }
 
@@ -90,20 +93,23 @@ class ProviderRequestService(
     fun decline(email: String, businessId: Long, requestId: Long, reason: String?): ServiceRequestResponse {
         businessService.requireRole(businessId, email, BusinessRole.MANAGER)
         val request = requireSameBusiness(businessId, requestId)
-        ServiceRequestStateMachine.requireTransition(request.status, ServiceRequestStatus.DECLINED)
+        val from = request.status
+        ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.DECLINED)
 
         request.status = ServiceRequestStatus.DECLINED
         request.respondedAt = LocalDateTime.now()
-        @Suppress("UNUSED_PARAMETER", "UNUSED_VARIABLE")
-        val ignoredReason = reason
-        return toResponse(repo.save(request))
+        request.declineReason = reason?.trim()?.takeIf { it.isNotEmpty() }
+        val saved = repo.save(request)
+        eventPublisher.statusChanged(saved, from = from, reason = saved.declineReason)
+        return toResponse(saved)
     }
 
     @Transactional
     fun complete(email: String, businessId: Long, requestId: Long): ServiceRequestResponse {
         businessService.requireRole(businessId, email, BusinessRole.MANAGER)
         val request = requireSameBusiness(businessId, requestId)
-        ServiceRequestStateMachine.requireTransition(request.status, ServiceRequestStatus.COMPLETED)
+        val from = request.status
+        ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.COMPLETED)
 
         val date = request.requestedDate
             ?: error("Request has no requestedDate; cannot complete")
@@ -115,6 +121,7 @@ class ProviderRequestService(
         request.completedAt = LocalDateTime.now()
         val saved = repo.save(request)
         popularityPublisher.recomputeAndPublish(businessId)
+        eventPublisher.statusChanged(saved, from = from)
         return toResponse(saved)
     }
 
@@ -162,6 +169,8 @@ class ProviderRequestService(
             serviceLongitude = request.serviceLongitude,
             note = request.note,
             accessDirections = request.accessDirections,
+            declineReason = request.declineReason,
+            cancellationReason = request.cancellationReason,
             attachments = request.attachments
                 .sortedBy { it.position }
                 .map {

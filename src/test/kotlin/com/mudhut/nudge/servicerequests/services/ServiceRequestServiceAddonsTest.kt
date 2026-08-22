@@ -37,7 +37,7 @@ class ServiceRequestServiceAddonsTest {
     private val businessRepo: BusinessRepository = mock()
     private val serviceRepo: ServiceOfferedRepository = mock()
     private val addonRepo: ServiceAddonRepository = mock()
-    private val publisher: org.springframework.context.ApplicationEventPublisher = mock()
+    private val publisher: ServiceRequestEventPublisher = mock()
     private val popularityPublisher: RequestPopularityPublisher = mock()
 
     private lateinit var sut: ServiceRequestService

@@ -64,7 +64,7 @@ class ProviderServiceRequestControllerTest {
         ),
         requestedDate = null,
         serviceLocation = null, serviceLatitude = null, serviceLongitude = null,
-        note = null, accessDirections = null, attachments = emptyList<AttachmentResponse>(),
+        note = null, accessDirections = null, declineReason = null, cancellationReason = null, attachments = emptyList<AttachmentResponse>(),
         submittedAt = LocalDateTime.now(),
         respondedAt = null, completedAt = null, cancelledAt = null, viewedAt = null,
         createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now(),

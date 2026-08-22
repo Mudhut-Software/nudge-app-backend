@@ -63,6 +63,17 @@ class ServiceRequest(
     @Column(name = "access_directions", columnDefinition = "TEXT")
     var accessDirections: String? = null,
 
+    /**
+     * Why the provider declined. Set only on the PENDING -> DECLINED transition.
+     * Optional: a provider may decline without explaining.
+     */
+    @Column(name = "decline_reason", columnDefinition = "TEXT")
+    var declineReason: String? = null,
+
+    /** Why the customer cancelled. Set only on a transition to CANCELLED. Optional. */
+    @Column(name = "cancellation_reason", columnDefinition = "TEXT")
+    var cancellationReason: String? = null,
+
     @Column(name = "submitted_at")
     var submittedAt: LocalDateTime? = null,
 

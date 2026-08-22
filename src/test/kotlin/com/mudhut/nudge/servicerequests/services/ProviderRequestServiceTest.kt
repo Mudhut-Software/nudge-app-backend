@@ -13,6 +13,7 @@ import com.mudhut.nudge.users.entities.UserRole
 import com.mudhut.nudge.utils.exceptions.InvalidStateTransitionException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
@@ -31,7 +32,8 @@ class ProviderRequestServiceTest {
     private val repo: ServiceRequestRepository = mock()
     private val businessService: BusinessService = mock()
     private val popularityPublisher: RequestPopularityPublisher = mock()
-    private val sut = ProviderRequestService(repo, businessService, popularityPublisher)
+    private val eventPublisher: ServiceRequestEventPublisher = mock()
+    private val sut = ProviderRequestService(repo, businessService, popularityPublisher, eventPublisher)
 
     private fun biz(id: Long = 10L) = Business(
         id = id,
@@ -123,6 +125,19 @@ class ProviderRequestServiceTest {
         val response = sut.decline("owner@example.com", 10L, 100L, reason = "Too busy")
         assertEquals(ServiceRequestStatus.DECLINED, response.status)
         assertNotNull(response.respondedAt)
+        // This test always passed a reason; nothing asserted it survived, and it
+        // did not — `decline` discarded it via an `ignoredReason` local.
+        assertEquals("Too busy", response.declineReason)
+    }
+
+    @Test
+    fun `decline normalises a blank reason to null`() {
+        val r = req(ServiceRequestStatus.PENDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.decline("owner@example.com", 10L, 100L, reason = "   ")
+        assertNull(response.declineReason)
     }
 
     @Test

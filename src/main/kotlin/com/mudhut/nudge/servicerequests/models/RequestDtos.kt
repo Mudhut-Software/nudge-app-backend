@@ -102,6 +102,8 @@ data class ServiceRequestResponse(
     val serviceLongitude: Double?,
     val note: String?,
     val accessDirections: String?,
+    val declineReason: String?,
+    val cancellationReason: String?,
     val attachments: List<AttachmentResponse>,
     val submittedAt: LocalDateTime?,
     val respondedAt: LocalDateTime?,
