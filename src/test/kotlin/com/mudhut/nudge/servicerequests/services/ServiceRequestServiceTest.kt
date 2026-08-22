@@ -6,7 +6,6 @@ import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
-import com.mudhut.nudge.servicerequests.events.ServiceRequestSubmittedEvent
 import com.mudhut.nudge.servicerequests.models.AttachmentInput
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
 import com.mudhut.nudge.servicerequests.models.RequestItemInput
@@ -31,9 +30,9 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
-import org.springframework.context.ApplicationEventPublisher
 import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.Optional
@@ -45,7 +44,7 @@ class ServiceRequestServiceTest {
     private val businessRepo: BusinessRepository = mock()
     private val serviceRepo: ServiceOfferedRepository = mock()
     private val addonRepo: com.mudhut.nudge.servicesoffered.repositories.ServiceAddonRepository = mock()
-    private val publisher: ApplicationEventPublisher = mock()
+    private val publisher: ServiceRequestEventPublisher = mock()
     private val popularityPublisher: RequestPopularityPublisher = mock()
 
     private val sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo, publisher, popularityPublisher)
@@ -371,13 +370,34 @@ class ServiceRequestServiceTest {
 
         sut.submit(alice.email!!, 1L)
 
-        val captor = argumentCaptor<ServiceRequestSubmittedEvent>()
-        verify(publisher).publishEvent(captor.capture())
-        assertEquals(1L, captor.firstValue.requestId)
-        assertEquals(10L, captor.firstValue.businessId)
-        assertEquals("SparkleClean", captor.firstValue.businessName)
-        assertEquals("owner@sparkle.com", captor.firstValue.ownerEmail)
-        assertEquals("Alice", captor.firstValue.customerName)
+        // The event's own construction is covered by ServiceRequestEventPublisherTest.
+        // What matters here is that submit delegates with the pre-mutation `from`.
+        val captor = argumentCaptor<ServiceRequest>()
+        val fromCaptor = argumentCaptor<ServiceRequestStatus>()
+        verify(publisher).statusChanged(captor.capture(), fromCaptor.capture(), eq(null))
+        assertEquals(1L, captor.firstValue.id)
+        assertEquals(ServiceRequestStatus.DRAFT, fromCaptor.firstValue)
+        assertEquals(ServiceRequestStatus.PENDING, captor.firstValue.status)
+    }
+
+    @Test
+    fun `withdraw publishes nothing`() {
+        // PENDING -> DRAFT is the customer un-submitting. The provider does not
+        // need an email saying "never mind".
+        val alice = user()
+        val req = ServiceRequest(
+            id = 1L,
+            customer = alice,
+            business = business(),
+            status = ServiceRequestStatus.PENDING,
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        sut.withdraw(alice.email!!, 1L)
+
+        verify(publisher, never()).statusChanged(any(), any(), any())
     }
 
     @Test

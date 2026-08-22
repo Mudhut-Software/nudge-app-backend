@@ -1,27 +1,17 @@
 package com.mudhut.nudge.notifications
 
-import com.mudhut.nudge.servicerequests.events.ServiceRequestSubmittedEvent
+import com.mudhut.nudge.servicerequests.events.ServiceRequestStatusChangedEvent
 import org.slf4j.LoggerFactory
 import org.springframework.modulith.events.ApplicationModuleListener
 import org.springframework.stereotype.Component
 
-/**
- * Reacts to request submissions by notifying the provider (business owner).
- *
- * PoC: logs the notification. The delivery in [onRequestSubmitted] can later be
- * swapped to the `email` module without touching the `servicerequests` module —
- * the two communicate only through [ServiceRequestSubmittedEvent].
- */
+/** Interim: real email dispatch lands in Task 3 of the Phase 5C plan. */
 @Component
 class RequestNotificationListener {
     private val log = LoggerFactory.getLogger(RequestNotificationListener::class.java)
 
-    fun notificationMessage(event: ServiceRequestSubmittedEvent): String =
-        "Notify provider ${event.ownerEmail}: new request #${event.requestId} " +
-            "for '${event.businessName}' from ${event.customerName}"
-
     @ApplicationModuleListener
-    fun onRequestSubmitted(event: ServiceRequestSubmittedEvent) {
-        log.info(notificationMessage(event))
+    fun onStatusChanged(event: ServiceRequestStatusChangedEvent) {
+        log.info("Request {} moved {} -> {}", event.requestId, event.from, event.to)
     }
 }

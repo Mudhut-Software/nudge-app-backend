@@ -4,7 +4,6 @@ import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestAttachment
-import com.mudhut.nudge.servicerequests.events.ServiceRequestSubmittedEvent
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemAddon
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
@@ -27,7 +26,6 @@ import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import com.mudhut.nudge.utils.exceptions.ServiceAddonNotFoundException
 import jakarta.persistence.EntityNotFoundException
 import jakarta.transaction.Transactional
-import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
@@ -42,7 +40,7 @@ class ServiceRequestService(
     private val businessRepo: BusinessRepository,
     private val serviceRepo: ServiceOfferedRepository,
     private val addonRepo: ServiceAddonRepository,
-    private val events: ApplicationEventPublisher,
+    private val eventPublisher: ServiceRequestEventPublisher,
     private val popularityPublisher: RequestPopularityPublisher,
 ) {
 
@@ -142,16 +140,7 @@ class ServiceRequestService(
         request.status = ServiceRequestStatus.PENDING
         request.submittedAt = LocalDateTime.now()
         val saved = repo.save(request)
-        events.publishEvent(
-            ServiceRequestSubmittedEvent(
-                requestId = saved.id!!,
-                businessId = saved.business!!.id!!,
-                businessName = saved.business!!.name!!,
-                ownerEmail = saved.business!!.owner!!.email!!,
-                customerName = saved.customer!!.username!!,
-                submittedAt = saved.submittedAt!!,
-            )
-        )
+        eventPublisher.statusChanged(saved, from = ServiceRequestStatus.DRAFT)
         return toResponse(saved)
     }
 
@@ -170,13 +159,16 @@ class ServiceRequestService(
     fun cancel(email: String, id: Long, reason: String?): ServiceRequestResponse {
         val customer = requireUser(email)
         val request = requireOwned(id, customer)
-        ServiceRequestStateMachine.requireTransition(request.status, ServiceRequestStatus.CANCELLED)
+        // Captured before the write — the event reports where the request came from.
+        val from = request.status
+        ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CANCELLED)
 
         request.status = ServiceRequestStatus.CANCELLED
         request.cancelledAt = LocalDateTime.now()
         request.cancellationReason = reason?.trim()?.takeIf { it.isNotEmpty() }
         val saved = repo.save(request)
         request.business?.id?.let { popularityPublisher.recomputeAndPublish(it) }
+        eventPublisher.statusChanged(saved, from = from, reason = saved.cancellationReason)
         return toResponse(saved)
     }
 

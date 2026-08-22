@@ -32,7 +32,8 @@ class ProviderRequestServiceTest {
     private val repo: ServiceRequestRepository = mock()
     private val businessService: BusinessService = mock()
     private val popularityPublisher: RequestPopularityPublisher = mock()
-    private val sut = ProviderRequestService(repo, businessService, popularityPublisher)
+    private val eventPublisher: ServiceRequestEventPublisher = mock()
+    private val sut = ProviderRequestService(repo, businessService, popularityPublisher, eventPublisher)
 
     private fun biz(id: Long = 10L) = Business(
         id = id,
