@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title th:text="${subject}">Your request was updated</title>
+</head>
+<!--
+  Frame copied from invoice.html so branding matches, with one deliberate
+  difference: the brand bar and buttons use the current accent (#0F766E).
+  The three older templates still carry the retired red #E42313 — tracked as a
+  follow-up rather than swept here, since restyling them is not this feature.
+-->
+<body style="margin:0;padding:0;background-color:#F4F4F5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#09090B;">
+  <!-- Preheader (hidden preview text) -->
+  <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">
+    <span th:text="${body}">Your request status changed.</span>
+  </div>
+
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background-color:#F4F4F5;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:560px;background-color:#FFFFFF;border:1px solid #E4E4E7;border-radius:12px;overflow:hidden;">
+          <!-- Brand bar -->
+          <tr>
+            <td style="background-color:#0F766E;padding:20px 28px;">
+              <span style="color:#FFFFFF;font-size:18px;font-weight:700;letter-spacing:-0.01em;">Nudge</span>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:32px 28px 8px 28px;">
+              <h1 style="margin:0 0 16px 0;font-size:22px;line-height:1.3;font-weight:600;color:#09090B;"
+                  th:text="${heading}">
+                Your request was updated
+              </h1>
+
+              <p style="margin:0 0 16px 0;font-size:15px;line-height:1.6;color:#3F3F46;"
+                 th:text="${body}">
+                Something changed on your request.
+              </p>
+
+              <!-- When, if the request has a date -->
+              <p th:if="${requestedDate}"
+                 style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:#3F3F46;">
+                <strong style="color:#09090B;">When:</strong>
+                <span th:text="${requestedDate}">Mon 1 Sep at 09:00</span>
+              </p>
+
+              <!-- The decline or cancellation reason, when one was given -->
+              <table th:if="${reason}" role="presentation" cellpadding="0" cellspacing="0" width="100%"
+                     style="margin:0 0 20px 0;">
+                <tr>
+                  <td style="padding:12px 16px;background-color:#F4F4F5;border-left:3px solid #E4E4E7;border-radius:4px;">
+                    <span style="font-size:14px;line-height:1.6;color:#3F3F46;"
+                          th:text="${reason}">Reason</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Primary action -->
+          <tr>
+            <td style="padding:8px 28px 28px 28px;">
+              <a th:href="${ctaUrl}"
+                 style="display:inline-block;padding:12px 28px;background-color:#0F766E;color:#FFFFFF;font-size:14px;font-weight:600;text-decoration:none;border-radius:8px;">
+                <span th:text="${ctaLabel}">Open Nudge</span>
+              </a>
+
+              <p th:if="${secondaryUrl}" style="margin:16px 0 0 0;font-size:14px;line-height:1.6;">
+                <a th:href="${secondaryUrl}" style="color:#0F766E;text-decoration:underline;">
+                  <span th:text="${secondaryLabel}">More options</span>
+                </a>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:20px 28px;border-top:1px solid #E4E4E7;">
+              <p style="margin:0;font-size:12px;line-height:1.5;color:#71717A;">
+                You're receiving this because of activity on your Nudge request.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
