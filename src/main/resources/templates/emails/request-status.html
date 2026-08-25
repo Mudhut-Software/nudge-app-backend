@@ -5,12 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title th:text="${subject}">Your request was updated</title>
 </head>
-<!--
+<!--/*
+  Parser-level comment: Thymeleaf strips this at parse time. A plain <!-- --> is
+  passed straight through into the sent email, which shipped this note to every
+  recipient until RequestStatusTemplateTest rendered the template and caught it.
+
   Frame copied from invoice.html so branding matches, with one deliberate
   difference: the brand bar and buttons use the current accent (#0F766E).
   The three older templates still carry the retired red #E42313 — tracked as a
   follow-up rather than swept here, since restyling them is not this feature.
--->
+*/-->
 <body style="margin:0;padding:0;background-color:#F4F4F5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#09090B;">
   <!-- Preheader (hidden preview text) -->
   <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">
