@@ -73,7 +73,7 @@ class InvoiceEmailListenerTest {
 
         val html = htmlCaptor.firstValue
         assertTrue(html.contains("Nudge"), "html should brand 'Nudge'")
-        assertTrue(html.contains("#E42313"), "html should use brand red")
+        assertTrue(html.contains("#0F766E"), "html should use the brand accent")
         assertTrue(html.contains("INV-0009"), "html should include the invoice number")
         assertTrue(html.contains("125.50"), "html should include the total")
         assertTrue(html.contains("USD"), "html should include the currency")

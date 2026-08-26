@@ -101,7 +101,8 @@ class RequestStatusTemplateTest {
     fun `uses the current brand colour, not the retired red`() {
         val html = render()
         assertTrue(html.contains("#0F766E"))
-        // The other three templates still carry #E42313; this one must not.
+        // Asserted on the rendered output here; EmailTemplateBrandTest makes the
+        // same guarantee across all four templates at the source level.
         assertFalse(html.contains("E42313"))
     }
 }

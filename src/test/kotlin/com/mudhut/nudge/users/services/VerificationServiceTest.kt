@@ -73,7 +73,7 @@ class VerificationServiceTest {
         // HTML body carries the brand + the rendered values from the Context.
         val html = htmlCaptor.firstValue
         assertTrue(html.contains("Nudge"), "html should brand 'Nudge'")
-        assertTrue(html.contains("#E42313"), "html should use brand red")
+        assertTrue(html.contains("#0F766E"), "html should use the brand accent")
         assertTrue(html.contains("alice"), "html should greet the user by username")
         assertTrue(
             html.contains("https://nudge.example.com/verify-email?token=raw-token-uuid"),
