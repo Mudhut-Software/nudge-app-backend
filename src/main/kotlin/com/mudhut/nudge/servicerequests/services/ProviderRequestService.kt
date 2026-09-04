@@ -4,6 +4,7 @@ import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestItemResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
@@ -85,7 +86,7 @@ class ProviderRequestService(
         request.respondedAt = LocalDateTime.now()
         val saved = repo.save(request)
         popularityPublisher.recomputeAndPublish(businessId)
-        eventPublisher.statusChanged(saved, from = from)
+        eventPublisher.statusChanged(saved, from = from, actor = RequestActor.PROVIDER)
         return toResponse(saved)
     }
 
@@ -100,7 +101,12 @@ class ProviderRequestService(
         request.respondedAt = LocalDateTime.now()
         request.declineReason = reason?.trim()?.takeIf { it.isNotEmpty() }
         val saved = repo.save(request)
-        eventPublisher.statusChanged(saved, from = from, reason = saved.declineReason)
+        eventPublisher.statusChanged(
+            saved,
+            from = from,
+            actor = RequestActor.PROVIDER,
+            reason = saved.declineReason,
+        )
         return toResponse(saved)
     }
 
@@ -121,7 +127,7 @@ class ProviderRequestService(
         request.completedAt = LocalDateTime.now()
         val saved = repo.save(request)
         popularityPublisher.recomputeAndPublish(businessId)
-        eventPublisher.statusChanged(saved, from = from)
+        eventPublisher.statusChanged(saved, from = from, actor = RequestActor.PROVIDER)
         return toResponse(saved)
     }
 

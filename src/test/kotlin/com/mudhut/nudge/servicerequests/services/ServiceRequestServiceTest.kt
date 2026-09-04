@@ -6,6 +6,7 @@ import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentInput
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
 import com.mudhut.nudge.servicerequests.models.RequestItemInput
@@ -374,7 +375,13 @@ class ServiceRequestServiceTest {
         // What matters here is that submit delegates with the pre-mutation `from`.
         val captor = argumentCaptor<ServiceRequest>()
         val fromCaptor = argumentCaptor<ServiceRequestStatus>()
-        verify(publisher).statusChanged(captor.capture(), fromCaptor.capture(), eq(null))
+        verify(publisher).statusChanged(
+            captor.capture(),
+            fromCaptor.capture(),
+            eq(RequestActor.CUSTOMER),
+            eq(null),
+            eq(null),
+        )
         assertEquals(1L, captor.firstValue.id)
         assertEquals(ServiceRequestStatus.DRAFT, fromCaptor.firstValue)
         assertEquals(ServiceRequestStatus.PENDING, captor.firstValue.status)
@@ -397,7 +404,7 @@ class ServiceRequestServiceTest {
 
         sut.withdraw(alice.email!!, 1L)
 
-        verify(publisher, never()).statusChanged(any(), any(), any())
+        verify(publisher, never()).statusChanged(any(), any(), any(), any(), any())
     }
 
     @Test

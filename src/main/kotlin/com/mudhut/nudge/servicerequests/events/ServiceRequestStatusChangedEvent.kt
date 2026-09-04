@@ -30,4 +30,8 @@ data class ServiceRequestStatusChangedEvent(
     val requestedDate: LocalDateTime?,
     val reason: String?,
     val changedAt: LocalDateTime,
+    /** Which side caused the change. Decides the recipient alongside [to]. */
+    val actor: RequestActor,
+    /** Set only for REVISION_REQUESTED — the time being offered. */
+    val proposedDate: LocalDateTime? = null,
 )

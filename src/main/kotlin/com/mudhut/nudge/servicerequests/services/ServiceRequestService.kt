@@ -7,6 +7,7 @@ import com.mudhut.nudge.servicerequests.entities.ServiceRequestAttachment
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemAddon
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentResponse
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
 import com.mudhut.nudge.servicerequests.models.RequestItemInput
@@ -140,7 +141,11 @@ class ServiceRequestService(
         request.status = ServiceRequestStatus.PENDING
         request.submittedAt = LocalDateTime.now()
         val saved = repo.save(request)
-        eventPublisher.statusChanged(saved, from = ServiceRequestStatus.DRAFT)
+        eventPublisher.statusChanged(
+            saved,
+            from = ServiceRequestStatus.DRAFT,
+            actor = RequestActor.CUSTOMER,
+        )
         return toResponse(saved)
     }
 
@@ -168,7 +173,12 @@ class ServiceRequestService(
         request.cancellationReason = reason?.trim()?.takeIf { it.isNotEmpty() }
         val saved = repo.save(request)
         request.business?.id?.let { popularityPublisher.recomputeAndPublish(it) }
-        eventPublisher.statusChanged(saved, from = from, reason = saved.cancellationReason)
+        eventPublisher.statusChanged(
+            saved,
+            from = from,
+            actor = RequestActor.CUSTOMER,
+            reason = saved.cancellationReason,
+        )
         return toResponse(saved)
     }
 
