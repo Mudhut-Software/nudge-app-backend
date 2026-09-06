@@ -85,6 +85,14 @@ data class CancelRequestPayload(
     val reason: String? = null,
 )
 
+data class ProposeTimePayload(
+    @field:NotNull
+    val proposedDate: LocalDateTime? = null,
+
+    @field:Size(max = 500)
+    val note: String? = null,
+)
+
 @JsonInclude(JsonInclude.Include.ALWAYS)
 data class ServiceRequestResponse(
     val id: Long,
