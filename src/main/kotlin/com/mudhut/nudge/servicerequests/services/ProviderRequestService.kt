@@ -8,6 +8,7 @@ import com.mudhut.nudge.servicerequests.entities.ServiceRequestProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentResponse
+import com.mudhut.nudge.servicerequests.models.ProposalResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestItemResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
@@ -243,6 +244,9 @@ class ProviderRequestService(
             accessDirections = request.accessDirections,
             declineReason = request.declineReason,
             cancellationReason = request.cancellationReason,
+            proposal = request.id
+                ?.let { proposalRepo.findFirstByRequestIdOrderByProposedAtDesc(it) }
+                ?.let { ProposalResponse.from(it) },
             attachments = request.attachments
                 .sortedBy { it.position }
                 .map {

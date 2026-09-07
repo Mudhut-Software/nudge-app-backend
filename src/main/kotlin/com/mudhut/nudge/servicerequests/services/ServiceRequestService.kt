@@ -2,6 +2,7 @@ package com.mudhut.nudge.servicerequests.services
 
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
+import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestAttachment
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
@@ -10,11 +11,13 @@ import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentResponse
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
+import com.mudhut.nudge.servicerequests.models.ProposalResponse
 import com.mudhut.nudge.servicerequests.models.RequestItemInput
 import com.mudhut.nudge.servicerequests.models.ServiceRequestItemAddonResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestItemResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
 import com.mudhut.nudge.servicerequests.models.UpdateRequestPayload
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
@@ -24,6 +27,7 @@ import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.repositories.UserRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
+import com.mudhut.nudge.utils.exceptions.InvalidStateTransitionException
 import com.mudhut.nudge.utils.exceptions.ServiceAddonNotFoundException
 import jakarta.persistence.EntityNotFoundException
 import jakarta.transaction.Transactional
@@ -43,6 +47,7 @@ class ServiceRequestService(
     private val addonRepo: ServiceAddonRepository,
     private val eventPublisher: ServiceRequestEventPublisher,
     private val popularityPublisher: RequestPopularityPublisher,
+    private val proposalRepo: ServiceRequestProposalRepository,
 ) {
 
     @Transactional
@@ -168,6 +173,10 @@ class ServiceRequestService(
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CANCELLED)
 
+        // Cancelling out of REVISION_REQUESTED must not leave an OUTSTANDING row
+        // on a terminal request.
+        settleOutstanding(id)
+
         request.status = ServiceRequestStatus.CANCELLED
         request.cancelledAt = LocalDateTime.now()
         request.cancellationReason = reason?.trim()?.takeIf { it.isNotEmpty() }
@@ -180,6 +189,89 @@ class ServiceRequestService(
             reason = saved.cancellationReason,
         )
         return toResponse(saved)
+    }
+
+    /**
+     * Take the provider's offered time: the booking moves to that date and confirms.
+     *
+     * Terminal by design — the customer cannot counter-propose, so there is no
+     * path back to REVISION_REQUESTED from here.
+     */
+    @Transactional
+    fun acceptProposal(email: String, id: Long): ServiceRequestResponse {
+        val customer = requireUser(email)
+        val request = requireOwned(id, customer)
+        val proposal = requireOutstanding(id, request.status, ServiceRequestStatus.CONFIRMED)
+
+        val proposedDate = requireNotNull(proposal.proposedDate) {
+            "Proposal ${proposal.id} has no proposedDate"
+        }
+        // There is no expiry job, so this is the only place a stale offer is
+        // caught. Checked before any write so a lapsed offer stays answerable
+        // by reject.
+        require(proposedDate.isAfter(LocalDateTime.now())) { "That time has already passed." }
+
+        val from = request.status
+        ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CONFIRMED)
+
+        proposal.outcome = ProposalOutcome.ACCEPTED
+        proposal.respondedAt = LocalDateTime.now()
+        proposalRepo.save(proposal)
+
+        request.status = ServiceRequestStatus.CONFIRMED
+        request.requestedDate = proposedDate
+        request.respondedAt = LocalDateTime.now()
+        val saved = repo.save(request)
+        request.business?.id?.let { popularityPublisher.recomputeAndPublish(it) }
+        eventPublisher.statusChanged(saved, from = from, actor = RequestActor.CUSTOMER)
+        return toResponse(saved)
+    }
+
+    /** Turn the offered time down, which declines the request. */
+    @Transactional
+    fun rejectProposal(email: String, id: Long, reason: String?): ServiceRequestResponse {
+        val customer = requireUser(email)
+        val request = requireOwned(id, customer)
+        val proposal = requireOutstanding(id, request.status, ServiceRequestStatus.DECLINED)
+
+        val from = request.status
+        ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.DECLINED)
+
+        val trimmed = reason?.trim()?.takeIf { it.isNotEmpty() }
+        proposal.outcome = ProposalOutcome.REJECTED
+        proposal.responseNote = trimmed
+        proposal.respondedAt = LocalDateTime.now()
+        proposalRepo.save(proposal)
+
+        // declineReason is left null on purpose: it reads as the provider's words
+        // everywhere it is displayed.
+        request.status = ServiceRequestStatus.DECLINED
+        request.respondedAt = LocalDateTime.now()
+        val saved = repo.save(request)
+        eventPublisher.statusChanged(saved, from = from, actor = RequestActor.CUSTOMER, reason = trimmed)
+        return toResponse(saved)
+    }
+
+    /**
+     * The proposal being answered, or a state error naming the transition the
+     * caller was actually attempting — a reject with nothing outstanding must not
+     * report a failed move to CONFIRMED.
+     */
+    private fun requireOutstanding(
+        requestId: Long,
+        current: ServiceRequestStatus,
+        target: ServiceRequestStatus,
+    ) = proposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
+        ?: throw InvalidStateTransitionException(current, target)
+
+    /** Close any proposal still awaiting a reply, for paths that end the request another way. */
+    private fun settleOutstanding(requestId: Long) {
+        proposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
+            ?.let {
+                it.outcome = ProposalOutcome.REJECTED
+                it.respondedAt = LocalDateTime.now()
+                proposalRepo.save(it)
+            }
     }
 
     @Transactional
@@ -423,6 +515,9 @@ class ServiceRequestService(
             accessDirections = request.accessDirections,
             declineReason = request.declineReason,
             cancellationReason = request.cancellationReason,
+            proposal = request.id
+                ?.let { proposalRepo.findFirstByRequestIdOrderByProposedAtDesc(it) }
+                ?.let { ProposalResponse.from(it) },
             attachments = request.attachments
                 .sortedBy { it.position }
                 .map {

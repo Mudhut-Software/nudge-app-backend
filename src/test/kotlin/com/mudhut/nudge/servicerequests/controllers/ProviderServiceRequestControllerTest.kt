@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
+import org.springframework.http.MediaType
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
 import org.springframework.security.test.context.support.WithMockUser
@@ -64,7 +65,8 @@ class ProviderServiceRequestControllerTest {
         ),
         requestedDate = null,
         serviceLocation = null, serviceLatitude = null, serviceLongitude = null,
-        note = null, accessDirections = null, declineReason = null, cancellationReason = null, attachments = emptyList<AttachmentResponse>(),
+        note = null, accessDirections = null, declineReason = null, cancellationReason = null,
+        proposal = null, attachments = emptyList<AttachmentResponse>(),
         submittedAt = LocalDateTime.now(),
         respondedAt = null, completedAt = null, cancelledAt = null, viewedAt = null,
         createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now(),
@@ -150,6 +152,47 @@ class ProviderServiceRequestControllerTest {
         mockMvc.perform(post("/api/v1/businesses/10/requests/1/decline"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.status").value("DECLINED"))
+    }
+
+    @Test
+    @WithMockUser(username = "owner@example.com")
+    fun `POST propose returns REVISION_REQUESTED`() {
+        whenever(
+            service.propose(
+                eq("owner@example.com"),
+                eq(10L),
+                eq(1L),
+                eq(LocalDateTime.of(2027, 1, 15, 10, 0)),
+                eq("Fully booked Monday"),
+            )
+        ).thenReturn(sample(status = ServiceRequestStatus.REVISION_REQUESTED))
+
+        mockMvc.perform(
+            post("/api/v1/businesses/10/requests/1/propose")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"proposedDate":"2027-01-15T10:00:00","note":"Fully booked Monday"}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("REVISION_REQUESTED"))
+    }
+
+    @Test
+    @WithMockUser(username = "owner@example.com")
+    fun `POST propose rejects a missing proposedDate`() {
+        mockMvc.perform(
+            post("/api/v1/businesses/10/requests/1/propose")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"note":"no date"}""")
+        ).andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `POST propose returns 401 anonymous`() {
+        mockMvc.perform(
+            post("/api/v1/businesses/10/requests/1/propose")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"proposedDate":"2027-01-15T10:00:00"}""")
+        ).andExpect(status().isUnauthorized)
     }
 
     @Test
