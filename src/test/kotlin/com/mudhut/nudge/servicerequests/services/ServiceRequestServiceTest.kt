@@ -4,12 +4,16 @@ import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessCategory
 import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
+import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentInput
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
 import com.mudhut.nudge.servicerequests.models.RequestItemInput
 import com.mudhut.nudge.servicerequests.models.UpdateRequestPayload
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
@@ -46,8 +50,11 @@ class ServiceRequestServiceTest {
     private val addonRepo: com.mudhut.nudge.servicesoffered.repositories.ServiceAddonRepository = mock()
     private val publisher: ServiceRequestEventPublisher = mock()
     private val popularityPublisher: RequestPopularityPublisher = mock()
+    private val proposalRepo: ServiceRequestProposalRepository = mock()
 
-    private val sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo, publisher, popularityPublisher)
+    private val sut = ServiceRequestService(
+        repo, userRepo, businessRepo, serviceRepo, addonRepo, publisher, popularityPublisher, proposalRepo,
+    )
 
     // --- fixtures ---
 
@@ -374,7 +381,13 @@ class ServiceRequestServiceTest {
         // What matters here is that submit delegates with the pre-mutation `from`.
         val captor = argumentCaptor<ServiceRequest>()
         val fromCaptor = argumentCaptor<ServiceRequestStatus>()
-        verify(publisher).statusChanged(captor.capture(), fromCaptor.capture(), eq(null))
+        verify(publisher).statusChanged(
+            captor.capture(),
+            fromCaptor.capture(),
+            eq(RequestActor.CUSTOMER),
+            eq(null),
+            eq(null),
+        )
         assertEquals(1L, captor.firstValue.id)
         assertEquals(ServiceRequestStatus.DRAFT, fromCaptor.firstValue)
         assertEquals(ServiceRequestStatus.PENDING, captor.firstValue.status)
@@ -397,7 +410,7 @@ class ServiceRequestServiceTest {
 
         sut.withdraw(alice.email!!, 1L)
 
-        verify(publisher, never()).statusChanged(any(), any(), any())
+        verify(publisher, never()).statusChanged(any(), any(), any(), any(), any())
     }
 
     @Test
@@ -691,5 +704,225 @@ class ServiceRequestServiceTest {
         assertThrows(BusinessNotFoundException::class.java) {
             sut.duplicate(alice.email!!, 1L)
         }
+    }
+
+    // --- responding to a proposal ---
+
+    private fun proposedRequest(alice: User) = ServiceRequest(
+        id = 1L,
+        customer = alice,
+        business = business(),
+        status = ServiceRequestStatus.REVISION_REQUESTED,
+        requestedDate = LocalDateTime.now().plusDays(1),
+    )
+
+    @Test
+    fun `accepting a proposal moves the requested date and confirms`() {
+        val alice = user()
+        val request = proposedRequest(alice)
+        val proposedFor = LocalDateTime.now().plusDays(3)
+        val proposal = ServiceRequestProposal(
+            id = 99L, proposedDate = proposedFor, outcome = ProposalOutcome.OUTSTANDING,
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(proposal)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        val response = sut.acceptProposal(alice.email!!, 1L)
+
+        assertEquals(ServiceRequestStatus.CONFIRMED, response.status)
+        // The whole point of accepting: the booking moves to the offered time.
+        assertEquals(proposedFor, request.requestedDate)
+        assertEquals(ProposalOutcome.ACCEPTED, proposal.outcome)
+        assertNotNull(proposal.respondedAt)
+        verify(popularityPublisher).recomputeAndPublish(10L)
+    }
+
+    @Test
+    fun `accepting notifies the provider, not the customer who clicked`() {
+        val alice = user()
+        val request = proposedRequest(alice)
+        val proposal = ServiceRequestProposal(
+            id = 99L, proposedDate = LocalDateTime.now().plusDays(3), outcome = ProposalOutcome.OUTSTANDING,
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(proposal)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        sut.acceptProposal(alice.email!!, 1L)
+
+        // CUSTOMER is what routes the email to the owner; PROVIDER here would mail
+        // the person who just clicked the button.
+        verify(publisher).statusChanged(
+            any(),
+            eq(ServiceRequestStatus.REVISION_REQUESTED),
+            eq(RequestActor.CUSTOMER),
+            eq(null),
+            eq(null),
+        )
+    }
+
+    @Test
+    fun `accepting a proposal whose time has passed is refused`() {
+        val alice = user()
+        val request = proposedRequest(alice)
+        val stale = ServiceRequestProposal(
+            id = 99L,
+            proposedDate = LocalDateTime.now().minusHours(2),
+            outcome = ProposalOutcome.OUTSTANDING,
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(stale)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.acceptProposal(alice.email!!, 1L)
+        }
+        assertEquals(ServiceRequestStatus.REVISION_REQUESTED, request.status)
+        assertEquals(ProposalOutcome.OUTSTANDING, stale.outcome)
+        verify(proposalRepo, never()).save(any<ServiceRequestProposal>())
+    }
+
+    @Test
+    fun `rejecting a proposal declines the request and records the reason`() {
+        val alice = user()
+        val request = proposedRequest(alice)
+        val proposal = ServiceRequestProposal(
+            id = 99L,
+            proposedDate = LocalDateTime.now().plusDays(3),
+            outcome = ProposalOutcome.OUTSTANDING,
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(proposal)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        val response = sut.rejectProposal(alice.email!!, 1L, "  Too late in the week  ")
+
+        assertEquals(ServiceRequestStatus.DECLINED, response.status)
+        assertEquals(ProposalOutcome.REJECTED, proposal.outcome)
+        assertEquals("Too late in the week", proposal.responseNote)
+        // The provider's field must stay clear — it means "their reason" in the UI.
+        assertNull(request.declineReason)
+    }
+
+    @Test
+    fun `rejecting a proposal whose time has passed is allowed`() {
+        val alice = user()
+        val request = proposedRequest(alice)
+        val stale = ServiceRequestProposal(
+            id = 99L,
+            proposedDate = LocalDateTime.now().minusHours(2),
+            outcome = ProposalOutcome.OUTSTANDING,
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(stale)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        // A stale offer must stay refusable — otherwise the only way out of
+        // REVISION_REQUESTED once the date passes is cancelling.
+        val response = sut.rejectProposal(alice.email!!, 1L, null)
+
+        assertEquals(ServiceRequestStatus.DECLINED, response.status)
+        assertNull(stale.responseNote)
+    }
+
+    @Test
+    fun `responding when nothing is outstanding is refused`() {
+        val alice = user()
+        val request = proposedRequest(alice)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(null)
+
+        assertThrows(InvalidStateTransitionException::class.java) {
+            sut.acceptProposal(alice.email!!, 1L)
+        }
+        assertEquals(ServiceRequestStatus.REVISION_REQUESTED, request.status)
+    }
+
+    @Test
+    fun `responding to another customer's request throws 404`() {
+        val alice = user(id = 1L, email = "alice@example.com")
+        val bob = user(id = 2L, email = "bob@example.com")
+        val request = proposedRequest(bob)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+
+        assertThrows(BusinessNotFoundException::class.java) {
+            sut.acceptProposal(alice.email!!, 1L)
+        }
+        verify(proposalRepo, never()).save(any<ServiceRequestProposal>())
+    }
+
+    @Test
+    fun `cancelling a proposed request settles the outstanding proposal`() {
+        val alice = user()
+        val request = proposedRequest(alice)
+        val outstanding = ServiceRequestProposal(id = 99L, outcome = ProposalOutcome.OUTSTANDING)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(outstanding)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        val response = sut.cancel(alice.email!!, 1L, "Changed my mind")
+
+        assertEquals(ServiceRequestStatus.CANCELLED, response.status)
+        assertEquals(ProposalOutcome.REJECTED, outstanding.outcome)
+        assertNotNull(outstanding.respondedAt)
+    }
+
+    @Test
+    fun `the response carries the latest proposal whatever its outcome`() {
+        val alice = user()
+        val request = proposedRequest(alice)
+        val proposedFor = LocalDateTime.now().plusDays(3)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(proposalRepo.findFirstByRequestIdOrderByProposedAtDesc(1L)).thenReturn(
+            ServiceRequestProposal(
+                id = 99L,
+                proposedDate = proposedFor,
+                note = "Fully booked Monday",
+                proposedAt = LocalDateTime.now().minusHours(1),
+                outcome = ProposalOutcome.OUTSTANDING,
+            )
+        )
+
+        val response = sut.get(alice.email!!, 1L)
+
+        assertEquals(proposedFor, response.proposal?.proposedDate)
+        assertEquals("Fully booked Monday", response.proposal?.note)
+        assertEquals(ProposalOutcome.OUTSTANDING, response.proposal?.outcome)
+    }
+
+    @Test
+    fun `the response omits a proposal when none was ever made`() {
+        val alice = user()
+        val request = ServiceRequest(
+            id = 1L, customer = alice, business = business(), status = ServiceRequestStatus.PENDING,
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(proposalRepo.findFirstByRequestIdOrderByProposedAtDesc(1L)).thenReturn(null)
+
+        assertNull(sut.get(alice.email!!, 1L).proposal)
     }
 }

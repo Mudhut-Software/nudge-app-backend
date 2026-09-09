@@ -1,6 +1,8 @@
 package com.mudhut.nudge.servicerequests.models
 
 import com.fasterxml.jackson.annotation.JsonInclude
+import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import jakarta.validation.Valid
 import jakarta.validation.constraints.NotNull
@@ -85,6 +87,14 @@ data class CancelRequestPayload(
     val reason: String? = null,
 )
 
+data class ProposeTimePayload(
+    @field:NotNull
+    val proposedDate: LocalDateTime? = null,
+
+    @field:Size(max = 500)
+    val note: String? = null,
+)
+
 @JsonInclude(JsonInclude.Include.ALWAYS)
 data class ServiceRequestResponse(
     val id: Long,
@@ -104,6 +114,8 @@ data class ServiceRequestResponse(
     val accessDirections: String?,
     val declineReason: String?,
     val cancellationReason: String?,
+    /** The most recent proposal, or null when none was ever made. */
+    val proposal: ProposalResponse?,
     val attachments: List<AttachmentResponse>,
     val submittedAt: LocalDateTime?,
     val respondedAt: LocalDateTime?,
@@ -113,6 +125,30 @@ data class ServiceRequestResponse(
     val createdAt: LocalDateTime,
     val updatedAt: LocalDateTime,
 )
+
+data class ProposalResponse(
+    val proposedDate: LocalDateTime,
+    val note: String?,
+    val outcome: ProposalOutcome,
+    val proposedAt: LocalDateTime,
+    val responseNote: String?,
+) {
+    companion object {
+        /**
+         * Lives here rather than in each service: `ServiceRequestService` and
+         * `ProviderRequestService` keep separate `toResponse` implementations, and
+         * this is the one part of the payload that must read identically on both
+         * sides of the wire.
+         */
+        fun from(proposal: ServiceRequestProposal) = ProposalResponse(
+            proposedDate = requireNotNull(proposal.proposedDate),
+            note = proposal.note,
+            outcome = proposal.outcome,
+            proposedAt = requireNotNull(proposal.proposedAt),
+            responseNote = proposal.responseNote,
+        )
+    }
+}
 
 data class ServiceRequestItemResponse(
     val serviceId: Long?,

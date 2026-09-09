@@ -2,6 +2,7 @@ package com.mudhut.nudge.servicerequests.controllers
 
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.models.CancelRequestPayload
+import com.mudhut.nudge.servicerequests.models.ProposeTimePayload
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
 import com.mudhut.nudge.servicerequests.models.UnreadCountResponse
 import com.mudhut.nudge.servicerequests.services.ProviderRequestService
@@ -71,6 +72,20 @@ class ProviderServiceRequestController(
         @Valid @RequestBody(required = false) payload: CancelRequestPayload?,
         authentication: Authentication,
     ): ServiceRequestResponse = service.decline(authentication.name, businessId, id, payload?.reason)
+
+    @PostMapping("/{id}/propose")
+    fun propose(
+        @PathVariable businessId: Long,
+        @PathVariable id: Long,
+        @Valid @RequestBody payload: ProposeTimePayload,
+        authentication: Authentication,
+    ): ServiceRequestResponse = service.propose(
+        authentication.name,
+        businessId,
+        id,
+        requireNotNull(payload.proposedDate) { "proposedDate is required" },
+        payload.note,
+    )
 
     @PostMapping("/{id}/complete")
     fun complete(

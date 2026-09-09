@@ -2,6 +2,7 @@ package com.mudhut.nudge.notifications
 
 import com.mudhut.nudge.email.IEmailService
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.events.ServiceRequestStatusChangedEvent
 import com.mudhut.nudge.users.repositories.UserRepository
 import org.slf4j.LoggerFactory
@@ -20,10 +21,11 @@ import java.util.Locale
  * `users.repositories`, and sends via [IEmailService] — the same shape as
  * [InvoiceEmailListener].
  *
- * The recipient follows the target status. The provider owns "a request
- * arrived" and "the customer cancelled"; the customer owns the three possible
- * responses to their own request. A transition with no audience — withdrawing
- * back to DRAFT — sends nothing.
+ * The recipient follows the target status **and who caused it**. Status alone
+ * is not enough: CONFIRMED and DECLINED are each reachable from both sides —
+ * a provider accepting, or a customer accepting a proposed time — and the mail
+ * goes to whoever did not act. A transition with no audience, withdrawing back
+ * to DRAFT, sends nothing.
  */
 @Component
 class RequestNotificationListener(
@@ -52,7 +54,10 @@ class RequestNotificationListener(
     @ApplicationModuleListener
     fun onStatusChanged(event: ServiceRequestStatusChangedEvent) {
         val mail = buildMail(event) ?: return
-        val formattedDate = event.requestedDate?.format(dateFormat)
+        // For a proposal the offered time is the one that matters. The template's
+        // single date slot carries whichever is relevant, so no new variable and
+        // no second template are needed.
+        val formattedDate = (event.proposedDate ?: event.requestedDate)?.format(dateFormat)
 
         val context = Context().apply {
             setVariable("subject", mail.subject)
@@ -71,46 +76,94 @@ class RequestNotificationListener(
         emailService.sendHtmlEmail(mail.to, mail.subject, html, plainText(mail, event, formattedDate))
     }
 
-    /** Null means "no one needs an email for this transition". */
+    private fun ownerMail(
+        event: ServiceRequestStatusChangedEvent,
+        subject: String,
+        heading: String,
+        body: String,
+    ) = Mail(
+        to = event.ownerEmail,
+        subject = subject,
+        heading = heading,
+        body = body,
+        ctaLabel = "Open requests",
+        ctaPath = "/calendar?tab=requests",
+    )
+
+    /**
+     * Null means "no one needs an email for this transition".
+     *
+     * Deliberately exhaustive with no `else`. The previous version ended in
+     * `else -> null`, which meant adding a status compiled cleanly and silently
+     * emailed nobody — the failure mode you find in production, not in CI.
+     * Listing every value makes the next new status (NO_SHOW) a build error.
+     *
+     * Routing is on `(to, actor)`, not `to` alone: CONFIRMED and DECLINED are
+     * each reachable by both sides, and the email goes to whoever did *not* act.
+     */
     private fun buildMail(event: ServiceRequestStatusChangedEvent): Mail? {
         val service = event.serviceTitle ?: "your request"
         return when (event.to) {
-            ServiceRequestStatus.PENDING -> Mail(
-                to = event.ownerEmail,
+            ServiceRequestStatus.PENDING -> ownerMail(
+                event,
                 subject = "New request from ${event.customerName}",
                 heading = "You have a new request",
                 body = "${event.customerName} requested $service. " +
                     "Accept it to confirm the booking.",
-                ctaLabel = "Open requests",
-                ctaPath = "/calendar?tab=requests",
             )
 
-            ServiceRequestStatus.CANCELLED -> Mail(
-                to = event.ownerEmail,
+            ServiceRequestStatus.CANCELLED -> ownerMail(
+                event,
                 subject = "${event.customerName} cancelled",
                 heading = "A booking was cancelled",
                 body = "${event.customerName} cancelled $service. That time is free again.",
-                ctaLabel = "Open requests",
-                ctaPath = "/calendar?tab=requests",
             )
 
-            ServiceRequestStatus.CONFIRMED -> customerMail(
+            ServiceRequestStatus.REVISION_REQUESTED -> customerMail(
                 event,
-                subject = "${event.businessName} confirmed your request",
-                heading = "You're booked",
-                body = "${event.businessName} confirmed $service.",
+                subject = "${event.businessName} suggested another time",
+                heading = "A different time was suggested",
+                body = "${event.businessName} can't make the time you asked for and " +
+                    "suggested another one for $service. Accept it to confirm the " +
+                    "booking, or let them know it doesn't work.",
             )
 
-            // A decline is otherwise a dead end — "no" with nowhere to go — so this
-            // one points back to Explore.
-            ServiceRequestStatus.DECLINED -> customerMail(
-                event,
-                subject = "${event.businessName} couldn't take this one",
-                heading = "This request wasn't accepted",
-                body = "${event.businessName} couldn't take $service.",
-                secondaryLabel = "Find another provider",
-                secondaryPath = "/explore",
-            )
+            ServiceRequestStatus.CONFIRMED -> when (event.actor) {
+                RequestActor.PROVIDER -> customerMail(
+                    event,
+                    subject = "${event.businessName} confirmed your request",
+                    heading = "You're booked",
+                    body = "${event.businessName} confirmed $service.",
+                )
+                // The customer took the suggested time — news for the provider.
+                RequestActor.CUSTOMER -> ownerMail(
+                    event,
+                    subject = "${event.customerName} accepted your new time",
+                    heading = "That time works",
+                    body = "${event.customerName} accepted the time you suggested for " +
+                        "$service. The booking is confirmed.",
+                )
+            }
+
+            ServiceRequestStatus.DECLINED -> when (event.actor) {
+                // A decline is otherwise a dead end — "no" with nowhere to go — so
+                // this one points back to Explore.
+                RequestActor.PROVIDER -> customerMail(
+                    event,
+                    subject = "${event.businessName} couldn't take this one",
+                    heading = "This request wasn't accepted",
+                    body = "${event.businessName} couldn't take $service.",
+                    secondaryLabel = "Find another provider",
+                    secondaryPath = "/explore",
+                )
+                RequestActor.CUSTOMER -> ownerMail(
+                    event,
+                    subject = "${event.customerName} turned down the new time",
+                    heading = "That time didn't work",
+                    body = "${event.customerName} turned down the time you suggested " +
+                        "for $service.",
+                )
+            }
 
             // Completion is the exact moment review eligibility opens, and nothing
             // in the product asked before now.
@@ -123,7 +176,7 @@ class RequestNotificationListener(
             )
 
             // Withdrawing (PENDING -> DRAFT) has no audience.
-            else -> null
+            ServiceRequestStatus.DRAFT -> null
         }
     }
 

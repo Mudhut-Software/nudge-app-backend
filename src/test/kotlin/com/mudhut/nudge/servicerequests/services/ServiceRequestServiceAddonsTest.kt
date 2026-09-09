@@ -9,6 +9,7 @@ import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
 import com.mudhut.nudge.servicerequests.models.RequestItemInput
 import com.mudhut.nudge.servicerequests.models.ServiceRequestItemAddonInput
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
@@ -39,6 +40,7 @@ class ServiceRequestServiceAddonsTest {
     private val addonRepo: ServiceAddonRepository = mock()
     private val publisher: ServiceRequestEventPublisher = mock()
     private val popularityPublisher: RequestPopularityPublisher = mock()
+    private val proposalRepo: ServiceRequestProposalRepository = mock()
 
     private lateinit var sut: ServiceRequestService
 
@@ -78,7 +80,9 @@ class ServiceRequestServiceAddonsTest {
 
     @BeforeEach
     fun setUp() {
-        sut = ServiceRequestService(repo, userRepo, businessRepo, serviceRepo, addonRepo, publisher, popularityPublisher)
+        sut = ServiceRequestService(
+            repo, userRepo, businessRepo, serviceRepo, addonRepo, publisher, popularityPublisher, proposalRepo,
+        )
         whenever(userRepo.findByEmail("c@e")).thenReturn(Optional.of(customer))
         whenever(businessRepo.findById(2L)).thenReturn(Optional.of(biz))
         whenever(serviceRepo.findAllById(listOf(10L))).thenReturn(listOf(service))

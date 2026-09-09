@@ -3,6 +3,7 @@ package com.mudhut.nudge.servicerequests.services
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.events.ServiceRequestStatusChangedEvent
 import com.mudhut.nudge.users.entities.User
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -32,7 +33,7 @@ class ServiceRequestEventPublisherTest {
 
     @Test
     fun `publishes with from and to`() {
-        sut.statusChanged(request(), from = ServiceRequestStatus.DRAFT)
+        sut.statusChanged(request(), from = ServiceRequestStatus.DRAFT, actor = RequestActor.PROVIDER)
 
         val captor = argumentCaptor<ServiceRequestStatusChangedEvent>()
         verify(events).publishEvent(captor.capture())
@@ -47,6 +48,7 @@ class ServiceRequestEventPublisherTest {
         sut.statusChanged(
             request(status = ServiceRequestStatus.DECLINED),
             from = ServiceRequestStatus.PENDING,
+            actor = RequestActor.PROVIDER,
             reason = "Fully booked",
         )
 
@@ -62,6 +64,7 @@ class ServiceRequestEventPublisherTest {
         sut.statusChanged(
             request(owner = User(id = 9L, email = null)),
             from = ServiceRequestStatus.DRAFT,
+            actor = RequestActor.PROVIDER,
         )
 
         verify(events, never()).publishEvent(any<ServiceRequestStatusChangedEvent>())
@@ -69,7 +72,11 @@ class ServiceRequestEventPublisherTest {
 
     @Test
     fun `skips publishing when the customer cannot be resolved`() {
-        sut.statusChanged(request(customer = null), from = ServiceRequestStatus.DRAFT)
+        sut.statusChanged(
+            request(customer = null),
+            from = ServiceRequestStatus.DRAFT,
+            actor = RequestActor.PROVIDER,
+        )
 
         verify(events, never()).publishEvent(any<ServiceRequestStatusChangedEvent>())
     }
@@ -79,6 +86,7 @@ class ServiceRequestEventPublisherTest {
         sut.statusChanged(
             request(customer = User(id = 5L, email = "c@x.com", username = null)),
             from = ServiceRequestStatus.DRAFT,
+            actor = RequestActor.PROVIDER,
         )
 
         val captor = argumentCaptor<ServiceRequestStatusChangedEvent>()

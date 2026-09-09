@@ -5,8 +5,11 @@ import com.mudhut.nudge.businesses.entities.BusinessCategory
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.services.BusinessService
+import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.UserRole
@@ -17,8 +20,10 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.data.domain.PageImpl
@@ -33,7 +38,8 @@ class ProviderRequestServiceTest {
     private val businessService: BusinessService = mock()
     private val popularityPublisher: RequestPopularityPublisher = mock()
     private val eventPublisher: ServiceRequestEventPublisher = mock()
-    private val sut = ProviderRequestService(repo, businessService, popularityPublisher, eventPublisher)
+    private val proposalRepo: ServiceRequestProposalRepository = mock()
+    private val sut = ProviderRequestService(repo, businessService, popularityPublisher, eventPublisher, proposalRepo)
 
     private fun biz(id: Long = 10L) = Business(
         id = id,
@@ -202,5 +208,103 @@ class ProviderRequestServiceTest {
         assertThrows(IllegalArgumentException::class.java) {
             sut.calendar("owner@example.com", 10L, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 6, 1))
         }
+    }
+
+    @Test
+    fun `propose stores the offered time and moves the request to REVISION_REQUESTED`() {
+        val r = req(ServiceRequestStatus.PENDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(null)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        val offered = LocalDateTime.now().plusDays(3)
+        val response = sut.propose("owner@example.com", 10L, 100L, offered, "  Fully booked Monday  ")
+
+        assertEquals(ServiceRequestStatus.REVISION_REQUESTED, response.status)
+        assertNotNull(response.respondedAt)
+        val saved = argumentCaptor<ServiceRequestProposal>()
+        verify(proposalRepo).save(saved.capture())
+        assertEquals(offered, saved.firstValue.proposedDate)
+        assertEquals("Fully booked Monday", saved.firstValue.note)
+        assertEquals(ProposalOutcome.OUTSTANDING, saved.firstValue.outcome)
+        assertNotNull(saved.firstValue.proposedAt)
+    }
+
+    @Test
+    fun `propose normalises a blank note to null`() {
+        val r = req(ServiceRequestStatus.PENDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(null)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        sut.propose("owner@example.com", 10L, 100L, LocalDateTime.now().plusDays(3), "   ")
+
+        val saved = argumentCaptor<ServiceRequestProposal>()
+        verify(proposalRepo).save(saved.capture())
+        assertNull(saved.firstValue.note)
+    }
+
+    @Test
+    fun `propose refuses a time in the past`() {
+        val r = req(ServiceRequestStatus.PENDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.propose("owner@example.com", 10L, 100L, LocalDateTime.now().minusHours(1), null)
+        }
+        verify(proposalRepo, never()).save(any<ServiceRequestProposal>())
+        assertEquals(ServiceRequestStatus.PENDING, r.status)
+    }
+
+    @Test
+    fun `propose refuses when a proposal is already outstanding`() {
+        val r = req(ServiceRequestStatus.PENDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        // Stubbed so that deleting the guard lets propose run to completion and
+        // this fails with "nothing was thrown" — without it the mutant dies on an
+        // incidental NPE from the unstubbed save, which proves nothing.
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(ServiceRequestProposal(id = 99L))
+
+        assertThrows(IllegalStateException::class.java) {
+            sut.propose("owner@example.com", 10L, 100L, LocalDateTime.now().plusDays(3), null)
+        }
+        verify(proposalRepo, never()).save(any<ServiceRequestProposal>())
+        assertEquals(ServiceRequestStatus.PENDING, r.status)
+    }
+
+    @Test
+    fun `propose refuses a request that is not pending`() {
+        val r = req(ServiceRequestStatus.CONFIRMED)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(null)
+
+        assertThrows(InvalidStateTransitionException::class.java) {
+            sut.propose("owner@example.com", 10L, 100L, LocalDateTime.now().plusDays(3), null)
+        }
+        verify(proposalRepo, never()).save(any<ServiceRequestProposal>())
+    }
+
+    @Test
+    fun `declining a proposed request settles the outstanding proposal`() {
+        val r = req(ServiceRequestStatus.REVISION_REQUESTED)
+        val outstanding = ServiceRequestProposal(id = 99L, outcome = ProposalOutcome.OUTSTANDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(outstanding)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        val response = sut.decline("owner@example.com", 10L, 100L, "Sorry, fully booked")
+
+        assertEquals(ServiceRequestStatus.DECLINED, response.status)
+        assertEquals(ProposalOutcome.REJECTED, outstanding.outcome)
+        assertNotNull(outstanding.respondedAt)
     }
 }

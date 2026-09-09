@@ -2,11 +2,16 @@ package com.mudhut.nudge.servicerequests.services
 
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
+import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentResponse
+import com.mudhut.nudge.servicerequests.models.ProposalResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestItemResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import jakarta.transaction.Transactional
@@ -22,6 +27,7 @@ class ProviderRequestService(
     private val businessService: BusinessService,
     private val popularityPublisher: RequestPopularityPublisher,
     private val eventPublisher: ServiceRequestEventPublisher,
+    private val proposalRepo: ServiceRequestProposalRepository,
 ) {
 
     fun list(
@@ -85,7 +91,60 @@ class ProviderRequestService(
         request.respondedAt = LocalDateTime.now()
         val saved = repo.save(request)
         popularityPublisher.recomputeAndPublish(businessId)
-        eventPublisher.statusChanged(saved, from = from)
+        eventPublisher.statusChanged(saved, from = from, actor = RequestActor.PROVIDER)
+        return toResponse(saved)
+    }
+
+    /**
+     * Offer the customer another date and time instead of accepting or declining.
+     *
+     * `PENDING` only — rescheduling a confirmed booking is a different feature
+     * and the state machine forbids it.
+     */
+    @Transactional
+    fun propose(
+        email: String,
+        businessId: Long,
+        requestId: Long,
+        proposedDate: LocalDateTime,
+        note: String?,
+    ): ServiceRequestResponse {
+        businessService.requireRole(businessId, email, BusinessRole.MANAGER)
+        val request = requireSameBusiness(businessId, requestId)
+
+        require(proposedDate.isAfter(LocalDateTime.now())) {
+            "The proposed time must be in the future"
+        }
+        // Unreachable through the UI; makes a double submit safe rather than
+        // silently leaving two outstanding offers on one request.
+        check(proposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING) == null) {
+            "This request already has a proposal awaiting a reply"
+        }
+
+        val from = request.status
+        ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.REVISION_REQUESTED)
+
+        val cleanNote = note?.trim()?.takeIf { it.isNotEmpty() }
+        proposalRepo.save(
+            ServiceRequestProposal(
+                request = request,
+                proposedDate = proposedDate,
+                note = cleanNote,
+                proposedAt = LocalDateTime.now(),
+                outcome = ProposalOutcome.OUTSTANDING,
+            )
+        )
+
+        request.status = ServiceRequestStatus.REVISION_REQUESTED
+        request.respondedAt = LocalDateTime.now()
+        val saved = repo.save(request)
+        eventPublisher.statusChanged(
+            saved,
+            from = from,
+            actor = RequestActor.PROVIDER,
+            reason = cleanNote,
+            proposedDate = proposedDate,
+        )
         return toResponse(saved)
     }
 
@@ -96,11 +155,25 @@ class ProviderRequestService(
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.DECLINED)
 
+        // Declining from REVISION_REQUESTED must not leave an OUTSTANDING row on
+        // a terminal request.
+        proposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
+            ?.let {
+                it.outcome = ProposalOutcome.REJECTED
+                it.respondedAt = LocalDateTime.now()
+                proposalRepo.save(it)
+            }
+
         request.status = ServiceRequestStatus.DECLINED
         request.respondedAt = LocalDateTime.now()
         request.declineReason = reason?.trim()?.takeIf { it.isNotEmpty() }
         val saved = repo.save(request)
-        eventPublisher.statusChanged(saved, from = from, reason = saved.declineReason)
+        eventPublisher.statusChanged(
+            saved,
+            from = from,
+            actor = RequestActor.PROVIDER,
+            reason = saved.declineReason,
+        )
         return toResponse(saved)
     }
 
@@ -121,7 +194,7 @@ class ProviderRequestService(
         request.completedAt = LocalDateTime.now()
         val saved = repo.save(request)
         popularityPublisher.recomputeAndPublish(businessId)
-        eventPublisher.statusChanged(saved, from = from)
+        eventPublisher.statusChanged(saved, from = from, actor = RequestActor.PROVIDER)
         return toResponse(saved)
     }
 
@@ -171,6 +244,9 @@ class ProviderRequestService(
             accessDirections = request.accessDirections,
             declineReason = request.declineReason,
             cancellationReason = request.cancellationReason,
+            proposal = request.id
+                ?.let { proposalRepo.findFirstByRequestIdOrderByProposedAtDesc(it) }
+                ?.let { ProposalResponse.from(it) },
             attachments = request.attachments
                 .sortedBy { it.position }
                 .map {

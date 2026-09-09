@@ -80,6 +80,19 @@ class ServiceRequestController(
         authentication: Authentication,
     ): ServiceRequestResponse = service.cancel(authentication.name, id, payload?.reason)
 
+    @PostMapping("/{id}/proposal/accept")
+    fun acceptProposal(
+        @PathVariable id: Long,
+        authentication: Authentication,
+    ): ServiceRequestResponse = service.acceptProposal(authentication.name, id)
+
+    @PostMapping("/{id}/proposal/reject")
+    fun rejectProposal(
+        @PathVariable id: Long,
+        @Valid @RequestBody(required = false) payload: CancelRequestPayload?,
+        authentication: Authentication,
+    ): ServiceRequestResponse = service.rejectProposal(authentication.name, id, payload?.reason)
+
     @DeleteMapping("/{id}")
     fun delete(
         @PathVariable id: Long,

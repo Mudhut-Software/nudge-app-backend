@@ -7,13 +7,17 @@ import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.CONFIRMED
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.DECLINED
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.DRAFT
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.PENDING
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.REVISION_REQUESTED
 import com.mudhut.nudge.utils.exceptions.InvalidStateTransitionException
 
 object ServiceRequestStateMachine {
 
     private val allowed: Map<ServiceRequestStatus, Set<ServiceRequestStatus>> = mapOf(
         DRAFT to setOf(PENDING),
-        PENDING to setOf(DRAFT, CONFIRMED, DECLINED, CANCELLED),
+        PENDING to setOf(DRAFT, CONFIRMED, DECLINED, CANCELLED, REVISION_REQUESTED),
+        // Accept confirms, reject declines, and either side may still cancel.
+        // Both outcomes are terminal: the customer cannot counter-propose.
+        REVISION_REQUESTED to setOf(CONFIRMED, DECLINED, CANCELLED),
         CONFIRMED to setOf(COMPLETED, CANCELLED),
         DECLINED to emptySet(),
         COMPLETED to emptySet(),

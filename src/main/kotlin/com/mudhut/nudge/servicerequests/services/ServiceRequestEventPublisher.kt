@@ -2,6 +2,7 @@ package com.mudhut.nudge.servicerequests.services
 
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.events.ServiceRequestStatusChangedEvent
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
@@ -29,7 +30,9 @@ class ServiceRequestEventPublisher(
     fun statusChanged(
         request: ServiceRequest,
         from: ServiceRequestStatus,
+        actor: RequestActor,
         reason: String? = null,
+        proposedDate: LocalDateTime? = null,
     ) {
         val requestId = request.id
         val business = request.business
@@ -63,6 +66,8 @@ class ServiceRequestEventPublisher(
                 requestedDate = request.requestedDate,
                 reason = reason,
                 changedAt = LocalDateTime.now(),
+                actor = actor,
+                proposedDate = proposedDate,
             )
         )
     }

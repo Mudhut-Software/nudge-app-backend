@@ -80,6 +80,7 @@ class ServiceRequestControllerTest {
             accessDirections = null,
             declineReason = null,
             cancellationReason = null,
+            proposal = null,
             attachments = emptyList<AttachmentResponse>(),
             submittedAt = null,
             respondedAt = null,
@@ -178,6 +179,48 @@ class ServiceRequestControllerTest {
         )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.status").value("CANCELLED"))
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `POST proposal accept is mapped and confirms`() {
+        whenever(service.acceptProposal(eq("alice@example.com"), eq(1L)))
+            .thenReturn(sampleResponse(status = ServiceRequestStatus.CONFIRMED))
+        mockMvc.perform(post("/api/v1/requests/1/proposal/accept"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("CONFIRMED"))
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `POST proposal reject passes the reason through`() {
+        whenever(service.rejectProposal(eq("alice@example.com"), eq(1L), eq("Too late in the week")))
+            .thenReturn(sampleResponse(status = ServiceRequestStatus.DECLINED))
+        mockMvc.perform(
+            post("/api/v1/requests/1/proposal/reject")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"reason":"Too late in the week"}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("DECLINED"))
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `POST proposal reject works with no body`() {
+        whenever(service.rejectProposal(eq("alice@example.com"), eq(1L), eq(null)))
+            .thenReturn(sampleResponse(status = ServiceRequestStatus.DECLINED))
+        mockMvc.perform(
+            post("/api/v1/requests/1/proposal/reject")
+                .contentType(MediaType.APPLICATION_JSON)
+        )
+            .andExpect(status().isOk)
+    }
+
+    @Test
+    fun `POST proposal accept returns 401 anonymous`() {
+        mockMvc.perform(post("/api/v1/requests/1/proposal/accept"))
+            .andExpect(status().isUnauthorized)
     }
 
     @Test
