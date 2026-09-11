@@ -170,6 +170,10 @@ class RequestNotificationListenerTest {
             Triple(ServiceRequestStatus.DECLINED, RequestActor.PROVIDER, customer),
             Triple(ServiceRequestStatus.DECLINED, RequestActor.CUSTOMER, owner),
             Triple(ServiceRequestStatus.COMPLETED, RequestActor.PROVIDER, customer),
+            // The customer answering the completion prompt: the provider is who
+            // learns something, not the person who just pressed the button.
+            Triple(ServiceRequestStatus.COMPLETED, RequestActor.CUSTOMER, owner),
+            Triple(ServiceRequestStatus.NO_SHOW, RequestActor.CUSTOMER, owner),
             Triple(ServiceRequestStatus.CANCELLED, RequestActor.CUSTOMER, owner),
             Triple(ServiceRequestStatus.DRAFT, RequestActor.CUSTOMER, null),
         )

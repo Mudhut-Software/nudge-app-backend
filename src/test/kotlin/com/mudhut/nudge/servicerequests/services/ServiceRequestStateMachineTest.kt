@@ -6,6 +6,7 @@ import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.COMPLETED
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.CONFIRMED
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.DECLINED
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.DRAFT
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.NO_SHOW
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.PENDING
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.REVISION_REQUESTED
 import com.mudhut.nudge.utils.exceptions.InvalidStateTransitionException
@@ -110,6 +111,31 @@ class ServiceRequestStateMachineTest {
     fun `REVISION_REQUESTED to COMPLETED is not allowed`() {
         assertThrows(InvalidStateTransitionException::class.java) {
             sm.requireTransition(REVISION_REQUESTED, COMPLETED)
+        }
+    }
+
+    @Test
+    fun `CONFIRMED can transition to NO_SHOW`() {
+        sm.requireTransition(CONFIRMED, NO_SHOW)
+    }
+
+    @Test
+    fun `NO_SHOW is terminal`() {
+        for (target in ServiceRequestStatus.entries) {
+            assertThrows(InvalidStateTransitionException::class.java) {
+                sm.requireTransition(NO_SHOW, target)
+            }
+        }
+    }
+
+    @Test
+    fun `NO_SHOW is unreachable from anything but CONFIRMED`() {
+        // A request that was never confirmed cannot be stood up. Asserted rather
+        // than merely omitted, so widening `allowed` later is a deliberate act.
+        for (from in ServiceRequestStatus.entries - CONFIRMED) {
+            assertThrows(InvalidStateTransitionException::class.java) {
+                sm.requireTransition(from, NO_SHOW)
+            }
         }
     }
 }
