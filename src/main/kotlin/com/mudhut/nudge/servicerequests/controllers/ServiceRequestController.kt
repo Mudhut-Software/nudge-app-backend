@@ -80,6 +80,18 @@ class ServiceRequestController(
         authentication: Authentication,
     ): ServiceRequestResponse = service.cancel(authentication.name, id, payload?.reason)
 
+    @PostMapping("/{id}/confirm-completion")
+    fun confirmCompletion(
+        @PathVariable id: Long,
+        authentication: Authentication,
+    ): ServiceRequestResponse = service.confirmCompletion(authentication.name, id)
+
+    @PostMapping("/{id}/no-show")
+    fun reportNoShow(
+        @PathVariable id: Long,
+        authentication: Authentication,
+    ): ServiceRequestResponse = service.reportNoShow(authentication.name, id)
+
     @PostMapping("/{id}/proposal/accept")
     fun acceptProposal(
         @PathVariable id: Long,

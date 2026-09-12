@@ -925,4 +925,125 @@ class ServiceRequestServiceTest {
 
         assertNull(sut.get(alice.email!!, 1L).proposal)
     }
+
+    // --- the completion prompt ---
+
+    private fun confirmedRequest(alice: User, requestedDate: LocalDateTime) = ServiceRequest(
+        id = 1L,
+        customer = alice,
+        business = business(),
+        status = ServiceRequestStatus.CONFIRMED,
+        requestedDate = requestedDate,
+    )
+
+    @Test
+    fun `confirming completion marks the request COMPLETED`() {
+        val alice = user()
+        val request = confirmedRequest(alice, LocalDateTime.now().minusHours(30))
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.confirmCompletion(alice.email!!, 1L)
+
+        assertEquals(ServiceRequestStatus.COMPLETED, response.status)
+        assertNotNull(response.completedAt)
+        verify(popularityPublisher).recomputeAndPublish(10L)
+    }
+
+    @Test
+    fun `confirming completion notifies the provider, not the customer who clicked`() {
+        val alice = user()
+        val request = confirmedRequest(alice, LocalDateTime.now().minusHours(30))
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        sut.confirmCompletion(alice.email!!, 1L)
+
+        // CUSTOMER is what routes the email to the owner; PROVIDER here would
+        // send a review invitation to the person who just pressed the button.
+        verify(publisher).statusChanged(
+            any(),
+            eq(ServiceRequestStatus.CONFIRMED),
+            eq(RequestActor.CUSTOMER),
+            eq(null),
+            eq(null),
+        )
+    }
+
+    @Test
+    fun `reporting a no-show marks the request NO_SHOW and drops it from popularity`() {
+        val alice = user()
+        val request = confirmedRequest(alice, LocalDateTime.now().minusHours(30))
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.reportNoShow(alice.email!!, 1L)
+
+        assertEquals(ServiceRequestStatus.NO_SHOW, response.status)
+        // POPULAR_STATUSES is [CONFIRMED, COMPLETED]; leaving CONFIRMED is what
+        // finally stops a booking that never happened inflating the ranking.
+        verify(popularityPublisher).recomputeAndPublish(10L)
+    }
+
+    @Test
+    fun `neither answer is accepted before the service time has passed`() {
+        val alice = user()
+        val request = confirmedRequest(alice, LocalDateTime.now().plusDays(1))
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.confirmCompletion(alice.email!!, 1L)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.reportNoShow(alice.email!!, 1L)
+        }
+        assertEquals(ServiceRequestStatus.CONFIRMED, request.status)
+    }
+
+    @Test
+    fun `neither answer is accepted inside the 24-hour grace window`() {
+        // The provider is the party who profits from marking a job complete, so
+        // the window exists to give their silence time to mean something.
+        val alice = user()
+        val request = confirmedRequest(alice, LocalDateTime.now().minusHours(23))
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.reportNoShow(alice.email!!, 1L)
+        }
+        assertEquals(ServiceRequestStatus.CONFIRMED, request.status)
+    }
+
+    @Test
+    fun `a request that is not CONFIRMED is a state error, not a timing error`() {
+        // Order matters: requireTransition runs first so a PENDING request answers
+        // 409, not the 400 the window guard would give.
+        val alice = user()
+        val request = confirmedRequest(alice, LocalDateTime.now().minusHours(30))
+            .apply { status = ServiceRequestStatus.PENDING }
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+
+        assertThrows(InvalidStateTransitionException::class.java) {
+            sut.reportNoShow(alice.email!!, 1L)
+        }
+    }
+
+    @Test
+    fun `answering another customer's request throws 404`() {
+        val alice = user(id = 1L, email = "alice@example.com")
+        val bob = user(id = 2L, email = "bob@example.com")
+        val request = confirmedRequest(bob, LocalDateTime.now().minusHours(30))
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+
+        assertThrows(BusinessNotFoundException::class.java) {
+            sut.confirmCompletion(alice.email!!, 1L)
+        }
+    }
 }

@@ -38,6 +38,14 @@ import java.time.LocalDateTime
 
 private const val MAX_ATTACHMENTS = 8
 
+/**
+ * How long after the service time the customer is asked whether it happened.
+ *
+ * The provider is the party who profits from marking a job complete, so their
+ * silence only means something once they have had a clear run at it.
+ */
+private const val COMPLETION_PROMPT_DELAY_HOURS = 24L
+
 @Service
 class ServiceRequestService(
     private val repo: ServiceRequestRepository,
@@ -189,6 +197,72 @@ class ServiceRequestService(
             reason = saved.cancellationReason,
         )
         return toResponse(saved)
+    }
+
+    /**
+     * The customer's answer to "did this happen?" — yes.
+     *
+     * Reachable only by the customer; the provider's own route to COMPLETED is
+     * `ProviderRequestService.complete`. This exists because the provider who did
+     * the work and forgot the button is the case the prompt mostly catches, and
+     * asking them again is asking the party who already did not act.
+     */
+    @Transactional
+    fun confirmCompletion(email: String, id: Long): ServiceRequestResponse {
+        val customer = requireUser(email)
+        val request = requireOwned(id, customer)
+
+        val from = request.status
+        ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.COMPLETED)
+        requireCompletionWindowOpen(request)
+
+        request.status = ServiceRequestStatus.COMPLETED
+        request.completedAt = LocalDateTime.now()
+        val saved = repo.save(request)
+        request.business?.id?.let { popularityPublisher.recomputeAndPublish(it) }
+        eventPublisher.statusChanged(saved, from = from, actor = RequestActor.CUSTOMER)
+        return toResponse(saved)
+    }
+
+    /**
+     * The customer's answer to "did this happen?" — no.
+     *
+     * No reason is collected: the defining condition is the absence of
+     * communication, and a free-text box would invite a grievance the product has
+     * nowhere to route. No bespoke timestamp either — `updatedAt` is
+     * `@UpdateTimestamp` and already records when this was answered.
+     */
+    @Transactional
+    fun reportNoShow(email: String, id: Long): ServiceRequestResponse {
+        val customer = requireUser(email)
+        val request = requireOwned(id, customer)
+
+        val from = request.status
+        ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.NO_SHOW)
+        requireCompletionWindowOpen(request)
+
+        request.status = ServiceRequestStatus.NO_SHOW
+        val saved = repo.save(request)
+        request.business?.id?.let { popularityPublisher.recomputeAndPublish(it) }
+        eventPublisher.statusChanged(saved, from = from, actor = RequestActor.CUSTOMER)
+        return toResponse(saved)
+    }
+
+    /**
+     * `require`, not `check`: IllegalStateException maps to 403 in
+     * GlobalExceptionHandler, which would report "you answered too early" as "you
+     * are not allowed to touch this".
+     *
+     * Called after `requireTransition` so a wrong status answers 409 and only a
+     * correctly-statused but premature answer reaches this 400.
+     */
+    private fun requireCompletionWindowOpen(request: ServiceRequest) {
+        val date = requireNotNull(request.requestedDate) {
+            "A confirmed request has no service date; cannot answer the prompt"
+        }
+        require(LocalDateTime.now().isAfter(date.plusHours(COMPLETION_PROMPT_DELAY_HOURS))) {
+            "You can answer this $COMPLETION_PROMPT_DELAY_HOURS hours after the service time."
+        }
     }
 
     /**
