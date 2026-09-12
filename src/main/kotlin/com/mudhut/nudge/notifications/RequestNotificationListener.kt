@@ -165,14 +165,36 @@ class RequestNotificationListener(
                 )
             }
 
-            // Completion is the exact moment review eligibility opens, and nothing
-            // in the product asked before now.
-            ServiceRequestStatus.COMPLETED -> customerMail(
+            ServiceRequestStatus.COMPLETED -> when (event.actor) {
+                // Completion is the exact moment review eligibility opens, and
+                // nothing in the product asked before now.
+                RequestActor.PROVIDER -> customerMail(
+                    event,
+                    subject = "Your service is complete",
+                    heading = "That's done",
+                    body = "${event.businessName} marked $service complete. " +
+                        "If it went well, a review helps other people find them.",
+                )
+                // The customer answered the completion prompt. Mailing them the
+                // review invite here would invite them to review a button they
+                // just pressed; the provider is the one who learns something.
+                RequestActor.CUSTOMER -> ownerMail(
+                    event,
+                    subject = "${event.customerName} confirmed the job",
+                    heading = "That job is confirmed done",
+                    body = "${event.customerName} confirmed $service went ahead. " +
+                        "You can invoice it now.",
+                )
+            }
+
+            // Only ever reached by the customer answering the prompt — the
+            // provider has no control that produces this.
+            ServiceRequestStatus.NO_SHOW -> ownerMail(
                 event,
-                subject = "Your service is complete",
-                heading = "That's done",
-                body = "${event.businessName} marked $service complete. " +
-                    "If it went well, a review helps other people find them.",
+                subject = "${event.customerName} reported a no-show",
+                heading = "A booking was recorded as not having happened",
+                body = "${event.customerName} says $service didn't go ahead, and " +
+                    "it wasn't marked complete or cancelled. It's now closed.",
             )
 
             // Withdrawing (PENDING -> DRAFT) has no audience.

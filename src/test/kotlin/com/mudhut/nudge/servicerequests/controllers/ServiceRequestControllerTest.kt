@@ -183,6 +183,32 @@ class ServiceRequestControllerTest {
 
     @Test
     @WithMockUser(username = "alice@example.com")
+    fun `POST confirm-completion is mapped and completes`() {
+        whenever(service.confirmCompletion(eq("alice@example.com"), eq(1L)))
+            .thenReturn(sampleResponse(status = ServiceRequestStatus.COMPLETED))
+        mockMvc.perform(post("/api/v1/requests/1/confirm-completion"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("COMPLETED"))
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `POST no-show is mapped and records NO_SHOW`() {
+        whenever(service.reportNoShow(eq("alice@example.com"), eq(1L)))
+            .thenReturn(sampleResponse(status = ServiceRequestStatus.NO_SHOW))
+        mockMvc.perform(post("/api/v1/requests/1/no-show"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("NO_SHOW"))
+    }
+
+    @Test
+    fun `POST no-show returns 401 anonymous`() {
+        mockMvc.perform(post("/api/v1/requests/1/no-show"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
     fun `POST proposal accept is mapped and confirms`() {
         whenever(service.acceptProposal(eq("alice@example.com"), eq(1L)))
             .thenReturn(sampleResponse(status = ServiceRequestStatus.CONFIRMED))
