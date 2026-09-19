@@ -175,6 +175,9 @@ class RequestNotificationListenerTest {
             Triple(ServiceRequestStatus.COMPLETED, RequestActor.CUSTOMER, owner),
             Triple(ServiceRequestStatus.NO_SHOW, RequestActor.CUSTOMER, owner),
             Triple(ServiceRequestStatus.CANCELLED, RequestActor.CUSTOMER, owner),
+            // A provider closing their business cancels the booking. The customer
+            // is who needs telling; the owner is the one leaving.
+            Triple(ServiceRequestStatus.CANCELLED, RequestActor.PROVIDER, customer),
             Triple(ServiceRequestStatus.DRAFT, RequestActor.CUSTOMER, null),
         )
 
