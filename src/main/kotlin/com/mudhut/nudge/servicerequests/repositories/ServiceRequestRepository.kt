@@ -64,6 +64,12 @@ interface ServiceRequestRepository : JpaRepository<ServiceRequest, Long> {
     )
     fun countUnreadByBusiness(@Param("businessId") businessId: Long): Long
 
+    /** Every request for a business in one of the given statuses. */
+    fun findAllByBusinessIdAndStatusIn(
+        businessId: Long,
+        statuses: Collection<ServiceRequestStatus>,
+    ): List<ServiceRequest>
+
     fun countByBusinessIdAndStatusIn(
         businessId: Long,
         statuses: Collection<ServiceRequestStatus>,
