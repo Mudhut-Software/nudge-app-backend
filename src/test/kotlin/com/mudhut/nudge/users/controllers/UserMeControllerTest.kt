@@ -7,12 +7,15 @@ import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
 import com.mudhut.nudge.users.models.UpdateUserRequest
 import com.mudhut.nudge.users.models.UserResponse
+import com.mudhut.nudge.users.models.DeletionImpactResponse
+import com.mudhut.nudge.users.services.AccountDeletionService
 import com.mudhut.nudge.users.services.UserMeService
 import com.mudhut.nudge.users.services.NudgeUserDetailsService
 import com.mudhut.nudge.utils.exceptions.UserAlreadyExistsException
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
@@ -22,6 +25,8 @@ import org.springframework.http.MediaType
 import org.springframework.security.test.context.support.WithMockUser
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -40,6 +45,9 @@ class UserMeControllerTest {
 
     @MockitoBean
     private lateinit var userMeService: UserMeService
+
+    @MockitoBean
+    private lateinit var accountDeletionService: AccountDeletionService
 
     @MockitoBean
     private lateinit var userDetailsService: NudgeUserDetailsService
@@ -136,5 +144,35 @@ class UserMeControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""{"email":"new@example.com","phoneNumber":"+256000000000"}"""),
         ).andExpect(status().isOk)
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `DELETE me returns 204 and passes the bearer token through`() {
+        // The header is not decoration: LogoutService needs the jti from this
+        // exact token to blocklist it.
+        mockMvc.perform(
+            delete("/api/v1/users/me").header("Authorization", "Bearer token123"),
+        ).andExpect(status().isNoContent)
+
+        verify(accountDeletionService).deleteAccount("alice@example.com", "Bearer token123")
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `GET deletion-impact names the businesses and the booking count`() {
+        whenever(accountDeletionService.impactFor("alice@example.com"))
+            .thenReturn(DeletionImpactResponse(listOf("SparkleClean"), 3))
+
+        mockMvc.perform(get("/api/v1/users/me/deletion-impact"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.businessNames[0]").value("SparkleClean"))
+            .andExpect(jsonPath("$.liveRequestCount").value(3))
+    }
+
+    @Test
+    fun `DELETE me returns 401 anonymous`() {
+        mockMvc.perform(delete("/api/v1/users/me").header("Authorization", "Bearer token123"))
+            .andExpect(status().isUnauthorized)
     }
 }
