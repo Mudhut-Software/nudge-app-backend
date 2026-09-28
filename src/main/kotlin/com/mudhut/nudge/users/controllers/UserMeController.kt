@@ -1,15 +1,20 @@
 package com.mudhut.nudge.users.controllers
 
 import com.mudhut.nudge.users.models.ChangePasswordRequest
+import com.mudhut.nudge.users.models.DeletionImpactResponse
 import com.mudhut.nudge.users.models.UpdateUserRequest
 import com.mudhut.nudge.users.models.UserResponse
+import com.mudhut.nudge.users.services.AccountDeletionService
 import com.mudhut.nudge.users.services.UserMeService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.Authentication
+import org.springframework.web.bind.annotation.DeleteMapping
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.ResponseStatus
 import org.springframework.web.bind.annotation.RestController
@@ -18,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/api/v1/users/me")
 class UserMeController(
     private val userMeService: UserMeService,
+    private val accountDeletionService: AccountDeletionService,
 ) {
 
     @PatchMapping
@@ -36,5 +42,19 @@ class UserMeController(
         @Valid @RequestBody request: ChangePasswordRequest,
     ) {
         userMeService.changePassword(authentication.name, request)
+    }
+
+    @GetMapping("/deletion-impact")
+    fun deletionImpact(
+        authentication: Authentication,
+    ): DeletionImpactResponse = accountDeletionService.impactFor(authentication.name)
+
+    @DeleteMapping
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun deleteMe(
+        authentication: Authentication,
+        @RequestHeader("Authorization") authorizationHeader: String,
+    ) {
+        accountDeletionService.deleteAccount(authentication.name, authorizationHeader)
     }
 }

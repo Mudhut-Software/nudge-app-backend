@@ -112,12 +112,26 @@ class RequestNotificationListener(
                     "Accept it to confirm the booking.",
             )
 
-            ServiceRequestStatus.CANCELLED -> ownerMail(
-                event,
-                subject = "${event.customerName} cancelled",
-                heading = "A booking was cancelled",
-                body = "${event.customerName} cancelled $service. That time is free again.",
-            )
+            ServiceRequestStatus.CANCELLED -> when (event.actor) {
+                RequestActor.CUSTOMER -> ownerMail(
+                    event,
+                    subject = "${event.customerName} cancelled",
+                    heading = "A booking was cancelled",
+                    body = "${event.customerName} cancelled $service. That time is free again.",
+                )
+                // The provider closed their business. Until now only a customer
+                // could cancel, so this cell routed on status alone — which would
+                // have mailed the departing owner and told the customer nothing.
+                RequestActor.PROVIDER -> customerMail(
+                    event,
+                    subject = "${event.businessName} has closed",
+                    heading = "This booking can't go ahead",
+                    body = "${event.businessName} has closed, so $service won't be going ahead. " +
+                        "You haven't been charged.",
+                    secondaryLabel = "Find another provider",
+                    secondaryPath = "/explore",
+                )
+            }
 
             ServiceRequestStatus.REVISION_REQUESTED -> customerMail(
                 event,
