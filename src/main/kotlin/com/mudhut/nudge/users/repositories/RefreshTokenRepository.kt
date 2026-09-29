@@ -10,7 +10,13 @@ import java.util.Optional
 @Repository
 interface RefreshTokenRepository : JpaRepository<RefreshToken, Long> {
     fun findByToken(token: String): Optional<RefreshToken>
-    fun findByUser(user: User): Optional<RefreshToken>
+    /**
+     * Every live session for this user. Was `findByUser` returning Optional,
+     * which is what enforced single-session.
+     */
+    fun findAllByUser(user: User): List<RefreshToken>
+
+    fun findBySessionId(sessionId: String): Optional<RefreshToken>
 
     @Modifying
     fun deleteByUser(user: User): Int

@@ -21,10 +21,13 @@ class JwtService(
 
     // ------- token issuance -------
 
-    fun generateToken(user: User): String {
+    fun generateToken(user: User, sessionId: String): String {
         val claims = mutableMapOf<String, Any>(
             "id" to user.id!!,
             "role" to user.role!!.name,
+            // Survives access-token rotation, unlike `jti`, which is a fresh
+            // UUID per token — so this is what identifies a session over time.
+            "sid" to sessionId,
         )
         return createToken(claims, user.email!!, envConfig.accessTokenExpiryInMillis)
     }
@@ -77,6 +80,8 @@ class JwtService(
 
     fun extractJti(claims: Claims): String? = claims.id
 
+    fun extractSessionId(claims: Claims): String? = claims["sid"] as? String
+
     fun extractExpiration(claims: Claims): Instant = claims.expiration.toInstant()
 
     // ------- token-taking convenience (delegate to parse + accessor) -------
@@ -84,6 +89,8 @@ class JwtService(
     fun extractUsername(token: String): String = extractUsername(parseClaimsOrThrow(token))
 
     fun extractJti(token: String): String? = parseClaims(token)?.let(::extractJti)
+
+    fun extractSessionId(token: String): String? = parseClaims(token)?.let(::extractSessionId)
 
     fun extractExpiration(token: String): Instant = extractExpiration(parseClaimsOrThrow(token))
 

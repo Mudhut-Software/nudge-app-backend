@@ -47,7 +47,7 @@ class JwtServiceTest {
     @Test
     fun `generateToken includes a jti claim that is a UUID`() {
         stubAccessTokenExpiry()
-        val token = jwtService.generateToken(aUser())
+        val token = jwtService.generateToken(aUser(), "sess-1")
         val jti = jwtService.extractJti(token)
         assertNotNull(jti)
         UUID.fromString(jti!!)   // throws if not a UUID
@@ -56,7 +56,7 @@ class JwtServiceTest {
     @Test
     fun `extractJti round-trips the claim from generateToken`() {
         stubAccessTokenExpiry()
-        val token = jwtService.generateToken(aUser())
+        val token = jwtService.generateToken(aUser(), "sess-1")
         val first: String? = jwtService.extractJti(token)
         val second: String? = jwtService.extractJti(token)
         assertEquals(first, second)
@@ -86,8 +86,8 @@ class JwtServiceTest {
     @Test
     fun `two generateToken calls produce different jti values`() {
         stubAccessTokenExpiry()
-        val first = jwtService.extractJti(jwtService.generateToken(aUser()))
-        val second = jwtService.extractJti(jwtService.generateToken(aUser()))
+        val first = jwtService.extractJti(jwtService.generateToken(aUser(), "sess-1"))
+        val second = jwtService.extractJti(jwtService.generateToken(aUser(), "sess-1"))
         assertNotNull(first)
         assertNotNull(second)
         assertNotEquals(first, second)
@@ -102,9 +102,34 @@ class JwtServiceTest {
     @Test
     fun `parseClaims returns the body for a freshly generated token`() {
         stubAccessTokenExpiry()
-        val token = jwtService.generateToken(aUser())
+        val token = jwtService.generateToken(aUser(), "sess-1")
         val claims = jwtService.parseClaims(token)
         assertNotNull(claims)
         assertEquals("alice@example.com", claims!!.subject)
+    }
+
+    @Test
+    fun `the access token carries the session id it was issued for`() {
+        // Without this the mocked expiry is 0, so the token is born expired and
+        // parseClaims returns null — every claim reads back as absent.
+        stubAccessTokenExpiry()
+        val token = jwtService.generateToken(aUser(), "sess-abc")
+
+        assertEquals("sess-abc", jwtService.extractSessionId(token))
+    }
+
+    @Test
+    fun `a token with no sid claim yields null rather than throwing`() {
+        // Tokens minted before this change have no sid. They must degrade, not
+        // blow up, or every in-flight session fails on the next request.
+        val legacy = Jwts.builder()
+            .setSubject("alice@example.com")
+            .setId(java.util.UUID.randomUUID().toString())
+            .setIssuedAt(java.util.Date())
+            .setExpiration(java.util.Date(System.currentTimeMillis() + 60_000))
+            .signWith(Keys.hmacShaKeyFor(secret.toByteArray(StandardCharsets.UTF_8)))
+            .compact()
+
+        assertNull(jwtService.extractSessionId(legacy))
     }
 }

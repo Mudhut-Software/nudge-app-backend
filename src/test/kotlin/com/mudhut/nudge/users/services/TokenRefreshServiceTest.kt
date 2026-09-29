@@ -51,7 +51,7 @@ class TokenRefreshServiceTest {
         )
         `when`(refreshTokenService.findByToken("raw-refresh")).thenReturn(Optional.of(stored))
         `when`(membershipQuery.findActiveMembershipsFor(7L)).thenReturn(emptyList())
-        `when`(jwtService.generateToken(user)).thenReturn("new-access")
+        `when`(jwtService.generateToken(org.mockito.kotlin.eq(user), org.mockito.kotlin.any())).thenReturn("new-access")
 
         val response = service.refresh("raw-refresh")
 
@@ -69,12 +69,14 @@ class TokenRefreshServiceTest {
         assertThrows(AuthenticationServiceException::class.java) {
             service.refresh("ghost")
         }
-        verify(jwtService, never()).generateToken(org.mockito.kotlin.any())
+        verify(jwtService, never()).generateToken(org.mockito.kotlin.any(), org.mockito.kotlin.any())
         verify(refreshTokenService, never()).createRefreshToken(org.mockito.kotlin.any())
     }
 
     @Test
-    fun `refresh throws and deletes the token when expired`() {
+    fun `an expired token with no session id falls back to clearing the user`() {
+        // Rows written before session ids existed. The fallback keeps them
+        // deletable rather than stranding them forever.
         val user = user()
         val stored = RefreshToken(
             id = 1L,
@@ -88,7 +90,48 @@ class TokenRefreshServiceTest {
             service.refresh("stale")
         }
         verify(refreshTokenService).deleteByUserId(7L)
-        verify(jwtService, never()).generateToken(org.mockito.kotlin.any())
+        verify(jwtService, never()).generateToken(org.mockito.kotlin.any(), org.mockito.kotlin.any())
         verify(refreshTokenService, never()).createRefreshToken(org.mockito.kotlin.any())
+    }
+
+    @Test
+    fun `an expired session is deleted alone, leaving other devices signed in`() {
+        val user = user()
+        val expired = RefreshToken(
+            id = 1L,
+            token = "hashed",
+            user = user,
+            sessionId = "sess-expired",
+            expiryDate = Instant.now().minusSeconds(60),
+        )
+        `when`(refreshTokenService.findByToken("stale")).thenReturn(Optional.of(expired))
+
+        assertThrows(AuthenticationServiceException::class.java) { service.refresh("stale") }
+
+        verify(refreshTokenService).deleteBySessionId("sess-expired")
+        verify(refreshTokenService, never()).deleteByUserId(org.mockito.kotlin.any())
+    }
+
+    @Test
+    fun `refreshing keeps the same session id on the new access token`() {
+        // The access token rotates; the session must not. If this regressed,
+        // logout would stop being able to find the row after one refresh.
+        val user = user()
+        val live = RefreshToken(
+            id = 2L,
+            token = "hashed",
+            user = user,
+            sessionId = "sess-live",
+            expiryDate = Instant.now().plusSeconds(600),
+        )
+        `when`(refreshTokenService.findByToken("raw")).thenReturn(Optional.of(live))
+        `when`(membershipQuery.findActiveMembershipsFor(7L)).thenReturn(emptyList())
+        `when`(jwtService.generateToken(org.mockito.kotlin.any(), org.mockito.kotlin.eq("sess-live")))
+            .thenReturn("new-access")
+
+        val response = service.refresh("raw")
+
+        assertEquals("new-access", response.accessToken)
+        verify(jwtService).generateToken(org.mockito.kotlin.any(), org.mockito.kotlin.eq("sess-live"))
     }
 }
