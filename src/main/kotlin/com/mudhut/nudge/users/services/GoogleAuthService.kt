@@ -51,12 +51,15 @@ class GoogleAuthService(
         }
 
         val memberships = membershipQuery.findActiveMembershipsFor(user.id!!)
-        val accessToken = jwtService.generateToken(user)
-        val refreshToken = refreshTokenService.createRefreshToken(user)
+        // The session is minted with the refresh token, then stamped on the
+        // access token, so both halves of the sign-in agree on which session
+        // they belong to.
+        val issued = refreshTokenService.createRefreshToken(user)
+        val accessToken = jwtService.generateToken(user, issued.sessionId)
 
         return AuthResponse.builder()
             .accessToken(accessToken)
-            .refreshToken(refreshToken)
+            .refreshToken(issued.rawToken)
             .user(UserResponse.from(user, memberships))
             .build()
     }

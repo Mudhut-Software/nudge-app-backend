@@ -25,6 +25,14 @@ class LogoutService(
             .orElseThrow { EntityNotFoundException("User not found with email: $email") }
 
         blocklistService.revoke(jti, user.id!!, expiresAt)
-        refreshTokenService.deleteByUserId(user.id!!)
+        // End this session only. An absent sid means the token predates session
+        // ids, so fall back to the old behaviour rather than leaving a row
+        // nothing can ever delete.
+        val sessionId = jwtService.extractSessionId(token)
+        if (!sessionId.isNullOrEmpty()) {
+            refreshTokenService.deleteBySessionId(sessionId)
+        } else {
+            refreshTokenService.deleteByUserId(user.id!!)
+        }
     }
 }

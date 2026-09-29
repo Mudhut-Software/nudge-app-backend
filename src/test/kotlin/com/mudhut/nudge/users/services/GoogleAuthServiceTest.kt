@@ -64,8 +64,8 @@ class GoogleAuthServiceTest {
     private fun stubAuthInfra(user: User) {
         `when`(membershipQuery.findActiveMembershipsFor(user.id!!))
             .thenReturn(emptyList())
-        `when`(jwtService.generateToken(user)).thenReturn("access-token")
-        `when`(refreshTokenService.createRefreshToken(user)).thenReturn("refresh-token")
+        `when`(jwtService.generateToken(org.mockito.kotlin.eq(user), org.mockito.kotlin.any())).thenReturn("access-token")
+        `when`(refreshTokenService.createRefreshToken(user)).thenReturn(IssuedRefreshToken("refresh-token", "sess-google"))
     }
 
     @Test
@@ -121,8 +121,8 @@ class GoogleAuthServiceTest {
         }
         val captured = saved
         `when`(membershipQuery.findActiveMembershipsFor(42L)).thenReturn(emptyList())
-        `when`(jwtService.generateToken(any())).thenReturn("access-token")
-        `when`(refreshTokenService.createRefreshToken(any())).thenReturn("refresh-token")
+        `when`(jwtService.generateToken(any(), any())).thenReturn("access-token")
+        `when`(refreshTokenService.createRefreshToken(any())).thenReturn(IssuedRefreshToken("refresh-token", "sess-google"))
 
         val result = service.authenticate(rawToken)
 

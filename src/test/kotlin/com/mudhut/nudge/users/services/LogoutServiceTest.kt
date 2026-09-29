@@ -9,6 +9,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
+import org.mockito.ArgumentMatchers.anyLong
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
@@ -39,16 +41,33 @@ class LogoutServiceTest {
     )
 
     @Test
-    fun `logout revokes the access jti and deletes the user's refresh token`() {
+    fun `logout revokes the access jti and ends only that session`() {
         val user = user()
         val expiry = Instant.now().plusSeconds(60)
         `when`(userRepository.findByEmail(user.email!!)).thenReturn(Optional.of(user))
         `when`(jwtService.extractJti("access-token")).thenReturn("jti-1")
         `when`(jwtService.extractExpiration("access-token")).thenReturn(expiry)
+        `when`(jwtService.extractSessionId("access-token")).thenReturn("sess-a")
 
         service.logout(user.email!!, "Bearer access-token")
 
         verify(blocklistService).revoke("jti-1", 42L, expiry)
+        // Only this device. deleteByUserId here would sign the user out of every
+        // other device, which is the behaviour this change removes.
+        verify(refreshTokenService).deleteBySessionId("sess-a")
+        verify(refreshTokenService, never()).deleteByUserId(anyLong())
+    }
+
+    @Test
+    fun `a token minted before session ids falls back to clearing the user's tokens`() {
+        val user = user()
+        `when`(userRepository.findByEmail(user.email!!)).thenReturn(Optional.of(user))
+        `when`(jwtService.extractJti("old-token")).thenReturn("jti-old")
+        `when`(jwtService.extractExpiration("old-token")).thenReturn(Instant.now().plusSeconds(60))
+        `when`(jwtService.extractSessionId("old-token")).thenReturn(null)
+
+        service.logout(user.email!!, "Bearer old-token")
+
         verify(refreshTokenService).deleteByUserId(42L)
     }
 

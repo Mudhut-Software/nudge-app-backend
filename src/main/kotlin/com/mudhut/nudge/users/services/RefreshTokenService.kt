@@ -14,6 +14,17 @@ import java.util.HexFormat
 import java.util.Optional
 import java.util.UUID
 
+/**
+ * A newly issued refresh token and the session it belongs to.
+ *
+ * A named type rather than a `Pair<String, String>`: both fields are opaque
+ * strings, and transposing them at a call site would compile.
+ */
+data class IssuedRefreshToken(
+    val rawToken: String,
+    val sessionId: String,
+)
+
 @Service
 class RefreshTokenService(
     private val refreshTokenRepository: RefreshTokenRepository,
@@ -25,18 +36,27 @@ class RefreshTokenService(
         refreshTokenRepository.findByToken(hash(token))
 
     @Transactional
-    fun createRefreshToken(user: User): String {
-        refreshTokenRepository.findByUser(user).ifPresent { refreshTokenRepository.delete(it) }
-
+    fun createRefreshToken(user: User): IssuedRefreshToken {
+        // Deliberately does *not* delete the user's existing tokens. It used to,
+        // which meant signing in on a second device silently ended the first
+        // device's session.
         val raw = UUID.randomUUID().toString()
+        val sessionId = UUID.randomUUID().toString()
         refreshTokenRepository.save(
             RefreshToken.builder()
                 .user(user)
                 .token(hash(raw))
+                .sessionId(sessionId)
                 .expiryDate(Instant.now().plusMillis(envConfig.refreshTokenExpiryInMillis))
                 .build()
         )
-        return raw
+        return IssuedRefreshToken(raw, sessionId)
+    }
+
+    /** End one session. Unknown ids are ignored — a repeated logout is not an error. */
+    fun deleteBySessionId(sessionId: String) {
+        refreshTokenRepository.findBySessionId(sessionId)
+            .ifPresent { refreshTokenRepository.delete(it) }
     }
 
     fun verifyExpiration(token: RefreshToken): RefreshToken {
