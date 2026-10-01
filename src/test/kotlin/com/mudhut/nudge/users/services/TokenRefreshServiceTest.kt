@@ -59,7 +59,7 @@ class TokenRefreshServiceTest {
         assertEquals("raw-refresh", response.refreshToken)
         assertEquals(user.id, response.user?.id)
         assertEquals(user.email, response.user?.email)
-        verify(refreshTokenService, never()).createRefreshToken(org.mockito.kotlin.any())
+        verify(refreshTokenService, never()).createRefreshToken(org.mockito.kotlin.any(), org.mockito.kotlin.anyOrNull<String>())
     }
 
     @Test
@@ -70,7 +70,7 @@ class TokenRefreshServiceTest {
             service.refresh("ghost")
         }
         verify(jwtService, never()).generateToken(org.mockito.kotlin.any(), org.mockito.kotlin.any())
-        verify(refreshTokenService, never()).createRefreshToken(org.mockito.kotlin.any())
+        verify(refreshTokenService, never()).createRefreshToken(org.mockito.kotlin.any(), org.mockito.kotlin.anyOrNull<String>())
     }
 
     @Test
@@ -91,7 +91,7 @@ class TokenRefreshServiceTest {
         }
         verify(refreshTokenService).deleteByUserId(7L)
         verify(jwtService, never()).generateToken(org.mockito.kotlin.any(), org.mockito.kotlin.any())
-        verify(refreshTokenService, never()).createRefreshToken(org.mockito.kotlin.any())
+        verify(refreshTokenService, never()).createRefreshToken(org.mockito.kotlin.any(), org.mockito.kotlin.anyOrNull<String>())
     }
 
     @Test
@@ -133,5 +133,27 @@ class TokenRefreshServiceTest {
 
         assertEquals("new-access", response.accessToken)
         verify(jwtService).generateToken(org.mockito.kotlin.any(), org.mockito.kotlin.eq("sess-live"))
+    }
+
+    @Test
+    fun `refreshing marks that session as recently seen`() {
+        // This is the only signal of activity we get: the access token lasts 15
+        // minutes, so a refresh is the closest thing to "the user is still here".
+        val user = user()
+        val live = RefreshToken(
+            id = 3L,
+            token = "hashed",
+            user = user,
+            sessionId = "sess-live",
+            expiryDate = Instant.now().plusSeconds(600),
+        )
+        `when`(refreshTokenService.findByToken("raw")).thenReturn(Optional.of(live))
+        `when`(membershipQuery.findActiveMembershipsFor(7L)).thenReturn(emptyList())
+        `when`(jwtService.generateToken(org.mockito.kotlin.any(), org.mockito.kotlin.eq("sess-live")))
+            .thenReturn("new-access")
+
+        service.refresh("raw")
+
+        verify(refreshTokenService).touchLastSeen("sess-live")
     }
 }

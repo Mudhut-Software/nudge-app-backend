@@ -27,7 +27,7 @@ class LoginService(
     }
 
     @Transactional
-    fun authenticateUser(loginRequest: LoginRequest): AuthResponse {
+    fun authenticateUser(loginRequest: LoginRequest, userAgent: String?): AuthResponse {
         if (!Pattern.compile(EMAIL_PATTERN).matcher(loginRequest.email!!).matches()) {
             throw IllegalArgumentException("Invalid email format")
         }
@@ -48,7 +48,7 @@ class LoginService(
         // The session is minted with the refresh token, then stamped on the
         // access token, so both halves of the sign-in agree on which session
         // they belong to.
-        val issued = refreshTokenService.createRefreshToken(user)
+        val issued = refreshTokenService.createRefreshToken(user, userAgent)
         val accessToken = jwtService.generateToken(user, issued.sessionId)
 
         return AuthResponse.builder()

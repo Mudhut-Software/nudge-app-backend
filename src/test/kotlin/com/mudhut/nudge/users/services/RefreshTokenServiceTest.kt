@@ -17,6 +17,7 @@ import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import java.time.Instant
 import java.util.Optional
 
 class RefreshTokenServiceTest {
@@ -42,8 +43,8 @@ class RefreshTokenServiceTest {
         whenever(refreshTokenRepository.save(any<RefreshToken>()))
             .thenAnswer { it.arguments[0] as RefreshToken }
 
-        sut.createRefreshToken(alice())
-        sut.createRefreshToken(alice())
+        sut.createRefreshToken(alice(), null)
+        sut.createRefreshToken(alice(), null)
 
         verify(refreshTokenRepository, never()).delete(any<RefreshToken>())
         verify(refreshTokenRepository, times(2)).save(any<RefreshToken>())
@@ -55,8 +56,8 @@ class RefreshTokenServiceTest {
         whenever(refreshTokenRepository.save(any<RefreshToken>()))
             .thenAnswer { it.arguments[0] as RefreshToken }
 
-        val first = sut.createRefreshToken(alice())
-        val second = sut.createRefreshToken(alice())
+        val first = sut.createRefreshToken(alice(), null)
+        val second = sut.createRefreshToken(alice(), null)
 
         assertNotNull(first.sessionId)
         assertNotEquals(first.sessionId, second.sessionId)
@@ -75,7 +76,7 @@ class RefreshTokenServiceTest {
         whenever(refreshTokenRepository.save(any<RefreshToken>()))
             .thenAnswer { it.arguments[0] as RefreshToken }
 
-        val issued = sut.createRefreshToken(alice())
+        val issued = sut.createRefreshToken(alice(), null)
 
         val saved = argumentCaptor<RefreshToken>()
         verify(refreshTokenRepository).save(saved.capture())
@@ -103,5 +104,60 @@ class RefreshTokenServiceTest {
         sut.deleteBySessionId("gone")
 
         verify(refreshTokenRepository, never()).delete(any<RefreshToken>())
+    }
+
+    @Test
+    fun `a new session records the device it was created on`() {
+        whenever(envConfig.refreshTokenExpiryInMillis).thenReturn(604_800_000)
+        whenever(refreshTokenRepository.save(any<RefreshToken>()))
+            .thenAnswer { it.arguments[0] as RefreshToken }
+        val chrome = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+
+        sut.createRefreshToken(alice(), chrome)
+
+        val saved = argumentCaptor<RefreshToken>()
+        verify(refreshTokenRepository).save(saved.capture())
+        assertEquals(chrome, saved.firstValue.userAgent)
+        assertEquals("Chrome on macOS", saved.firstValue.deviceLabel)
+        assertNotNull(saved.firstValue.lastSeenAt)
+    }
+
+    @Test
+    fun `a session with no user agent still stores a usable label`() {
+        whenever(envConfig.refreshTokenExpiryInMillis).thenReturn(604_800_000)
+        whenever(refreshTokenRepository.save(any<RefreshToken>()))
+            .thenAnswer { it.arguments[0] as RefreshToken }
+
+        sut.createRefreshToken(alice(), null)
+
+        val saved = argumentCaptor<RefreshToken>()
+        verify(refreshTokenRepository).save(saved.capture())
+        assertEquals("Unknown device", saved.firstValue.deviceLabel)
+    }
+
+    @Test
+    fun `touching a session moves its last-seen forward`() {
+        val row = RefreshToken.builder()
+            .sessionId("sess-a")
+            .lastSeenAt(Instant.now().minusSeconds(3600))
+            .build()
+        val before = row.lastSeenAt!!
+        whenever(refreshTokenRepository.findBySessionId("sess-a")).thenReturn(Optional.of(row))
+        whenever(refreshTokenRepository.save(any<RefreshToken>()))
+            .thenAnswer { it.arguments[0] as RefreshToken }
+
+        sut.touchLastSeen("sess-a")
+
+        assert(row.lastSeenAt!!.isAfter(before))
+    }
+
+    @Test
+    fun `touching an unknown session does nothing`() {
+        whenever(refreshTokenRepository.findBySessionId("gone")).thenReturn(Optional.empty())
+
+        sut.touchLastSeen("gone")
+
+        verify(refreshTokenRepository, never()).save(any<RefreshToken>())
     }
 }

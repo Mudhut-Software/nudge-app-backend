@@ -24,7 +24,7 @@ class GoogleAuthService(
 ) {
 
     @Transactional
-    fun authenticate(idToken: String): AuthResponse {
+    fun authenticate(idToken: String, userAgent: String?): AuthResponse {
         if (clientId.isBlank()) {
             throw IllegalStateException("Google sign-in is not configured")
         }
@@ -54,7 +54,7 @@ class GoogleAuthService(
         // The session is minted with the refresh token, then stamped on the
         // access token, so both halves of the sign-in agree on which session
         // they belong to.
-        val issued = refreshTokenService.createRefreshToken(user)
+        val issued = refreshTokenService.createRefreshToken(user, userAgent)
         val accessToken = jwtService.generateToken(user, issued.sessionId)
 
         return AuthResponse.builder()

@@ -18,6 +18,9 @@ interface RefreshTokenRepository : JpaRepository<RefreshToken, Long> {
 
     fun findBySessionId(sessionId: String): Optional<RefreshToken>
 
+    /** The user's sessions, most recently active first. */
+    fun findAllByUserIdOrderByLastSeenAtDesc(userId: Long): List<RefreshToken>
+
     @Modifying
     fun deleteByUser(user: User): Int
 }

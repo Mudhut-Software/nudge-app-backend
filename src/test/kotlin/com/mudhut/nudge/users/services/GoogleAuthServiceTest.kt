@@ -65,7 +65,7 @@ class GoogleAuthServiceTest {
         `when`(membershipQuery.findActiveMembershipsFor(user.id!!))
             .thenReturn(emptyList())
         `when`(jwtService.generateToken(org.mockito.kotlin.eq(user), org.mockito.kotlin.any())).thenReturn("access-token")
-        `when`(refreshTokenService.createRefreshToken(user)).thenReturn(IssuedRefreshToken("refresh-token", "sess-google"))
+        `when`(refreshTokenService.createRefreshToken(user, null)).thenReturn(IssuedRefreshToken("refresh-token", "sess-google"))
     }
 
     @Test
@@ -75,7 +75,7 @@ class GoogleAuthServiceTest {
         `when`(userRepository.findByGoogleId(googleSub)).thenReturn(Optional.of(user))
         stubAuthInfra(user)
 
-        val result = service.authenticate(rawToken)
+        val result = service.authenticate(rawToken, null)
 
         assertEquals("access-token", result.accessToken)
         assertEquals("alice", result.user?.username)
@@ -100,7 +100,7 @@ class GoogleAuthServiceTest {
         `when`(userRepository.save(saved.capture())).thenAnswer { it.arguments[0] }
         stubAuthInfra(existing)
 
-        val result = service.authenticate(rawToken)
+        val result = service.authenticate(rawToken, null)
 
         assertEquals(googleSub, saved.value.googleId)
         assertTrue(saved.value.isEmailVerified)
@@ -122,9 +122,9 @@ class GoogleAuthServiceTest {
         val captured = saved
         `when`(membershipQuery.findActiveMembershipsFor(42L)).thenReturn(emptyList())
         `when`(jwtService.generateToken(any(), any())).thenReturn("access-token")
-        `when`(refreshTokenService.createRefreshToken(any())).thenReturn(IssuedRefreshToken("refresh-token", "sess-google"))
+        `when`(refreshTokenService.createRefreshToken(any(), org.mockito.kotlin.anyOrNull<String>())).thenReturn(IssuedRefreshToken("refresh-token", "sess-google"))
 
-        val result = service.authenticate(rawToken)
+        val result = service.authenticate(rawToken, null)
 
         val newUser = captured.value
         assertEquals(googleSub, newUser.googleId)
@@ -142,14 +142,14 @@ class GoogleAuthServiceTest {
     fun `invalid token throws IllegalArgumentException`() {
         `when`(verifier.verify(rawToken)).thenReturn(null)
 
-        assertThrows<IllegalArgumentException> { service.authenticate(rawToken) }
+        assertThrows<IllegalArgumentException> { service.authenticate(rawToken, null) }
     }
 
     @Test
     fun `unverified email is rejected`() {
         stubVerifier(emailVerified = false)
 
-        assertThrows<IllegalStateException> { service.authenticate(rawToken) }
+        assertThrows<IllegalStateException> { service.authenticate(rawToken, null) }
     }
 
     @Test
@@ -159,6 +159,6 @@ class GoogleAuthServiceTest {
             membershipQuery, usernameGenerator, clientId = ""
         )
 
-        assertThrows<IllegalStateException> { unconfigured.authenticate(rawToken) }
+        assertThrows<IllegalStateException> { unconfigured.authenticate(rawToken, null) }
     }
 }

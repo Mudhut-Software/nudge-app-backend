@@ -194,7 +194,7 @@ class UserControllerTest {
             .user(userResponse)
             .build()
 
-        Mockito.`when`(loginService.authenticateUser(anyObject())).thenReturn(authResponse)
+        Mockito.`when`(loginService.authenticateUser(anyObject(), anyObject())).thenReturn(authResponse)
 
         mockMvc.perform(
             MockMvcRequestBuilders.post("/api/v1/auth/login")
@@ -239,7 +239,7 @@ class UserControllerTest {
             .user(userResponse)
             .build()
 
-        Mockito.`when`(loginService.authenticateUser(anyObject())).thenReturn(authResponse)
+        Mockito.`when`(loginService.authenticateUser(anyObject(), anyObject())).thenReturn(authResponse)
 
         mockMvc.perform(
             MockMvcRequestBuilders.post("/api/v1/auth/login")
@@ -413,7 +413,7 @@ class UserControllerTest {
                 isActive = true
             )
         )
-        Mockito.`when`(googleAuthService.authenticate(Mockito.anyString())).thenReturn(authResponse)
+        Mockito.`when`(googleAuthService.authenticate(Mockito.anyString(), anyObject())).thenReturn(authResponse)
 
         val request = GoogleAuthRequest(idToken = "fake-google-id-token")
 
@@ -426,7 +426,7 @@ class UserControllerTest {
             .andExpect(MockMvcResultMatchers.jsonPath("$.accessToken").value("access-token"))
             .andExpect(MockMvcResultMatchers.jsonPath("$.user.email").value("alice@example.com"))
 
-        Mockito.verify(googleAuthService).authenticate("fake-google-id-token")
+        Mockito.verify(googleAuthService).authenticate("fake-google-id-token", null)
     }
 
     @Test

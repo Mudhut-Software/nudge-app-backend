@@ -35,6 +35,10 @@ class TokenRefreshService(
         val user = stored.user!!
         val memberships = membershipQuery.findActiveMembershipsFor(user.id!!)
 
+        // The access token lasts 15 minutes, so a refresh is the closest signal
+        // we have that the user is still on this device.
+        stored.sessionId?.let { refreshTokenService.touchLastSeen(it) }
+
         // The access token rotates; the session must not, or logout would stop
         // being able to find the row after a single refresh.
         val newAccessToken = jwtService.generateToken(user, stored.sessionId ?: "")

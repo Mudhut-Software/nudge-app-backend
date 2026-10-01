@@ -36,7 +36,7 @@ class RefreshTokenService(
         refreshTokenRepository.findByToken(hash(token))
 
     @Transactional
-    fun createRefreshToken(user: User): IssuedRefreshToken {
+    fun createRefreshToken(user: User, userAgent: String?): IssuedRefreshToken {
         // Deliberately does *not* delete the user's existing tokens. It used to,
         // which meant signing in on a second device silently ended the first
         // device's session.
@@ -47,6 +47,9 @@ class RefreshTokenService(
                 .user(user)
                 .token(hash(raw))
                 .sessionId(sessionId)
+                .userAgent(userAgent)
+                .deviceLabel(DeviceLabel.from(userAgent))
+                .lastSeenAt(Instant.now())
                 .expiryDate(Instant.now().plusMillis(envConfig.refreshTokenExpiryInMillis))
                 .build()
         )
@@ -57,6 +60,14 @@ class RefreshTokenService(
     fun deleteBySessionId(sessionId: String) {
         refreshTokenRepository.findBySessionId(sessionId)
             .ifPresent { refreshTokenRepository.delete(it) }
+    }
+
+    /** Record that this session was used. Unknown ids are ignored. */
+    fun touchLastSeen(sessionId: String) {
+        refreshTokenRepository.findBySessionId(sessionId).ifPresent {
+            it.lastSeenAt = Instant.now()
+            refreshTokenRepository.save(it)
+        }
     }
 
     fun verifyExpiration(token: RefreshToken): RefreshToken {
