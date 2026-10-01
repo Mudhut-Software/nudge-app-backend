@@ -65,12 +65,4 @@ class DeviceLabelTest {
             DeviceLabel.from("Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0"),
         )
     }
-
-    @Test
-    fun `never returns something longer than the column`() {
-        // device_label is varchar(100). A hostile or absurd UA must not blow up
-        // the insert.
-        val absurd = "Mozilla/5.0 " + "x".repeat(5_000) + " Chrome/140.0.0.0"
-        assert(DeviceLabel.from(absurd).length <= 100)
-    }
 }

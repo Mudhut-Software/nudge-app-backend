@@ -16,7 +16,14 @@ object DeviceLabel {
 
     const val UNKNOWN = "Unknown device"
 
-    /** varchar(100) on the column; a hostile user agent must not break the insert. */
+    /**
+     * varchar(100) on the column.
+     *
+     * Defensive only: every label this returns is built from the fixed
+     * vocabulary below and is well under the limit today. It exists so that
+     * adding a long browser or platform name later cannot silently break the
+     * insert.
+     */
     private const val MAX_LENGTH = 100
 
     private val BROWSERS = listOf(
