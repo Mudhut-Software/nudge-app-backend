@@ -34,12 +34,18 @@ class UserController(
         ResponseEntity.ok(UserResponse.from(registrationService.createUser(request)))
 
     @PostMapping("/login")
-    fun authenticateUser(@Valid @RequestBody request: LoginRequest): ResponseEntity<AuthResponse> =
-        ResponseEntity.ok(loginService.authenticateUser(request))
+    fun authenticateUser(
+        @Valid @RequestBody request: LoginRequest,
+        @RequestHeader(value = "User-Agent", required = false) userAgent: String?,
+    ): ResponseEntity<AuthResponse> =
+        ResponseEntity.ok(loginService.authenticateUser(request, userAgent))
 
     @PostMapping("/google")
-    fun googleAuth(@Valid @RequestBody request: GoogleAuthRequest): ResponseEntity<AuthResponse> =
-        ResponseEntity.ok(googleAuthService.authenticate(request.idToken!!))
+    fun googleAuth(
+        @Valid @RequestBody request: GoogleAuthRequest,
+        @RequestHeader(value = "User-Agent", required = false) userAgent: String?,
+    ): ResponseEntity<AuthResponse> =
+        ResponseEntity.ok(googleAuthService.authenticate(request.idToken!!, userAgent))
 
     @PostMapping("/refresh")
     fun refreshToken(@Valid @RequestBody request: RefreshTokenRequest): ResponseEntity<AuthResponse> =

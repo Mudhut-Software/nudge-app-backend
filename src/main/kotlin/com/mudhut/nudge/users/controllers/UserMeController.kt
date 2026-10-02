@@ -2,9 +2,11 @@ package com.mudhut.nudge.users.controllers
 
 import com.mudhut.nudge.users.models.ChangePasswordRequest
 import com.mudhut.nudge.users.models.DeletionImpactResponse
+import com.mudhut.nudge.users.models.SessionResponse
 import com.mudhut.nudge.users.models.UpdateUserRequest
 import com.mudhut.nudge.users.models.UserResponse
 import com.mudhut.nudge.users.services.AccountDeletionService
+import com.mudhut.nudge.users.services.SessionService
 import com.mudhut.nudge.users.services.UserMeService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
@@ -13,6 +15,8 @@ import org.springframework.security.core.Authentication
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
@@ -24,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController
 class UserMeController(
     private val userMeService: UserMeService,
     private val accountDeletionService: AccountDeletionService,
+    private val sessionService: SessionService,
 ) {
 
     @PatchMapping
@@ -56,5 +61,29 @@ class UserMeController(
         @RequestHeader("Authorization") authorizationHeader: String,
     ) {
         accountDeletionService.deleteAccount(authentication.name, authorizationHeader)
+    }
+
+    @GetMapping("/sessions")
+    fun sessions(
+        authentication: Authentication,
+        @RequestHeader("Authorization") authorizationHeader: String,
+    ): List<SessionResponse> = sessionService.listFor(authentication.name, authorizationHeader)
+
+    @DeleteMapping("/sessions/{sessionId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun revokeSession(
+        authentication: Authentication,
+        @PathVariable sessionId: String,
+    ) {
+        sessionService.revoke(authentication.name, sessionId)
+    }
+
+    @PostMapping("/sessions/logout-all")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun logoutAll(
+        authentication: Authentication,
+        @RequestHeader("Authorization") authorizationHeader: String,
+    ) {
+        sessionService.revokeAll(authentication.name, authorizationHeader)
     }
 }

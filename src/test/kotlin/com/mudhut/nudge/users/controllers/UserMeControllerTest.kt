@@ -8,7 +8,9 @@ import com.mudhut.nudge.config.SecurityConfig
 import com.mudhut.nudge.users.models.UpdateUserRequest
 import com.mudhut.nudge.users.models.UserResponse
 import com.mudhut.nudge.users.models.DeletionImpactResponse
+import com.mudhut.nudge.users.models.SessionResponse
 import com.mudhut.nudge.users.services.AccountDeletionService
+import com.mudhut.nudge.users.services.SessionService
 import com.mudhut.nudge.users.services.UserMeService
 import com.mudhut.nudge.users.services.NudgeUserDetailsService
 import com.mudhut.nudge.utils.exceptions.UserAlreadyExistsException
@@ -28,8 +30,10 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import java.time.Instant
 import java.time.LocalDateTime
 
 @WebMvcTest(UserMeController::class)
@@ -48,6 +52,9 @@ class UserMeControllerTest {
 
     @MockitoBean
     private lateinit var accountDeletionService: AccountDeletionService
+
+    @MockitoBean
+    private lateinit var sessionService: SessionService
 
     @MockitoBean
     private lateinit var userDetailsService: NudgeUserDetailsService
@@ -173,6 +180,45 @@ class UserMeControllerTest {
     @Test
     fun `DELETE me returns 401 anonymous`() {
         mockMvc.perform(delete("/api/v1/users/me").header("Authorization", "Bearer token123"))
+            .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `GET sessions returns the caller's devices`() {
+        whenever(sessionService.listFor(eq("alice@example.com"), eq("Bearer token123")))
+            .thenReturn(
+                listOf(SessionResponse("sess-a", "Chrome on macOS", Instant.parse("2026-09-29T10:00:00Z"), true)),
+            )
+
+        mockMvc.perform(get("/api/v1/users/me/sessions").header("Authorization", "Bearer token123"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].deviceLabel").value("Chrome on macOS"))
+            .andExpect(jsonPath("$[0].current").value(true))
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `DELETE one session returns 204`() {
+        mockMvc.perform(delete("/api/v1/users/me/sessions/sess-a"))
+            .andExpect(status().isNoContent)
+
+        verify(sessionService).revoke("alice@example.com", "sess-a")
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `POST logout-all returns 204 and passes the bearer token through`() {
+        mockMvc.perform(
+            post("/api/v1/users/me/sessions/logout-all").header("Authorization", "Bearer token123"),
+        ).andExpect(status().isNoContent)
+
+        verify(sessionService).revokeAll("alice@example.com", "Bearer token123")
+    }
+
+    @Test
+    fun `GET sessions returns 401 anonymous`() {
+        mockMvc.perform(get("/api/v1/users/me/sessions").header("Authorization", "Bearer token123"))
             .andExpect(status().isUnauthorized)
     }
 }
