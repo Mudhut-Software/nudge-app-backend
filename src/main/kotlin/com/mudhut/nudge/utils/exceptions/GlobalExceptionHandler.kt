@@ -236,6 +236,15 @@ class GlobalExceptionHandler {
         )
     }
 
+    @ExceptionHandler(SessionNotFoundException::class)
+    fun handleSessionNotFound(ex: SessionNotFoundException): ResponseEntity<ErrorResponse> {
+        logger.warn("Session not found: {}", ex.message)
+        return ResponseEntity(
+            ErrorResponse(ERROR_CODE_NOT_FOUND, ex.message ?: "Session not found"),
+            HttpStatus.NOT_FOUND
+        )
+    }
+
     @ExceptionHandler(BusinessAccessDeniedException::class)
     fun handleBusinessAccessDeniedException(ex: BusinessAccessDeniedException): ResponseEntity<ErrorResponse> {
         logger.warn("Business access denied: {}", ex.message)
