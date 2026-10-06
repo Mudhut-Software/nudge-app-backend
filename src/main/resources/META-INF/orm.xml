@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Stops Hibernate trying to narrow event_publication.serialized_event back to
+  varchar(255) on every boot.
+
+  Spring Modulith's JPA event store maps this column from a bare @Column on the
+  @MappedSuperclass JpaEventPublication, so Hibernate models it as varchar(255).
+  EventPublicationSchemaFixup widens the real column to text — it has to, because
+  any event serialising past 255 characters otherwise fails at commit and rolls
+  back the business transaction that published it. But that fixup runs on
+  ApplicationReadyEvent, after the schema migrator. So from the next boot onward
+  the migrator sees text, wants varchar(255), and attempts a narrowing that can
+  never succeed once a single row exceeds 255 — three stack traces per startup.
+
+  Overriding the column definition here makes Hibernate's model match the column
+  that actually has to exist, so no ALTER is ever generated. The fixup stays for
+  databases created before this file.
+
+  The entity is Modulith-internal (note the `updating` package). If a future
+  upgrade moves it, startup fails with a clear "entity class not found" rather
+  than silently reverting to the broken behaviour — which is the failure mode we
+  want.
+-->
+<entity-mappings xmlns="https://jakarta.ee/xml/ns/persistence/orm"
+                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xsi:schemaLocation="https://jakarta.ee/xml/ns/persistence/orm
+                                     https://jakarta.ee/xml/ns/persistence/orm/orm_3_0.xsd"
+                 version="3.0">
+
+    <entity class="org.springframework.modulith.events.jpa.updating.DefaultJpaEventPublication">
+        <attribute-override name="serializedEvent">
+            <column name="serialized_event" column-definition="text"/>
+        </attribute-override>
+    </entity>
+
+</entity-mappings>
