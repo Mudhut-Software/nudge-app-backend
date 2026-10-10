@@ -36,6 +36,17 @@ class QuotaPeriodTest {
     }
 
     @Test
+    fun `at the exact boundary instant the new period has begun`() {
+        // Not one second past it: a strict `>` instead of `>=` passes the
+        // +1s case and every other test in this file. This is the only test
+        // that distinguishes them.
+        assertEquals(
+            at("2026-03-08T00:00:00Z"),
+            QuotaPeriod.startFor(anchor = at("2026-01-08T14:30:00Z"), now = at("2026-03-08T00:00:00Z")),
+        )
+    }
+
+    @Test
     fun `a 31st anchor clamps to the last day of a short month`() {
         // February has no 31st. Unclamped, the period silently skips — the
         // classic billing bug.
