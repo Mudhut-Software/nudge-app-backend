@@ -82,7 +82,7 @@ class SubscriptionServiceTest {
         whenever(repo.findByUserIdAndEndedAtIsNull(1L)).thenReturn(Optional.of(pro))
         whenever(repo.save(any<Subscription>())).thenAnswer { it.arguments[0] as Subscription }
 
-        sut.cancel(alice())
+        sut.cancel(alice(), now = Instant.parse("2026-03-15T00:00:00Z"))
 
         assertNotNull(pro.cancelledAt)
         assertNull(pro.endedAt)
@@ -100,11 +100,30 @@ class SubscriptionServiceTest {
         whenever(repo.findByUserIdAndEndedAtIsNull(1L)).thenReturn(Optional.of(pro))
         whenever(repo.save(any<Subscription>())).thenAnswer { it.arguments[0] as Subscription }
 
-        sut.resume(alice())
+        sut.resume(alice(), now = Instant.parse("2026-03-20T00:00:00Z"))
 
         assertNull(pro.cancelledAt)
         // No new row: the subscription never lapsed, so history has no gap.
         verify(repo, times(1)).save(any<Subscription>())
+    }
+
+    @Test
+    fun `resuming after the period already lapsed does not resurrect PRO`() {
+        // Without lapsing first, clearing cancelledAt leaves tier=PRO with a past
+        // period end and no cancellation — which reads as "renewing" forever.
+        val pro = sub(
+            SubscriptionTier.PRO,
+            startedAt = Instant.parse("2026-03-01T00:00:00Z"),
+            periodEnd = Instant.parse("2026-04-01T00:00:00Z"),
+            cancelledAt = Instant.parse("2026-03-15T00:00:00Z"),
+        )
+        whenever(repo.findByUserIdAndEndedAtIsNull(1L)).thenReturn(Optional.of(pro))
+        whenever(repo.save(any<Subscription>())).thenAnswer { it.arguments[0] as Subscription }
+
+        sut.resume(alice(), now = Instant.parse("2026-07-01T00:00:00Z"))
+
+        assertEquals(Instant.parse("2026-04-01T00:00:00Z"), pro.endedAt)
+        assertEquals(SubscriptionTier.PRO, pro.tier)
     }
 
     @Test

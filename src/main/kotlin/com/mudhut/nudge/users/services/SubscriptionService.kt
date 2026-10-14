@@ -66,35 +66,25 @@ class SubscriptionService(
         )
     }
 
-    /**
-     * Stop renewing. The tier survives until `currentPeriodEnd`.
-     *
-     * Operates directly on the open row rather than through [currentFor]:
-     * routing through the lapse-check here would let the real wall clock
-     * reinterpret an intentional "set cancelledAt" write as "also replace this
-     * row with a fresh FREE one," which is not what cancelling means.
-     */
+    /** Stop renewing. The tier survives until `currentPeriodEnd`. */
     @Transactional
-    fun cancel(user: User) {
-        val current = repo.findByUserIdAndEndedAtIsNull(user.id!!)
-            .orElseGet { openFreeFor(user) }
-        current.cancelledAt = Instant.now()
-        repo.save(current)
+    fun cancel(user: User, now: Instant = Instant.now()) {
+        // Through currentFor, not the repository: it is the only thing that
+        // lapses an expired subscription, and writing to a row that should
+        // already be closed is how a stale PRO gets resurrected.
+        currentFor(user, now).let {
+            it.cancelledAt = now
+            repo.save(it)
+        }
     }
 
-    /**
-     * Undo a cancellation that has not lapsed yet. No new row; no gap in history.
-     *
-     * Deliberately bypasses [currentFor]'s lapse resolution for the same reason
-     * as [cancel]: this mutates the open row in place and must not risk the
-     * lapse path swapping it out from under the caller.
-     */
+    /** Undo a cancellation that has not lapsed yet. No new row; no gap in history. */
     @Transactional
-    fun resume(user: User) {
-        val current = repo.findByUserIdAndEndedAtIsNull(user.id!!)
-            .orElseGet { openFreeFor(user) }
-        current.cancelledAt = null
-        repo.save(current)
+    fun resume(user: User, now: Instant = Instant.now()) {
+        currentFor(user, now).let {
+            it.cancelledAt = null
+            repo.save(it)
+        }
     }
 
     /**
