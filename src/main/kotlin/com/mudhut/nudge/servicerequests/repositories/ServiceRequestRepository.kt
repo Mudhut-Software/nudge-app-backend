@@ -183,4 +183,26 @@ interface ServiceRequestRepository : JpaRepository<ServiceRequest, Long> {
         @Param("customerId") customerId: Long,
         pageable: Pageable,
     ): List<ServiceRequest>
+
+    /**
+     * Jobs this account has taken on in the current quota period, pooled across
+     * every business it owns.
+     *
+     * `respondedAt` is the moment of acceptance and is not rewritten afterwards —
+     * COMPLETED, NO_SHOW and cancel all write their own timestamps — so a job
+     * accepted in one month and finished in the next stays counted in the first.
+     */
+    @Query(
+        """
+        SELECT COUNT(r) FROM ServiceRequest r
+        WHERE r.business.owner.id = :ownerId
+          AND r.status IN :statuses
+          AND r.respondedAt >= :periodStart
+        """
+    )
+    fun countQuotaConsuming(
+        @Param("ownerId") ownerId: Long,
+        @Param("statuses") statuses: Collection<ServiceRequestStatus>,
+        @Param("periodStart") periodStart: LocalDateTime,
+    ): Int
 }
