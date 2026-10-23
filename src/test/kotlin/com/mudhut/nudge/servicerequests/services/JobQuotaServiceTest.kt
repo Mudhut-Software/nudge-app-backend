@@ -2,8 +2,12 @@ package com.mudhut.nudge.servicerequests.services
 
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
-import com.mudhut.nudge.servicerequests.spi.QuotaPlan
-import com.mudhut.nudge.servicerequests.spi.SubscriptionPlanQuery
+import com.mudhut.nudge.users.entities.Subscription
+import com.mudhut.nudge.users.entities.SubscriptionTier
+import com.mudhut.nudge.users.entities.User
+import com.mudhut.nudge.users.repositories.UserRepository
+import com.mudhut.nudge.users.services.QuotaPeriod
+import com.mudhut.nudge.users.services.SubscriptionService
 import com.mudhut.nudge.utils.exceptions.QuotaExceededException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -18,21 +22,54 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.Optional
 
+/**
+ * `JobQuotaService` depends directly on `users.services.SubscriptionService`
+ * and `UserRepository` (both already exposed via `users/services` and
+ * `users/repositories` NamedInterfaces) rather than on a `servicerequests/spi`
+ * interface implemented in `users`. The brief originally specified the latter,
+ * but `servicerequests` already has a sanctioned direct dependency on `users`,
+ * so an interface implemented *by* `users` would add the reverse edge and
+ * close a module cycle. See task-3-report.md.
+ */
 class JobQuotaServiceTest {
 
     private val repo: ServiceRequestRepository = mock()
-    private val planQuery: SubscriptionPlanQuery = mock()
-    private val sut = JobQuotaService(repo, planQuery, freeLimit = 10)
+    private val userRepository: UserRepository = mock()
+    private val subscriptionService: SubscriptionService = mock()
+    private val sut = JobQuotaService(repo, userRepository, subscriptionService, freeLimit = 10)
 
-    private val periodStart = Instant.parse("2026-03-08T00:00:00Z")
+    private val anchor = Instant.parse("2026-01-08T00:00:00Z")
 
-    private fun freePlan() = QuotaPlan(unlimited = false, periodStart = periodStart)
-    private fun proPlan() = QuotaPlan(unlimited = true, periodStart = periodStart)
+    // JobQuotaService calls Instant.now() internally (it is not given a clock),
+    // so the expected window is computed the same way at assertion time rather
+    // than hard-coded — this mirrors QuotaPeriod.startFor's own boundary tests,
+    // which pin `now`; here `now` cannot be pinned without changing the
+    // service's signature, so the test accepts the same wall-clock "now" the
+    // service itself will observe moments later.
+    private fun expectedPeriodStart(): Instant = QuotaPeriod.startFor(anchor, Instant.now())
+
+    private fun user(id: Long = 1L) = User(id = id, email = "owner@example.com", username = "Owner", password = "x")
+
+    private fun freeSubscription() = Subscription(tier = SubscriptionTier.FREE, startedAt = anchor)
+    private fun proSubscription() = Subscription(tier = SubscriptionTier.PRO, startedAt = anchor)
+
+    private fun stubFree(id: Long = 1L) {
+        whenever(userRepository.findById(id)).thenReturn(Optional.of(user(id)))
+        whenever(subscriptionService.currentFor(any(), any())).thenReturn(freeSubscription())
+        whenever(subscriptionService.quotaAnchorFor(any())).thenReturn(anchor)
+    }
+
+    private fun stubPro(id: Long = 1L) {
+        whenever(userRepository.findById(id)).thenReturn(Optional.of(user(id)))
+        whenever(subscriptionService.currentFor(any(), any())).thenReturn(proSubscription())
+        whenever(subscriptionService.quotaAnchorFor(any())).thenReturn(anchor)
+    }
 
     @Test
     fun `usage counts only the statuses that hold a unit`() {
-        whenever(planQuery.planFor(1L)).thenReturn(freePlan())
+        stubFree()
         whenever(repo.countQuotaConsuming(eq(1L), any(), any())).thenReturn(3)
 
         sut.requireCapacity(1L)
@@ -42,13 +79,13 @@ class JobQuotaServiceTest {
         // consumed a unit, the last two released theirs.
         val statuses = argumentCaptor<Collection<ServiceRequestStatus>>()
         // Deviation from the brief: countQuotaConsuming's third parameter is a
-        // LocalDateTime (per Step 6), while `periodStart` here is an Instant — the
-        // brief's `eq(periodStart)` does not type-check. Comparing against the
-        // same UTC conversion JobQuotaService performs at the boundary.
+        // LocalDateTime (per Step 6), so the assertion compares against the
+        // same UTC conversion JobQuotaService performs at the boundary, rather
+        // than the Instant periodStart directly.
         verify(repo).countQuotaConsuming(
             eq(1L),
             statuses.capture(),
-            eq(periodStart.atOffset(ZoneOffset.UTC).toLocalDateTime()),
+            eq(expectedPeriodStart().atOffset(ZoneOffset.UTC).toLocalDateTime()),
         )
         assertEquals(
             setOf(
@@ -63,7 +100,7 @@ class JobQuotaServiceTest {
 
     @Test
     fun `accepting below the limit is allowed`() {
-        whenever(planQuery.planFor(1L)).thenReturn(freePlan())
+        stubFree()
         whenever(repo.countQuotaConsuming(eq(1L), any(), any())).thenReturn(9)
 
         sut.requireCapacity(1L)
@@ -71,7 +108,7 @@ class JobQuotaServiceTest {
 
     @Test
     fun `accepting at the limit is refused`() {
-        whenever(planQuery.planFor(1L)).thenReturn(freePlan())
+        stubFree()
         whenever(repo.countQuotaConsuming(eq(1L), any(), any())).thenReturn(10)
 
         assertThrows(QuotaExceededException::class.java) { sut.requireCapacity(1L) }
@@ -80,7 +117,7 @@ class JobQuotaServiceTest {
     @Test
     fun `pro is never refused and is not counted`() {
         // Unlimited means the count is not merely large — it is not asked for.
-        whenever(planQuery.planFor(1L)).thenReturn(proPlan())
+        stubPro()
 
         sut.requireCapacity(1L)
 
@@ -89,7 +126,7 @@ class JobQuotaServiceTest {
 
     @Test
     fun `the snapshot reports remaining for free`() {
-        whenever(planQuery.planFor(1L)).thenReturn(freePlan())
+        stubFree()
         whenever(repo.countQuotaConsuming(eq(1L), any(), any())).thenReturn(4)
 
         val snap = sut.snapshotFor(1L)
@@ -103,7 +140,7 @@ class JobQuotaServiceTest {
     fun `the snapshot reports null, not a sentinel, for pro`() {
         // A sentinel like -1 or Int.MAX_VALUE invites the UI to do arithmetic on
         // "unlimited" and render something absurd.
-        whenever(planQuery.planFor(1L)).thenReturn(proPlan())
+        stubPro()
 
         val snap = sut.snapshotFor(1L)
 
@@ -115,7 +152,7 @@ class JobQuotaServiceTest {
     fun `remaining never goes negative`() {
         // A provider can exceed the limit legitimately: a customer accepting an
         // outstanding proposal consumes a unit without the provider acting.
-        whenever(planQuery.planFor(1L)).thenReturn(freePlan())
+        stubFree()
         whenever(repo.countQuotaConsuming(eq(1L), any(), any())).thenReturn(12)
 
         assertEquals(0, sut.snapshotFor(1L).remaining)

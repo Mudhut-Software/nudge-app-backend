@@ -14,6 +14,7 @@ import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.UserRole
 import com.mudhut.nudge.utils.exceptions.InvalidStateTransitionException
+import com.mudhut.nudge.utils.exceptions.QuotaExceededException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -39,7 +40,8 @@ class ProviderRequestServiceTest {
     private val popularityPublisher: RequestPopularityPublisher = mock()
     private val eventPublisher: ServiceRequestEventPublisher = mock()
     private val proposalRepo: ServiceRequestProposalRepository = mock()
-    private val sut = ProviderRequestService(repo, businessService, popularityPublisher, eventPublisher, proposalRepo)
+    private val quotaService: JobQuotaService = mock()
+    private val sut = ProviderRequestService(repo, businessService, popularityPublisher, eventPublisher, proposalRepo, quotaService)
 
     private fun biz(id: Long = 10L) = Business(
         id = id,
@@ -49,10 +51,19 @@ class ProviderRequestServiceTest {
         email = "biz@example.com",
         serviceAreas = mutableListOf("Kampala"),
         status = BusinessStatus.ACTIVE,
+        owner = owner(),
+    )
+
+    // The business owner, whose allowance quotaService checks. Distinct from
+    // the customer below, which this fixture previously didn't bother
+    // distinguishing since nothing depended on it before quota enforcement.
+    private fun owner() = User(
+        id = 2L, username = "Owner", email = "owner@example.com",
+        phoneNumber = null, password = "x", role = UserRole.BASIC_USER, isActive = true,
     )
 
     private fun user() = User(
-        id = 1L, username = "Owner", email = "owner@example.com",
+        id = 1L, username = "Customer", email = "customer@example.com",
         phoneNumber = null, password = "x", role = UserRole.BASIC_USER, isActive = true,
     )
 
@@ -306,5 +317,52 @@ class ProviderRequestServiceTest {
         assertEquals(ServiceRequestStatus.DECLINED, response.status)
         assertEquals(ProposalOutcome.REJECTED, outstanding.outcome)
         assertNotNull(outstanding.respondedAt)
+    }
+
+    @Test
+    fun `accepting checks the quota before changing anything`() {
+        val r = req(ServiceRequestStatus.PENDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(quotaService.requireCapacity(any()))
+            .thenThrow(QuotaExceededException("This business can't take more requests at the moment."))
+
+        assertThrows(QuotaExceededException::class.java) {
+            sut.accept("owner@example.com", 10L, 100L)
+        }
+        // Nothing moved: no status change, no save, no notification.
+        assertEquals(ServiceRequestStatus.PENDING, r.status)
+        verify(repo, never()).save(any<ServiceRequest>())
+    }
+
+    @Test
+    fun `proposing a time also consumes the allowance`() {
+        // Proposing reserves a unit, so it must be refused at the limit too —
+        // otherwise the cap is avoidable by proposing instead of accepting.
+        val r = req(ServiceRequestStatus.PENDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(null)
+        whenever(quotaService.requireCapacity(any()))
+            .thenThrow(QuotaExceededException("This business can't take more requests at the moment."))
+
+        assertThrows(QuotaExceededException::class.java) {
+            sut.propose("owner@example.com", 10L, 100L, LocalDateTime.now().plusDays(3), null)
+        }
+        assertEquals(ServiceRequestStatus.PENDING, r.status)
+        verify(proposalRepo, never()).save(any<ServiceRequestProposal>())
+    }
+
+    @Test
+    fun `completing a job does not consult the quota`() {
+        // The unit was consumed at acceptance. Charging again at completion would
+        // double-count the same job.
+        val r = req(ServiceRequestStatus.CONFIRMED)
+        r.requestedDate = LocalDateTime.now().minusDays(1)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        sut.complete("owner@example.com", 10L, 100L)
+
+        verify(quotaService, never()).requireCapacity(any())
     }
 }

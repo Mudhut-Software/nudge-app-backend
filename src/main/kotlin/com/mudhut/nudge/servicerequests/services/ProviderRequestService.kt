@@ -28,6 +28,7 @@ class ProviderRequestService(
     private val popularityPublisher: RequestPopularityPublisher,
     private val eventPublisher: ServiceRequestEventPublisher,
     private val proposalRepo: ServiceRequestProposalRepository,
+    private val quotaService: JobQuotaService,
 ) {
 
     fun list(
@@ -84,6 +85,8 @@ class ProviderRequestService(
     fun accept(email: String, businessId: Long, requestId: Long): ServiceRequestResponse {
         businessService.requireRole(businessId, email, BusinessRole.MANAGER)
         val request = requireSameBusiness(businessId, requestId)
+        // The owner's allowance, pooled across every business they own.
+        request.business?.owner?.id?.let { quotaService.requireCapacity(it) }
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CONFIRMED)
 
@@ -111,6 +114,8 @@ class ProviderRequestService(
     ): ServiceRequestResponse {
         businessService.requireRole(businessId, email, BusinessRole.MANAGER)
         val request = requireSameBusiness(businessId, requestId)
+        // The owner's allowance, pooled across every business they own.
+        request.business?.owner?.id?.let { quotaService.requireCapacity(it) }
 
         require(proposedDate.isAfter(LocalDateTime.now())) {
             "The proposed time must be in the future"
