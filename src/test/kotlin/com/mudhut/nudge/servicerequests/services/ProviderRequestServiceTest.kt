@@ -332,6 +332,31 @@ class ProviderRequestServiceTest {
         // Nothing moved: no status change, no save, no notification.
         assertEquals(ServiceRequestStatus.PENDING, r.status)
         verify(repo, never()).save(any<ServiceRequest>())
+        // The check is charged to the business *owner* (id 2), not the business
+        // id (10) or the customer (id 1) - those three must never be confused,
+        // since the allowance is pooled per account across every business they own.
+        verify(quotaService).requireCapacity(2L)
+    }
+
+    @Test
+    fun `accepting a request that already holds a unit does not re-check capacity`() {
+        // REVISION_REQUESTED already consumed a unit when it was proposed.
+        // Accepting it is the same booking continuing, not a new one, so this
+        // must succeed even if the account is sitting exactly at its limit -
+        // and it must not even ask, because this transition charges nothing new.
+        // If the skip in ProviderRequestService.accept is removed, this test
+        // fails: requireCapacity is stubbed to throw below.
+        val r = req(ServiceRequestStatus.REVISION_REQUESTED)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(quotaService.holdsUnit(ServiceRequestStatus.REVISION_REQUESTED)).thenReturn(true)
+        whenever(quotaService.requireCapacity(any()))
+            .thenThrow(QuotaExceededException("This business can't take more requests at the moment."))
+
+        val response = sut.accept("owner@example.com", 10L, 100L)
+
+        assertEquals(ServiceRequestStatus.CONFIRMED, response.status)
+        verify(quotaService, never()).requireCapacity(any())
     }
 
     @Test
@@ -350,6 +375,9 @@ class ProviderRequestServiceTest {
         }
         assertEquals(ServiceRequestStatus.PENDING, r.status)
         verify(proposalRepo, never()).save(any<ServiceRequestProposal>())
+        // Same identity requirement as accept: owner (2), not business (10) or
+        // customer (1).
+        verify(quotaService).requireCapacity(2L)
     }
 
     @Test

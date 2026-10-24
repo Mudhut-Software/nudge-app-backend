@@ -32,6 +32,24 @@ object QuotaPeriod {
     }
 
     /**
+     * The next boundary after the period containing `now` — i.e. when the
+     * period `startFor` returns will end.
+     *
+     * Reuses `startIn`'s clamping rather than re-deriving it: a client-side
+     * `setMonth(getMonth() + 1)` *overflows* short months instead of clamping
+     * them (31 Jan + 1 month becomes 3 Mar, not the clamped 28 Feb), which is
+     * exactly the billing bug `startIn` exists to avoid. Computing the
+     * boundary once, here, and shipping it as data means nobody re-derives it
+     * incorrectly on the client.
+     */
+    fun endFor(anchor: Instant, now: Instant): Instant {
+        val anchorDay = anchor.atOffset(ZoneOffset.UTC).dayOfMonth
+        val start = startFor(anchor, now)
+        val startMonth = YearMonth.from(start.atOffset(ZoneOffset.UTC))
+        return startIn(startMonth.plusMonths(1), anchorDay)
+    }
+
+    /**
      * Clamped to the month's length: February has no 31st, and an unclamped
      * anchor silently skips the period instead of starting it.
      */

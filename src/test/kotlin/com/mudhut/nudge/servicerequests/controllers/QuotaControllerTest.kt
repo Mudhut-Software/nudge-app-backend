@@ -53,13 +53,20 @@ class QuotaControllerTest {
         whenever(userRepository.findByEmail("owner@example.com"))
             .thenReturn(Optional.of(User(id = 1L, email = "owner@example.com", username = "Owner", password = "x")))
         whenever(quotaService.snapshotFor(any()))
-            .thenReturn(QuotaSnapshot(false, 10, 4, 6, Instant.parse("2026-03-08T00:00:00Z")))
+            .thenReturn(
+                QuotaSnapshot(
+                    false, 10, 4, 6,
+                    Instant.parse("2026-03-08T00:00:00Z"),
+                    Instant.parse("2026-04-08T00:00:00Z"),
+                ),
+            )
 
         mockMvc.perform(get("/api/v1/me/quota"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.limit").value(10))
             .andExpect(jsonPath("$.remaining").value(6))
             .andExpect(jsonPath("$.unlimited").value(false))
+            .andExpect(jsonPath("$.periodEndsAt").value("2026-04-08T00:00:00Z"))
     }
 
     @Test
@@ -68,7 +75,13 @@ class QuotaControllerTest {
         whenever(userRepository.findByEmail("owner@example.com"))
             .thenReturn(Optional.of(User(id = 1L, email = "owner@example.com", username = "Owner", password = "x")))
         whenever(quotaService.snapshotFor(any()))
-            .thenReturn(QuotaSnapshot(true, null, 0, null, Instant.parse("2026-03-08T00:00:00Z")))
+            .thenReturn(
+                QuotaSnapshot(
+                    true, null, 0, null,
+                    Instant.parse("2026-03-08T00:00:00Z"),
+                    Instant.parse("2026-04-08T00:00:00Z"),
+                ),
+            )
 
         mockMvc.perform(get("/api/v1/me/quota"))
             .andExpect(status().isOk)

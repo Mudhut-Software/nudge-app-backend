@@ -85,8 +85,14 @@ class ProviderRequestService(
     fun accept(email: String, businessId: Long, requestId: Long): ServiceRequestResponse {
         businessService.requireRole(businessId, email, BusinessRole.MANAGER)
         val request = requireSameBusiness(businessId, requestId)
-        // The owner's allowance, pooled across every business they own.
-        request.business?.owner?.id?.let { quotaService.requireCapacity(it) }
+        // The owner's allowance, pooled across every business they own. Skipped
+        // when the request already holds a unit (REVISION_REQUESTED -> CONFIRMED
+        // is the same booking continuing, not a new one) - otherwise a provider
+        // at the limit could never accept a job they had already proposed on.
+        if (!quotaService.holdsUnit(request.status)) {
+            val ownerId = request.business?.owner?.id ?: error("Business has no owner")
+            quotaService.requireCapacity(ownerId)
+        }
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CONFIRMED)
 
@@ -114,8 +120,14 @@ class ProviderRequestService(
     ): ServiceRequestResponse {
         businessService.requireRole(businessId, email, BusinessRole.MANAGER)
         val request = requireSameBusiness(businessId, requestId)
-        // The owner's allowance, pooled across every business they own.
-        request.business?.owner?.id?.let { quotaService.requireCapacity(it) }
+        // The owner's allowance, pooled across every business they own. `propose`
+        // is only reachable from PENDING (never quota-consuming), so this always
+        // runs in practice - the guard exists so this call stays symmetric with
+        // `accept` and keeps working if that ever changes.
+        if (!quotaService.holdsUnit(request.status)) {
+            val ownerId = request.business?.owner?.id ?: error("Business has no owner")
+            quotaService.requireCapacity(ownerId)
+        }
 
         require(proposedDate.isAfter(LocalDateTime.now())) {
             "The proposed time must be in the future"

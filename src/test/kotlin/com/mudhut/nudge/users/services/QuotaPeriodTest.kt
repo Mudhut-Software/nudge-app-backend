@@ -94,4 +94,57 @@ class QuotaPeriodTest {
             QuotaPeriod.startFor(anchor = at("2026-01-08T14:30:00Z"), now = at("2026-01-20T09:00:00Z")),
         )
     }
+
+    @Test
+    fun `endFor reports a normal 8th-of-month boundary`() {
+        assertEquals(
+            at("2026-02-08T00:00:00Z"),
+            QuotaPeriod.endFor(anchor = at("2026-01-08T14:30:00Z"), now = at("2026-01-20T09:00:00Z")),
+        )
+    }
+
+    @Test
+    fun `endFor clamps a 31st anchor crossing a non-leap February`() {
+        // Unclamped, naive "add one month" arithmetic overflows to 3 Mar.
+        // The period must end on the clamped 28 Feb instead.
+        assertEquals(
+            at("2026-02-28T00:00:00Z"),
+            QuotaPeriod.endFor(anchor = at("2026-01-31T10:00:00Z"), now = at("2026-01-31T12:00:00Z")),
+        )
+    }
+
+    @Test
+    fun `endFor clamps a 30th anchor crossing a non-leap February`() {
+        assertEquals(
+            at("2026-02-28T00:00:00Z"),
+            QuotaPeriod.endFor(anchor = at("2026-01-30T10:00:00Z"), now = at("2026-01-30T12:00:00Z")),
+        )
+    }
+
+    @Test
+    fun `endFor clamps a 29th anchor crossing a non-leap February`() {
+        assertEquals(
+            at("2026-02-28T00:00:00Z"),
+            QuotaPeriod.endFor(anchor = at("2026-01-29T10:00:00Z"), now = at("2026-01-29T12:00:00Z")),
+        )
+    }
+
+    @Test
+    fun `endFor does not clamp a 29th anchor crossing a leap February`() {
+        // 2028 is a leap year; the 29th exists, so no clamping should fire.
+        assertEquals(
+            at("2028-02-29T00:00:00Z"),
+            QuotaPeriod.endFor(anchor = at("2028-01-29T10:00:00Z"), now = at("2028-01-29T12:00:00Z")),
+        )
+    }
+
+    @Test
+    fun `endFor clamps a 31st anchor crossing April`() {
+        // March has 31 days but April has 30 — the next boundary after the
+        // 31 Mar-anchored period is the clamped 30 Apr, not an overflowed 1 May.
+        assertEquals(
+            at("2026-04-30T00:00:00Z"),
+            QuotaPeriod.endFor(anchor = at("2026-01-31T10:00:00Z"), now = at("2026-03-31T12:00:00Z")),
+        )
+    }
 }

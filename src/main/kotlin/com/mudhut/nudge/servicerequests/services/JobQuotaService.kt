@@ -58,6 +58,18 @@ class JobQuotaService(
         }
     }
 
+    /**
+     * Whether [status] already holds a unit of the allowance.
+     *
+     * Callers use this to skip [requireCapacity] on a transition that does not
+     * consume a *new* unit — e.g. REVISION_REQUESTED -> CONFIRMED is the same
+     * booking continuing, not a new one. Without this, a provider who proposed
+     * times on exactly `freeLimit` requests could never accept any of them
+     * once the account reaches its limit, even though accepting charges
+     * nothing new.
+     */
+    fun holdsUnit(status: ServiceRequestStatus): Boolean = status in QUOTA_CONSUMING
+
     fun snapshotFor(ownerId: Long): QuotaSnapshot {
         val user = userRepository.findById(ownerId)
             .orElseThrow { UserNotFoundException("User not found") }
@@ -69,11 +81,16 @@ class JobQuotaService(
         // The anchor is the account's first-ever subscription, not the current
         // row: if it tracked the current row, cancelling and resubscribing
         // would reset the free allowance.
-        val periodStart = QuotaPeriod.startFor(subscriptionService.quotaAnchorFor(user), now)
+        val anchor = subscriptionService.quotaAnchorFor(user)
+        val periodStart = QuotaPeriod.startFor(anchor, now)
+        // Computed here, not re-derived on the client: QuotaPeriod clamps short
+        // months (31 Jan -> 28 Feb), and a client-side `setMonth(+1)` overflows
+        // instead — the classic billing bug the clamping exists to avoid.
+        val periodEndsAt = QuotaPeriod.endFor(anchor, now)
 
         // Unlimited means the count is not merely large — it is not asked for.
         if (current.tier == SubscriptionTier.PRO) {
-            return QuotaSnapshot(true, null, 0, null, periodStart)
+            return QuotaSnapshot(true, null, 0, null, periodStart, periodEndsAt)
         }
 
         val used = repo.countQuotaConsuming(
@@ -83,7 +100,7 @@ class JobQuotaService(
         )
         // Never negative: a customer accepting an outstanding proposal consumes a
         // unit without the provider acting, so legitimate overage happens.
-        return QuotaSnapshot(false, freeLimit, used, maxOf(0, freeLimit - used), periodStart)
+        return QuotaSnapshot(false, freeLimit, used, maxOf(0, freeLimit - used), periodStart, periodEndsAt)
     }
 }
 
@@ -94,4 +111,5 @@ data class QuotaSnapshot(
     val used: Int,
     val remaining: Int?,
     val periodStart: Instant,
+    val periodEndsAt: Instant,
 )
