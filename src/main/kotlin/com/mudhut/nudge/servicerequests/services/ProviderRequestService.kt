@@ -20,6 +20,7 @@ import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 
 @Service
 class ProviderRequestService(
@@ -97,7 +98,7 @@ class ProviderRequestService(
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CONFIRMED)
 
         request.status = ServiceRequestStatus.CONFIRMED
-        request.respondedAt = LocalDateTime.now()
+        request.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
         val saved = repo.save(request)
         popularityPublisher.recomputeAndPublish(businessId)
         eventPublisher.statusChanged(saved, from = from, actor = RequestActor.PROVIDER)
@@ -153,7 +154,7 @@ class ProviderRequestService(
         )
 
         request.status = ServiceRequestStatus.REVISION_REQUESTED
-        request.respondedAt = LocalDateTime.now()
+        request.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
         val saved = repo.save(request)
         eventPublisher.statusChanged(
             saved,
@@ -177,12 +178,12 @@ class ProviderRequestService(
         proposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
             ?.let {
                 it.outcome = ProposalOutcome.REJECTED
-                it.respondedAt = LocalDateTime.now()
+                it.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
                 proposalRepo.save(it)
             }
 
         request.status = ServiceRequestStatus.DECLINED
-        request.respondedAt = LocalDateTime.now()
+        request.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
         request.declineReason = reason?.trim()?.takeIf { it.isNotEmpty() }
         val saved = repo.save(request)
         eventPublisher.statusChanged(
