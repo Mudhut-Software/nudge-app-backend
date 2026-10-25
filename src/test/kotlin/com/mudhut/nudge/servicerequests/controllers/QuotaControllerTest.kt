@@ -9,6 +9,7 @@ import com.mudhut.nudge.servicerequests.services.QuotaSnapshot
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.repositories.UserRepository
 import com.mudhut.nudge.users.services.NudgeUserDetailsService
+import org.hamcrest.Matchers.nullValue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.whenever
@@ -86,7 +87,11 @@ class QuotaControllerTest {
         mockMvc.perform(get("/api/v1/me/quota"))
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.unlimited").value(true))
-            .andExpect(jsonPath("$.remaining").doesNotExist())
+            // doesNotExist() also passes for a present-but-null field, which is
+            // what the app actually sends (QuotaSnapshot serializes `remaining`
+            // as an explicit JSON null, not an absent key) — assert that
+            // explicitly so this says what it means.
+            .andExpect(jsonPath("$.remaining").value(nullValue()))
     }
 
     @Test
