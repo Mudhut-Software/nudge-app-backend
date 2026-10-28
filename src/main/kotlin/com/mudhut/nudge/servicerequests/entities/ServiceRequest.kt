@@ -35,7 +35,7 @@ class ServiceRequest(
     @JoinColumn(name = "business_id", nullable = false)
     var business: Business? = null,
 
-    // 20, not 16: REVISION_REQUESTED is 19 characters and does not fit in the
+    // 20, not 16: REVISION_REQUESTED is 18 characters and does not fit in the
     // previous length=16 column — found by ServiceRequestRepositoryQuotaTest
     // persisting a real row against Postgres via Testcontainers. Every prior
     // test mocked the repository, so this had never actually been inserted.

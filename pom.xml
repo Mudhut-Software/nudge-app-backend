@@ -330,6 +330,23 @@
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
 			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<!-- Pinned to a non-UTC, east-of-UTC zone (the real deployment
+					     reality — Africa/Kampala, UTC+3) deliberately: on a UTC test
+					     JVM, a respondedAt write that regressed back to
+					     LocalDateTime.now() (JVM-default zone) would be
+					     indistinguishable from LocalDateTime.now(ZoneOffset.UTC), and
+					     every zone-sensitive test in the suite would stay green
+					     while silently testing nothing. @{argLine} carries forward
+					     the JaCoCo agent argLine injected by the jacoco:prepare-agent
+					     execution below; overwriting it outright would silently
+					     disable coverage instrumentation. -->
+					<argLine>@{argLine} -Duser.timezone=Africa/Kampala</argLine>
+				</configuration>
+			</plugin>
+			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
 				<version>0.8.11</version>

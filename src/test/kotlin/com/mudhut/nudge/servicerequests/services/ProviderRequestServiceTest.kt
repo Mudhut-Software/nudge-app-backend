@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
@@ -29,8 +30,11 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
+import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.Optional
 
 class ProviderRequestServiceTest {
@@ -74,6 +78,42 @@ class ProviderRequestServiceTest {
         status = status,
         viewedAt = viewedAt,
     )
+
+    /**
+     * Scratch verification per code review: don't assume the surefire
+     * `-Duser.timezone=Africa/Kampala` argLine (see pom.xml) actually applied —
+     * confirm the JVM's default zone really is Kampala before trusting any
+     * assertion below that depends on local and UTC clocks disagreeing. On a
+     * UTC test JVM this whole file's UTC-vs-local assertions would be vacuous
+     * (both clocks agree), so this must hold or the regression tests below
+     * prove nothing.
+     */
+    private fun assertTestJvmPinnedToNonUtcZone() {
+        assertEquals(ZoneId.of("Africa/Kampala"), ZoneId.systemDefault())
+    }
+
+    /**
+     * A `respondedAt` written by `LocalDateTime.now(ZoneOffset.UTC)` must land
+     * close to UTC-now and, under the Africa/Kampala (UTC+3) test JVM asserted
+     * by [assertTestJvmPinnedToNonUtcZone], far from local-now — the two differ
+     * by three hours. If a call site regresses to the JVM-local
+     * `LocalDateTime.now()`, `written` would land close to local-now instead and
+     * this assertion catches it.
+     */
+    private fun assertWrittenInUtcNotLocalZone(written: LocalDateTime?) {
+        requireNotNull(written) { "expected a respondedAt value to assert against" }
+        val nowUtc = LocalDateTime.now(ZoneOffset.UTC)
+        val nowLocal = LocalDateTime.now()
+        assertTrue(
+            Duration.between(written, nowUtc).abs() < Duration.ofMinutes(1),
+            "expected $written to be within a minute of UTC now ($nowUtc)",
+        )
+        assertTrue(
+            Duration.between(written, nowLocal).abs() > Duration.ofHours(1),
+            "expected $written to be more than an hour from local now ($nowLocal) — " +
+                "if this fails, a respondedAt write reverted to LocalDateTime.now()",
+        )
+    }
 
     @Test
     fun `list filters drafts at the DB layer`() {
@@ -131,6 +171,18 @@ class ProviderRequestServiceTest {
         assertEquals(ServiceRequestStatus.CONFIRMED, response.status)
         assertNotNull(response.respondedAt)
         verify(popularityPublisher).recomputeAndPublish(10L)
+    }
+
+    @Test
+    fun `accept writes respondedAt in UTC, not the JVM-local zone`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val r = req(ServiceRequestStatus.PENDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.accept("owner@example.com", 10L, 100L)
+
+        assertWrittenInUtcNotLocalZone(response.respondedAt)
     }
 
     @Test
@@ -244,6 +296,21 @@ class ProviderRequestServiceTest {
     }
 
     @Test
+    fun `propose writes respondedAt in UTC, not the JVM-local zone`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val r = req(ServiceRequestStatus.PENDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(null)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        val response = sut.propose("owner@example.com", 10L, 100L, LocalDateTime.now().plusDays(3), null)
+
+        assertWrittenInUtcNotLocalZone(response.respondedAt)
+    }
+
+    @Test
     fun `propose normalises a blank note to null`() {
         val r = req(ServiceRequestStatus.PENDING)
         whenever(repo.findById(100L)).thenReturn(Optional.of(r))
@@ -317,6 +384,23 @@ class ProviderRequestServiceTest {
         assertEquals(ServiceRequestStatus.DECLINED, response.status)
         assertEquals(ProposalOutcome.REJECTED, outstanding.outcome)
         assertNotNull(outstanding.respondedAt)
+    }
+
+    @Test
+    fun `declining writes respondedAt in UTC for both the request and the settled proposal`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val r = req(ServiceRequestStatus.REVISION_REQUESTED)
+        val outstanding = ServiceRequestProposal(id = 99L, outcome = ProposalOutcome.OUTSTANDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(outstanding)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        val response = sut.decline("owner@example.com", 10L, 100L, "Sorry, fully booked")
+
+        assertWrittenInUtcNotLocalZone(response.respondedAt)
+        assertWrittenInUtcNotLocalZone(outstanding.respondedAt)
     }
 
     @Test

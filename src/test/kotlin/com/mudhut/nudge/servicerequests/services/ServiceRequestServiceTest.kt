@@ -38,7 +38,10 @@ import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import java.math.BigDecimal
+import java.time.Duration
 import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.Optional
 
 class ServiceRequestServiceTest {
@@ -716,6 +719,42 @@ class ServiceRequestServiceTest {
         requestedDate = LocalDateTime.now().plusDays(1),
     )
 
+    /**
+     * Scratch verification per code review: don't assume the surefire
+     * `-Duser.timezone=Africa/Kampala` argLine (see pom.xml) actually applied —
+     * confirm the JVM's default zone really is Kampala before trusting any
+     * assertion below that depends on local and UTC clocks disagreeing. On a
+     * UTC test JVM this whole file's UTC-vs-local assertions would be vacuous
+     * (both clocks agree), so this must hold or the regression tests below
+     * prove nothing.
+     */
+    private fun assertTestJvmPinnedToNonUtcZone() {
+        assertEquals(ZoneId.of("Africa/Kampala"), ZoneId.systemDefault())
+    }
+
+    /**
+     * A `respondedAt` written by `LocalDateTime.now(ZoneOffset.UTC)` must land
+     * close to UTC-now and, under the Africa/Kampala (UTC+3) test JVM asserted
+     * by [assertTestJvmPinnedToNonUtcZone], far from local-now — the two differ
+     * by three hours. If a call site regresses to the JVM-local
+     * `LocalDateTime.now()`, `written` would land close to local-now instead and
+     * this assertion catches it.
+     */
+    private fun assertWrittenInUtcNotLocalZone(written: LocalDateTime?) {
+        requireNotNull(written) { "expected a respondedAt value to assert against" }
+        val nowUtc = LocalDateTime.now(ZoneOffset.UTC)
+        val nowLocal = LocalDateTime.now()
+        assertTrue(
+            Duration.between(written, nowUtc).abs() < Duration.ofMinutes(1),
+            "expected $written to be within a minute of UTC now ($nowUtc)",
+        )
+        assertTrue(
+            Duration.between(written, nowLocal).abs() > Duration.ofHours(1),
+            "expected $written to be more than an hour from local now ($nowLocal) — " +
+                "if this fails, a respondedAt write reverted to LocalDateTime.now()",
+        )
+    }
+
     @Test
     fun `accepting a proposal moves the requested date and confirms`() {
         val alice = user()
@@ -739,6 +778,27 @@ class ServiceRequestServiceTest {
         assertEquals(ProposalOutcome.ACCEPTED, proposal.outcome)
         assertNotNull(proposal.respondedAt)
         verify(popularityPublisher).recomputeAndPublish(10L)
+    }
+
+    @Test
+    fun `acceptProposal writes respondedAt in UTC for both the proposal and the request`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val alice = user()
+        val request = proposedRequest(alice)
+        val proposal = ServiceRequestProposal(
+            id = 99L, proposedDate = LocalDateTime.now().plusDays(3), outcome = ProposalOutcome.OUTSTANDING,
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(proposal)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        val response = sut.acceptProposal(alice.email!!, 1L)
+
+        assertWrittenInUtcNotLocalZone(response.respondedAt)
+        assertWrittenInUtcNotLocalZone(proposal.respondedAt)
     }
 
     @Test
@@ -817,6 +877,29 @@ class ServiceRequestServiceTest {
     }
 
     @Test
+    fun `rejectProposal writes respondedAt in UTC for both the proposal and the request`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val alice = user()
+        val request = proposedRequest(alice)
+        val proposal = ServiceRequestProposal(
+            id = 99L,
+            proposedDate = LocalDateTime.now().plusDays(3),
+            outcome = ProposalOutcome.OUTSTANDING,
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(proposal)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        val response = sut.rejectProposal(alice.email!!, 1L, "Too late in the week")
+
+        assertWrittenInUtcNotLocalZone(response.respondedAt)
+        assertWrittenInUtcNotLocalZone(proposal.respondedAt)
+    }
+
+    @Test
     fun `rejecting a proposal whose time has passed is allowed`() {
         val alice = user()
         val request = proposedRequest(alice)
@@ -887,6 +970,24 @@ class ServiceRequestServiceTest {
         assertEquals(ServiceRequestStatus.CANCELLED, response.status)
         assertEquals(ProposalOutcome.REJECTED, outstanding.outcome)
         assertNotNull(outstanding.respondedAt)
+    }
+
+    @Test
+    fun `cancel settles an outstanding proposal with a UTC, not local, respondedAt`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val alice = user()
+        val request = proposedRequest(alice)
+        val outstanding = ServiceRequestProposal(id = 99L, outcome = ProposalOutcome.OUTSTANDING)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(request))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(outstanding)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        sut.cancel(alice.email!!, 1L, "Changed my mind")
+
+        assertWrittenInUtcNotLocalZone(outstanding.respondedAt)
     }
 
     @Test
