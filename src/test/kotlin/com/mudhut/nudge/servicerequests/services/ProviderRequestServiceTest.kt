@@ -14,10 +14,12 @@ import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.UserRole
 import com.mudhut.nudge.utils.exceptions.InvalidStateTransitionException
+import com.mudhut.nudge.utils.exceptions.QuotaExceededException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
@@ -28,8 +30,11 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
+import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.Optional
 
 class ProviderRequestServiceTest {
@@ -39,7 +44,8 @@ class ProviderRequestServiceTest {
     private val popularityPublisher: RequestPopularityPublisher = mock()
     private val eventPublisher: ServiceRequestEventPublisher = mock()
     private val proposalRepo: ServiceRequestProposalRepository = mock()
-    private val sut = ProviderRequestService(repo, businessService, popularityPublisher, eventPublisher, proposalRepo)
+    private val quotaService: JobQuotaService = mock()
+    private val sut = ProviderRequestService(repo, businessService, popularityPublisher, eventPublisher, proposalRepo, quotaService)
 
     private fun biz(id: Long = 10L) = Business(
         id = id,
@@ -49,10 +55,19 @@ class ProviderRequestServiceTest {
         email = "biz@example.com",
         serviceAreas = mutableListOf("Kampala"),
         status = BusinessStatus.ACTIVE,
+        owner = owner(),
+    )
+
+    // The business owner, whose allowance quotaService checks. Distinct from
+    // the customer below, which this fixture previously didn't bother
+    // distinguishing since nothing depended on it before quota enforcement.
+    private fun owner() = User(
+        id = 2L, username = "Owner", email = "owner@example.com",
+        phoneNumber = null, password = "x", role = UserRole.BASIC_USER, isActive = true,
     )
 
     private fun user() = User(
-        id = 1L, username = "Owner", email = "owner@example.com",
+        id = 1L, username = "Customer", email = "customer@example.com",
         phoneNumber = null, password = "x", role = UserRole.BASIC_USER, isActive = true,
     )
 
@@ -63,6 +78,42 @@ class ProviderRequestServiceTest {
         status = status,
         viewedAt = viewedAt,
     )
+
+    /**
+     * Scratch verification per code review: don't assume the surefire
+     * `-Duser.timezone=Africa/Kampala` argLine (see pom.xml) actually applied —
+     * confirm the JVM's default zone really is Kampala before trusting any
+     * assertion below that depends on local and UTC clocks disagreeing. On a
+     * UTC test JVM this whole file's UTC-vs-local assertions would be vacuous
+     * (both clocks agree), so this must hold or the regression tests below
+     * prove nothing.
+     */
+    private fun assertTestJvmPinnedToNonUtcZone() {
+        assertEquals(ZoneId.of("Africa/Kampala"), ZoneId.systemDefault())
+    }
+
+    /**
+     * A `respondedAt` written by `LocalDateTime.now(ZoneOffset.UTC)` must land
+     * close to UTC-now and, under the Africa/Kampala (UTC+3) test JVM asserted
+     * by [assertTestJvmPinnedToNonUtcZone], far from local-now — the two differ
+     * by three hours. If a call site regresses to the JVM-local
+     * `LocalDateTime.now()`, `written` would land close to local-now instead and
+     * this assertion catches it.
+     */
+    private fun assertWrittenInUtcNotLocalZone(written: LocalDateTime?) {
+        requireNotNull(written) { "expected a respondedAt value to assert against" }
+        val nowUtc = LocalDateTime.now(ZoneOffset.UTC)
+        val nowLocal = LocalDateTime.now()
+        assertTrue(
+            Duration.between(written, nowUtc).abs() < Duration.ofMinutes(1),
+            "expected $written to be within a minute of UTC now ($nowUtc)",
+        )
+        assertTrue(
+            Duration.between(written, nowLocal).abs() > Duration.ofHours(1),
+            "expected $written to be more than an hour from local now ($nowLocal) — " +
+                "if this fails, a respondedAt write reverted to LocalDateTime.now()",
+        )
+    }
 
     @Test
     fun `list filters drafts at the DB layer`() {
@@ -120,6 +171,18 @@ class ProviderRequestServiceTest {
         assertEquals(ServiceRequestStatus.CONFIRMED, response.status)
         assertNotNull(response.respondedAt)
         verify(popularityPublisher).recomputeAndPublish(10L)
+    }
+
+    @Test
+    fun `accept writes respondedAt in UTC, not the JVM-local zone`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val r = req(ServiceRequestStatus.PENDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.accept("owner@example.com", 10L, 100L)
+
+        assertWrittenInUtcNotLocalZone(response.respondedAt)
     }
 
     @Test
@@ -233,6 +296,21 @@ class ProviderRequestServiceTest {
     }
 
     @Test
+    fun `propose writes respondedAt in UTC, not the JVM-local zone`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val r = req(ServiceRequestStatus.PENDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(null)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        val response = sut.propose("owner@example.com", 10L, 100L, LocalDateTime.now().plusDays(3), null)
+
+        assertWrittenInUtcNotLocalZone(response.respondedAt)
+    }
+
+    @Test
     fun `propose normalises a blank note to null`() {
         val r = req(ServiceRequestStatus.PENDING)
         whenever(repo.findById(100L)).thenReturn(Optional.of(r))
@@ -306,5 +384,97 @@ class ProviderRequestServiceTest {
         assertEquals(ServiceRequestStatus.DECLINED, response.status)
         assertEquals(ProposalOutcome.REJECTED, outstanding.outcome)
         assertNotNull(outstanding.respondedAt)
+    }
+
+    @Test
+    fun `declining writes respondedAt in UTC for both the request and the settled proposal`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val r = req(ServiceRequestStatus.REVISION_REQUESTED)
+        val outstanding = ServiceRequestProposal(id = 99L, outcome = ProposalOutcome.OUTSTANDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(outstanding)
+        whenever(proposalRepo.save(any<ServiceRequestProposal>())).thenAnswer { it.arguments[0] as ServiceRequestProposal }
+
+        val response = sut.decline("owner@example.com", 10L, 100L, "Sorry, fully booked")
+
+        assertWrittenInUtcNotLocalZone(response.respondedAt)
+        assertWrittenInUtcNotLocalZone(outstanding.respondedAt)
+    }
+
+    @Test
+    fun `accepting checks the quota before changing anything`() {
+        val r = req(ServiceRequestStatus.PENDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(quotaService.requireCapacity(any()))
+            .thenThrow(QuotaExceededException("This business can't take more requests at the moment."))
+
+        assertThrows(QuotaExceededException::class.java) {
+            sut.accept("owner@example.com", 10L, 100L)
+        }
+        // Nothing moved: no status change, no save, no notification.
+        assertEquals(ServiceRequestStatus.PENDING, r.status)
+        verify(repo, never()).save(any<ServiceRequest>())
+        // The check is charged to the business *owner* (id 2), not the business
+        // id (10) or the customer (id 1) - those three must never be confused,
+        // since the allowance is pooled per account across every business they own.
+        verify(quotaService).requireCapacity(2L)
+    }
+
+    @Test
+    fun `accepting a request that already holds a unit does not re-check capacity`() {
+        // REVISION_REQUESTED already consumed a unit when it was proposed.
+        // Accepting it is the same booking continuing, not a new one, so this
+        // must succeed even if the account is sitting exactly at its limit -
+        // and it must not even ask, because this transition charges nothing new.
+        // If the skip in ProviderRequestService.accept is removed, this test
+        // fails: requireCapacity is stubbed to throw below.
+        val r = req(ServiceRequestStatus.REVISION_REQUESTED)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(quotaService.holdsUnit(ServiceRequestStatus.REVISION_REQUESTED)).thenReturn(true)
+        whenever(quotaService.requireCapacity(any()))
+            .thenThrow(QuotaExceededException("This business can't take more requests at the moment."))
+
+        val response = sut.accept("owner@example.com", 10L, 100L)
+
+        assertEquals(ServiceRequestStatus.CONFIRMED, response.status)
+        verify(quotaService, never()).requireCapacity(any())
+    }
+
+    @Test
+    fun `proposing a time also consumes the allowance`() {
+        // Proposing reserves a unit, so it must be refused at the limit too —
+        // otherwise the cap is avoidable by proposing instead of accepting.
+        val r = req(ServiceRequestStatus.PENDING)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(null)
+        whenever(quotaService.requireCapacity(any()))
+            .thenThrow(QuotaExceededException("This business can't take more requests at the moment."))
+
+        assertThrows(QuotaExceededException::class.java) {
+            sut.propose("owner@example.com", 10L, 100L, LocalDateTime.now().plusDays(3), null)
+        }
+        assertEquals(ServiceRequestStatus.PENDING, r.status)
+        verify(proposalRepo, never()).save(any<ServiceRequestProposal>())
+        // Same identity requirement as accept: owner (2), not business (10) or
+        // customer (1).
+        verify(quotaService).requireCapacity(2L)
+    }
+
+    @Test
+    fun `completing a job does not consult the quota`() {
+        // The unit was consumed at acceptance. Charging again at completion would
+        // double-count the same job.
+        val r = req(ServiceRequestStatus.CONFIRMED)
+        r.requestedDate = LocalDateTime.now().minusDays(1)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        sut.complete("owner@example.com", 10L, 100L)
+
+        verify(quotaService, never()).requireCapacity(any())
     }
 }

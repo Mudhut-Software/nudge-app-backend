@@ -18,7 +18,8 @@ class RegistrationService(
     private val passwordValidator: PasswordValidator,
     private val passwordEncoder: PasswordEncoder,
     private val verificationService: VerificationService,
-    private val events: ApplicationEventPublisher
+    private val events: ApplicationEventPublisher,
+    private val subscriptionService: SubscriptionService,
 ) {
     companion object {
         private const val EMAIL_PATTERN = "^[_A-Za-z0-9-\\+]+(\\.[_A-Za-z0-9-]+)*@" +
@@ -66,6 +67,10 @@ class RegistrationService(
 
         try {
             val savedUser = userRepository.save(newUser)
+            // Every account has a subscription from day one: it removes every
+            // "does this user have one?" branch, and the first row is what the
+            // permanent quota anchor is derived from.
+            subscriptionService.openFreeFor(savedUser)
             events.publishEvent(UserRegisteredEvent(savedUser.id!!, savedUser.email!!))
             val token = verificationService.createVerificationToken(newUser)
             verificationService.sendVerificationEmail(savedUser, token)

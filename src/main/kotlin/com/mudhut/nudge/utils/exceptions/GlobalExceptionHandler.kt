@@ -254,6 +254,15 @@ class GlobalExceptionHandler {
         )
     }
 
+    @ExceptionHandler(QuotaExceededException::class)
+    fun handleQuotaExceeded(ex: QuotaExceededException): ResponseEntity<ErrorResponse> {
+        logger.warn("Quota exceeded: {}", ex.message)
+        return ResponseEntity(
+            ErrorResponse(ERROR_CODE_VALIDATION, ex.message ?: "Job limit reached"),
+            HttpStatus.CONFLICT,
+        )
+    }
+
     @ExceptionHandler(InvitationException::class)
     fun handleInvitationException(ex: InvitationException): ResponseEntity<ErrorResponse> {
         logger.warn("Invitation error: {}", ex.message)

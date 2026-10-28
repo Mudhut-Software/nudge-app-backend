@@ -35,6 +35,7 @@ import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 
 private const val MAX_ATTACHMENTS = 8
 
@@ -289,12 +290,12 @@ class ServiceRequestService(
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CONFIRMED)
 
         proposal.outcome = ProposalOutcome.ACCEPTED
-        proposal.respondedAt = LocalDateTime.now()
+        proposal.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
         proposalRepo.save(proposal)
 
         request.status = ServiceRequestStatus.CONFIRMED
         request.requestedDate = proposedDate
-        request.respondedAt = LocalDateTime.now()
+        request.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
         val saved = repo.save(request)
         request.business?.id?.let { popularityPublisher.recomputeAndPublish(it) }
         eventPublisher.statusChanged(saved, from = from, actor = RequestActor.CUSTOMER)
@@ -314,13 +315,13 @@ class ServiceRequestService(
         val trimmed = reason?.trim()?.takeIf { it.isNotEmpty() }
         proposal.outcome = ProposalOutcome.REJECTED
         proposal.responseNote = trimmed
-        proposal.respondedAt = LocalDateTime.now()
+        proposal.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
         proposalRepo.save(proposal)
 
         // declineReason is left null on purpose: it reads as the provider's words
         // everywhere it is displayed.
         request.status = ServiceRequestStatus.DECLINED
-        request.respondedAt = LocalDateTime.now()
+        request.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
         val saved = repo.save(request)
         eventPublisher.statusChanged(saved, from = from, actor = RequestActor.CUSTOMER, reason = trimmed)
         return toResponse(saved)
@@ -343,7 +344,7 @@ class ServiceRequestService(
         proposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
             ?.let {
                 it.outcome = ProposalOutcome.REJECTED
-                it.respondedAt = LocalDateTime.now()
+                it.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
                 proposalRepo.save(it)
             }
     }

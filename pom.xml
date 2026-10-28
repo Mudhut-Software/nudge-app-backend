@@ -119,7 +119,42 @@
 
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-jpa-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- @DataJpaTest pulls in @AutoConfigureTestDatabase (org.springframework.boot.jdbc.test.autoconfigure),
+		     which lives in this separate starter, not in spring-boot-starter-data-jpa-test. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-jdbc-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- Testcontainers: real Postgres for the countQuotaConsuming @DataJpaTest.
+		     Version managed by spring-boot-dependencies (testcontainers-bom); do
+		     not pin one here. Testcontainers 2.x renamed every module artifact
+		     with a `testcontainers-` prefix (the pre-2.x `postgresql`/`junit-jupiter`
+		     artifact ids no longer exist in the BOM this project inherits). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-testcontainers</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-junit-jupiter</artifactId>
 			<scope>test</scope>
 		</dependency>
 
@@ -293,6 +328,23 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<!-- Pinned to a non-UTC, east-of-UTC zone (the real deployment
+					     reality — Africa/Kampala, UTC+3) deliberately: on a UTC test
+					     JVM, a respondedAt write that regressed back to
+					     LocalDateTime.now() (JVM-default zone) would be
+					     indistinguishable from LocalDateTime.now(ZoneOffset.UTC), and
+					     every zone-sensitive test in the suite would stay green
+					     while silently testing nothing. @{argLine} carries forward
+					     the JaCoCo agent argLine injected by the jacoco:prepare-agent
+					     execution below; overwriting it outright would silently
+					     disable coverage instrumentation. -->
+					<argLine>@{argLine} -Duser.timezone=Africa/Kampala</argLine>
+				</configuration>
 			</plugin>
 			<plugin>
 				<groupId>org.jacoco</groupId>

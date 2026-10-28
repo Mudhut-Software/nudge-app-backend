@@ -20,6 +20,7 @@ import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 
 @Service
 class ProviderRequestService(
@@ -28,6 +29,7 @@ class ProviderRequestService(
     private val popularityPublisher: RequestPopularityPublisher,
     private val eventPublisher: ServiceRequestEventPublisher,
     private val proposalRepo: ServiceRequestProposalRepository,
+    private val quotaService: JobQuotaService,
 ) {
 
     fun list(
@@ -84,11 +86,19 @@ class ProviderRequestService(
     fun accept(email: String, businessId: Long, requestId: Long): ServiceRequestResponse {
         businessService.requireRole(businessId, email, BusinessRole.MANAGER)
         val request = requireSameBusiness(businessId, requestId)
+        // The owner's allowance, pooled across every business they own. Skipped
+        // when the request already holds a unit (REVISION_REQUESTED -> CONFIRMED
+        // is the same booking continuing, not a new one) - otherwise a provider
+        // at the limit could never accept a job they had already proposed on.
+        if (!quotaService.holdsUnit(request.status)) {
+            val ownerId = request.business?.owner?.id ?: error("Business has no owner")
+            quotaService.requireCapacity(ownerId)
+        }
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CONFIRMED)
 
         request.status = ServiceRequestStatus.CONFIRMED
-        request.respondedAt = LocalDateTime.now()
+        request.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
         val saved = repo.save(request)
         popularityPublisher.recomputeAndPublish(businessId)
         eventPublisher.statusChanged(saved, from = from, actor = RequestActor.PROVIDER)
@@ -111,6 +121,14 @@ class ProviderRequestService(
     ): ServiceRequestResponse {
         businessService.requireRole(businessId, email, BusinessRole.MANAGER)
         val request = requireSameBusiness(businessId, requestId)
+        // The owner's allowance, pooled across every business they own. `propose`
+        // is only reachable from PENDING (never quota-consuming), so this always
+        // runs in practice - the guard exists so this call stays symmetric with
+        // `accept` and keeps working if that ever changes.
+        if (!quotaService.holdsUnit(request.status)) {
+            val ownerId = request.business?.owner?.id ?: error("Business has no owner")
+            quotaService.requireCapacity(ownerId)
+        }
 
         require(proposedDate.isAfter(LocalDateTime.now())) {
             "The proposed time must be in the future"
@@ -136,7 +154,7 @@ class ProviderRequestService(
         )
 
         request.status = ServiceRequestStatus.REVISION_REQUESTED
-        request.respondedAt = LocalDateTime.now()
+        request.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
         val saved = repo.save(request)
         eventPublisher.statusChanged(
             saved,
@@ -160,12 +178,12 @@ class ProviderRequestService(
         proposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
             ?.let {
                 it.outcome = ProposalOutcome.REJECTED
-                it.respondedAt = LocalDateTime.now()
+                it.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
                 proposalRepo.save(it)
             }
 
         request.status = ServiceRequestStatus.DECLINED
-        request.respondedAt = LocalDateTime.now()
+        request.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
         request.declineReason = reason?.trim()?.takeIf { it.isNotEmpty() }
         val saved = repo.save(request)
         eventPublisher.statusChanged(
