@@ -137,27 +137,6 @@
 			<scope>test</scope>
 		</dependency>
 
-		<!-- Testcontainers: real Postgres for the countQuotaConsuming @DataJpaTest.
-		     Version managed by spring-boot-dependencies (testcontainers-bom); do
-		     not pin one here. Testcontainers 2.x renamed every module artifact
-		     with a `testcontainers-` prefix (the pre-2.x `postgresql`/`junit-jupiter`
-		     artifact ids no longer exist in the BOM this project inherits). -->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-testcontainers</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.testcontainers</groupId>
-			<artifactId>testcontainers-postgresql</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.testcontainers</groupId>
-			<artifactId>testcontainers-junit-jupiter</artifactId>
-			<scope>test</scope>
-		</dependency>
-
 		<dependency>
 			<groupId>me.paulschwarz</groupId>
 			<artifactId>spring-dotenv</artifactId>

@@ -14,10 +14,7 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
-import org.testcontainers.postgresql.PostgreSQLContainer
+import org.springframework.test.context.ActiveProfiles
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -30,20 +27,18 @@ import java.util.concurrent.atomic.AtomicLong
  * mocks `ServiceRequestRepository`, so a wrong join (e.g. `r.business.owner.id`
  * silently resolving to the wrong hop) would pass all of them.
  *
- * Real Postgres via Testcontainers, not H2: the point is to exercise the
- * actual dialect every environment runs, not a JPQL parser's idea of it.
+ * Runs against the real Postgres the suite already requires (`TEST_DB_URL`,
+ * `ddl-auto=create-drop`), not H2 and not a container: the point is to exercise
+ * the actual dialect every environment runs, not a JPQL parser's idea of it,
+ * and the `test` profile already provides exactly that with no extra
+ * infrastructure. `replace = NONE` stops Boot swapping in an embedded database.
  */
 @DataJpaTest
-@Testcontainers
+@ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class ServiceRequestRepositoryQuotaTest {
 
     companion object {
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres: PostgreSQLContainer = PostgreSQLContainer("postgres:16-alpine")
-
         // Each test persists its own owner/customer/business rows (unique email
         // and username are DB constraints), so every fixture needs a value that
         // is unique across the whole class, not just within one test method.
