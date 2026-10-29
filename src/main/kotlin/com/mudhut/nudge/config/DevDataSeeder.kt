@@ -19,6 +19,7 @@ import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.UserRole
 import com.mudhut.nudge.users.repositories.UserRepository
+import com.mudhut.nudge.users.services.SubscriptionService
 import jakarta.transaction.Transactional
 import org.slf4j.LoggerFactory
 import org.springframework.boot.ApplicationArguments
@@ -49,6 +50,10 @@ private val DEFAULT_COVER =
  * AND no categories exist yet. Populates a small but diverse demo dataset:
  *   • 12 top-level service categories
  *   • A demo customer plus one distinct owner per business (all `password123`)
+ *   • A FREE subscription per seeded user, exactly as registration creates one. The job-quota
+ *     period anchors on an account's first-ever subscription, so without this the anchor would
+ *     be created lazily on the first quota read and every seeded provider's period would start
+ *     from whenever someone happened to open the screen.
  *   • Five businesses across different categories, each owned by its own provider
  *   • Each business has 3–4 ACTIVE services plus one tagged bundle service (with addons)
  *
@@ -64,6 +69,7 @@ class DevDataSeeder(
     private val businessMemberRepo: BusinessMemberRepository,
     private val serviceRepo: ServiceOfferedRepository,
     private val passwordEncoder: PasswordEncoder,
+    private val subscriptionService: SubscriptionService,
 ) : ApplicationRunner {
 
     private val log = LoggerFactory.getLogger(DevDataSeeder::class.java)
@@ -158,6 +164,7 @@ class DevDataSeeder(
                 isPhoneVerified = false,
             )
         )
+        subscriptionService.openFreeFor(customer)
         log.info("DevDataSeeder: seeded demo customer.")
         return customer
     }
@@ -175,7 +182,7 @@ class DevDataSeeder(
                 isEmailVerified = true,
                 isPhoneVerified = false,
             )
-        )
+        ).also { subscriptionService.openFreeFor(it) }
 
     private fun seedBusinesses(categories: Map<String, BusinessCategory>): List<User> {
         val specs: List<BusinessSpec> = listOf(
