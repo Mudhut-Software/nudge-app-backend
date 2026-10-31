@@ -137,6 +137,14 @@
 			<scope>test</scope>
 		</dependency>
 
+		<!-- Token buckets for auth rate limiting. In-memory only: no Redis, no
+		     container. The _jdk17 classifier is the Java 17 baseline build. -->
+		<dependency>
+			<groupId>com.bucket4j</groupId>
+			<artifactId>bucket4j_jdk17-core</artifactId>
+			<version>8.14.0</version>
+		</dependency>
+
 		<dependency>
 			<groupId>me.paulschwarz</groupId>
 			<artifactId>spring-dotenv</artifactId>

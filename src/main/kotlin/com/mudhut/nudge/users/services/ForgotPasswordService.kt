@@ -5,6 +5,9 @@ import com.mudhut.nudge.users.entities.PasswordResetToken
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.models.ResetPasswordRequest
 import com.mudhut.nudge.users.repositories.PasswordResetTokenRepository
+import com.mudhut.nudge.config.ratelimit.RateLimitProperties
+import com.mudhut.nudge.config.ratelimit.RateLimiter
+import com.mudhut.nudge.utils.exceptions.RateLimitExceededException
 import com.mudhut.nudge.users.repositories.UserRepository
 import com.mudhut.nudge.users.services.helpers.PasswordValidator
 import com.mudhut.nudge.utils.exceptions.UserNotFoundException
@@ -22,7 +25,9 @@ class ForgotPasswordService(
     private val emailService: JavaEmailService,
     private val passwordValidator: PasswordValidator,
     private val passwordEncoder: PasswordEncoder,
-    @Value("\${nudge.frontend-url:}") private val frontendUrl: String
+    @Value("\${nudge.frontend-url:}") private val frontendUrl: String,
+    private val rateLimiter: RateLimiter,
+    private val rateLimitProps: RateLimitProperties,
 ) {
 
     private fun invalidateExistingPasswordResetTokens(user: User) {
@@ -54,6 +59,18 @@ class ForgotPasswordService(
 
     @Transactional
     fun initiateForgotPassword(email: String) {
+        // Per-email, tighter than the filter's per-IP budget, and checked
+        // before the lookup. This is the limit that matters here: the victim
+        // of reset-email flooding is the address owner, not the sender, and a
+        // distributed sender defeats a per-IP limit entirely.
+        if (rateLimitProps.enabled) {
+            rateLimiter.consume(
+                "forgot-password-email",
+                email.lowercase(),
+                rateLimitProps.forgotPasswordPerEmail,
+            )?.let { throw RateLimitExceededException(it) }
+        }
+
         val user = userRepository.findByEmail(email)
             .orElseThrow { UserNotFoundException("User not found with email: $email") }
 

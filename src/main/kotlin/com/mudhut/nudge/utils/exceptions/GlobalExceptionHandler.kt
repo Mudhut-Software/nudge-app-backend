@@ -4,6 +4,7 @@ import com.mailersend.sdk.exceptions.MailerSendException
 import jakarta.persistence.EntityNotFoundException
 import jakarta.validation.ConstraintViolationException
 import org.slf4j.LoggerFactory
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
@@ -261,6 +262,17 @@ class GlobalExceptionHandler {
             ErrorResponse(ERROR_CODE_VALIDATION, ex.message ?: "Job limit reached"),
             HttpStatus.CONFLICT,
         )
+    }
+
+    @ExceptionHandler(RateLimitExceededException::class)
+    fun handleRateLimitExceeded(ex: RateLimitExceededException): ResponseEntity<ErrorResponse> {
+        // Logged without the key: the identifier is usually an email, and an
+        // attacker's wordlist does not belong in the application log.
+        logger.warn("Rate limit exceeded; retry after {}s", ex.retryAfterSeconds)
+        return ResponseEntity
+            .status(HttpStatus.TOO_MANY_REQUESTS)
+            .header(HttpHeaders.RETRY_AFTER, ex.retryAfterSeconds.toString())
+            .body(ErrorResponse(ERROR_CODE_VALIDATION, ex.message!!))
     }
 
     @ExceptionHandler(InvitationException::class)
