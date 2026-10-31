@@ -1,5 +1,8 @@
 package com.mudhut.nudge.config
 
+import com.mudhut.nudge.config.ratelimit.RateLimitFilter
+import com.mudhut.nudge.config.ratelimit.RateLimitProperties
+import com.mudhut.nudge.config.ratelimit.RateLimiter
 import com.mudhut.nudge.users.services.AccessTokenBlocklistService
 import com.mudhut.nudge.users.services.JwtService
 import com.mudhut.nudge.users.services.NudgeUserDetailsService
@@ -9,6 +12,7 @@ import jakarta.servlet.http.HttpServletResponse
 import org.mockito.Mockito.mock
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
+import tools.jackson.databind.json.JsonMapper
 
 /**
  * Provides a pass-through `JwtAuthenticationFilter` for `@WebMvcTest` controller tests
@@ -34,5 +38,17 @@ class PassThroughJwtFilterConfig {
         ) {
             filterChain.doFilter(request, response)
         }
+    }
+
+    /**
+     * `@WebMvcTest` picks up every `Filter` bean, so without this each slice
+     * fails to wire the real `RateLimitFilter`'s dependencies. Disabled, so a
+     * test that logs in six times is not throttled; the filter's own behaviour
+     * is covered in `RateLimitFilterTest`.
+     */
+    @Bean
+    fun rateLimitFilter(): RateLimitFilter {
+        val props = RateLimitProperties(enabled = false)
+        return RateLimitFilter(RateLimiter(props), props, JsonMapper.builder().build())
     }
 }

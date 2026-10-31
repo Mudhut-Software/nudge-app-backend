@@ -1,5 +1,8 @@
 package com.mudhut.nudge.users.services
 
+import com.mudhut.nudge.config.ratelimit.RateLimitProperties
+import com.mudhut.nudge.config.ratelimit.RateLimiter
+import com.mudhut.nudge.utils.exceptions.RateLimitExceededException
 import com.mudhut.nudge.users.spi.UserBusinessMembershipQuery
 import com.mudhut.nudge.users.models.AuthResponse
 import com.mudhut.nudge.users.models.LoginRequest
@@ -19,7 +22,9 @@ class LoginService(
     private val passwordEncoder: PasswordEncoder,
     private val jwtService: JwtService,
     private val refreshTokenService: RefreshTokenService,
-    private val membershipQuery: UserBusinessMembershipQuery
+    private val membershipQuery: UserBusinessMembershipQuery,
+    private val rateLimiter: RateLimiter,
+    private val rateLimitProps: RateLimitProperties,
 ) {
     companion object {
         private const val EMAIL_PATTERN = "^[_A-Za-z0-9-\\+]+(\\.[_A-Za-z0-9-]+)*@" +
@@ -30,6 +35,22 @@ class LoginService(
     fun authenticateUser(loginRequest: LoginRequest, userAgent: String?): AuthResponse {
         if (!Pattern.compile(EMAIL_PATTERN).matcher(loginRequest.email!!).matches()) {
             throw IllegalArgumentException("Invalid email format")
+        }
+
+        // Per-email, on top of the filter's per-IP limit. The filter alone
+        // cannot stop a botnet walking one account's password list from many
+        // addresses, because each address keeps its own budget.
+        //
+        // Keyed on the lowercased email so case variants are not separate
+        // budgets, and checked before the user lookup so an unregistered
+        // address is throttled exactly like a registered one — a difference
+        // in behaviour here would be an enumeration oracle.
+        if (rateLimitProps.enabled) {
+            rateLimiter.consume(
+                "login-email",
+                loginRequest.email!!.lowercase(),
+                rateLimitProps.loginPerEmail,
+            )?.let { throw RateLimitExceededException(it) }
         }
 
         val user = userRepository.findByEmail(loginRequest.email!!)
