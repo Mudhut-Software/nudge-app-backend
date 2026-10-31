@@ -18,6 +18,7 @@ import org.springframework.validation.FieldError
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ControllerAdvice
 import org.springframework.web.bind.annotation.ExceptionHandler
+import org.springframework.web.servlet.resource.NoResourceFoundException
 
 @ControllerAdvice
 class GlobalExceptionHandler {
@@ -112,6 +113,20 @@ class GlobalExceptionHandler {
         logger.warn("Entity not found: {}", ex.message)
         return ResponseEntity(
             ErrorResponse(ERROR_CODE_NOT_FOUND, ex.message ?: "Resource not found"),
+            HttpStatus.NOT_FOUND
+        )
+    }
+
+    /**
+     * A URL no controller maps. Spring raises this rather than returning 404
+     * itself, so without a handler it fell through to the catch-all and a
+     * client typo or stale URL read as a 500 with a stack trace in the log.
+     */
+    @ExceptionHandler(NoResourceFoundException::class)
+    fun handleNoResourceFoundException(ex: NoResourceFoundException): ResponseEntity<ErrorResponse> {
+        logger.warn("No endpoint: {} /{}", ex.httpMethod, ex.resourcePath)
+        return ResponseEntity(
+            ErrorResponse(ERROR_CODE_NOT_FOUND, "No endpoint ${ex.httpMethod} /${ex.resourcePath}"),
             HttpStatus.NOT_FOUND
         )
     }
