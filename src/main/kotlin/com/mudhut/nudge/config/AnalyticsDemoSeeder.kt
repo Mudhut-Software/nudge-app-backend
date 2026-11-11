@@ -61,6 +61,7 @@ class AnalyticsDemoSeeder(
         val customers = (1..6).map { customer(it) }
 
         val now = YearMonth.now()
+        val clock = LocalDateTime.now()                                   // nothing seeded may be dated after this
         var invoiceSeq = 9000
         for (ago in 11 downTo 0) {
             val month = now.minusMonths(ago.toLong())
@@ -70,6 +71,7 @@ class AnalyticsDemoSeeder(
             repeat(completedCount) { i ->
                 val customer = customers[(i + ago) % customers.size]
                 val done = day(3 + i * 3)
+                if (done.isAfter(clock)) return@repeat                    // current month: skip jobs still in the future
                 val usd = ago % 4 == 0 && i == 0                          // one USD job every 4th month
                 val quote = ago == 1 && i == 1                            // one quote-priced item last month
                 val req = request(
@@ -86,19 +88,23 @@ class AnalyticsDemoSeeder(
                 if (i % 3 != 2) {
                     val status = if (i == 1 && ago % 5 == 0) "VOID" else "PAID"
                     invoice(business.id!!, customer.id!!, owner.id!!, req.id!!, ++invoiceSeq, status, if (usd) "USD" else "UGX",
-                        if (usd) BigDecimal("70.00") else BigDecimal("220000.00"), done.plusDays(3))
+                        if (usd) BigDecimal("70.00") else BigDecimal("220000.00"), minOf(done.plusDays(3), clock))
                 }
             }
             // Leaks: one declined each month, plus a cancellation and a no-show on alternating months.
-            request(customers[ago % 6], business, ServiceRequestStatus.DECLINED, submitted = day(2), responded = day(2).plusHours(2))
-            if (ago % 2 == 0) request(customers[(ago + 1) % 6], business, ServiceRequestStatus.CANCELLED, submitted = day(9), responded = day(9).plusMinutes(45))
-            if (ago % 2 == 1) request(customers[(ago + 2) % 6], business, ServiceRequestStatus.NO_SHOW, submitted = day(12), responded = day(12).plusMinutes(10))
-            if (ago == 0) request(customers[3], business, ServiceRequestStatus.PENDING, submitted = day(1))
+            fun leak(c: User, status: ServiceRequestStatus, at: LocalDateTime, respondAfter: java.time.Duration? = null) {
+                if (at.isAfter(clock)) return
+                request(c, business, status, submitted = at, responded = respondAfter?.let { at.plus(it) })
+            }
+            leak(customers[ago % 6], ServiceRequestStatus.DECLINED, day(2), java.time.Duration.ofHours(2))
+            if (ago % 2 == 0) leak(customers[(ago + 1) % 6], ServiceRequestStatus.CANCELLED, day(9), java.time.Duration.ofMinutes(45))
+            if (ago % 2 == 1) leak(customers[(ago + 2) % 6], ServiceRequestStatus.NO_SHOW, day(12), java.time.Duration.ofMinutes(10))
+            if (ago == 0) leak(customers[3], ServiceRequestStatus.PENDING, day(1))
         }
 
         // One review per customer (unique per customer↔business), spread across the year.
         listOf(5, 4, 5, 3, 4, 5).forEachIndexed { i, rating ->
-            review(customers[i].id!!, business.id!!, rating, now.minusMonths((10 - i * 2).toLong()).atDay(15).atTime(18, 0))
+            review(customers[i].id!!, business.id!!, rating, minOf(now.minusMonths((10 - i * 2).toLong()).atDay(15).atTime(18, 0), clock))
         }
 
         log.info("AnalyticsDemoSeeder: seeded 12 months of activity for {}.", business.name)
