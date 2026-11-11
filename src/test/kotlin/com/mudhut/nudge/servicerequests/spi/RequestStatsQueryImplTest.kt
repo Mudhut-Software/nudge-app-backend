@@ -1,7 +1,10 @@
 package com.mudhut.nudge.servicerequests.spi
 
+import com.mudhut.nudge.analytics.spi.ClientSplit
+import com.mudhut.nudge.analytics.spi.Money
 import com.mudhut.nudge.analytics.spi.MonthlyCount
 import com.mudhut.nudge.analytics.spi.MonthlyMoney
+import com.mudhut.nudge.analytics.spi.ServiceStats
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessCategory
 import com.mudhut.nudge.businesses.repositories.BusinessCategoryRepository
@@ -185,5 +188,98 @@ class RequestStatsQueryImplTest {
         request(c, COMPLETED, listOf(Line(service(other, "Other"), BigDecimal("1.00"))), completedAt = at, business = other)
 
         assertEquals(emptyList<MonthlyCount>(), stats.completions(biz.id!!, FROM, TO).jobs)
+    }
+
+    // --- clients ---
+
+    @Test
+    fun `a customer whose first completed job is in range is new, otherwise returning`() {
+        val fresh = user("fresh")
+        val loyal = user("loyal")
+        completed(loyal, LocalDateTime.of(2026, 3, 1, 10, 0), Line(haircut, BigDecimal("1.00")))   // earlier job
+        completed(loyal, LocalDateTime.of(2026, 10, 2, 10, 0), Line(haircut, BigDecimal("1.00")))
+        completed(fresh, LocalDateTime.of(2026, 10, 3, 10, 0), Line(haircut, BigDecimal("1.00")))
+        completed(fresh, LocalDateTime.of(2026, 10, 9, 10, 0), Line(haircut, BigDecimal("1.00")))   // twice, still one client
+
+        val oct = stats.clientSplit(biz.id!!, LocalDateTime.of(2026, 10, 1, 0, 0), TO)
+
+        assertEquals(ClientSplit(newClients = 1, returningClients = 1), oct)
+    }
+
+    @Test
+    fun `a month with no completions has no clients`() {
+        assertEquals(ClientSplit(0, 0), stats.clientSplit(biz.id!!, FROM, TO))
+    }
+
+    // --- cohort ---
+
+    @Test
+    fun `cohort is non-draft requests submitted in range, with their current status`() {
+        val c = user("customer")
+        val at = LocalDateTime.of(2026, 10, 3, 9, 0)
+        request(c, ServiceRequestStatus.DECLINED, submittedAt = at, respondedAt = at.plusMinutes(30))
+        request(c, ServiceRequestStatus.PENDING, submittedAt = at)
+        request(c, ServiceRequestStatus.DRAFT, submittedAt = at)                                  // excluded
+        request(c, ServiceRequestStatus.PENDING, submittedAt = LocalDateTime.of(2026, 11, 1, 0, 0))   // outside
+
+        val rows = stats.cohort(biz.id!!, LocalDateTime.of(2026, 10, 1, 0, 0), TO)
+
+        assertEquals(setOf("DECLINED", "PENDING"), rows.map { it.status }.toSet())
+        assertEquals(2, rows.size)
+        assertEquals(at.plusMinutes(30), rows.single { it.status == "DECLINED" }.respondedAt)
+    }
+
+    // --- per service ---
+
+    @Test
+    fun `a two-service request counts once under each service`() {
+        val c = user("customer")
+        val at = LocalDateTime.of(2026, 10, 5, 10, 0)
+        request(c, ServiceRequestStatus.PENDING, listOf(Line(haircut, BigDecimal("100.00")), Line(shave, BigDecimal("20.00"))), submittedAt = at)
+
+        val rows = stats.serviceBreakdown(biz.id!!, LocalDateTime.of(2026, 10, 1, 0, 0), TO).associateBy { it.title }
+
+        assertEquals(1, rows.getValue("Haircut").received)
+        assertEquals(1, rows.getValue("Shave").received)
+        assertEquals(0, rows.getValue("Haircut").completed)
+    }
+
+    @Test
+    fun `addons are credited to their own service and quote services are flagged`() {
+        val c = user("customer")
+        completed(
+            c, LocalDateTime.of(2026, 10, 5, 10, 0),
+            Line(haircut, BigDecimal("100.00"), addons = listOf(BigDecimal("10.00") to 2)),   // 120 to Haircut
+            Line(shave, null),                                                                 // QUOTE
+        )
+
+        val rows = stats.serviceBreakdown(biz.id!!, LocalDateTime.of(2026, 10, 1, 0, 0), TO).associateBy { it.title }
+
+        val hc = rows.getValue("Haircut")
+        assertEquals(1, hc.completed)
+        assertEquals(0, BigDecimal("120.00").compareTo(hc.work.single().amount))
+        assertEquals(false, hc.unpriced)
+        assertEquals(true, rows.getValue("Shave").unpriced)
+        assertEquals(emptyList<Money>(), rows.getValue("Shave").work)
+    }
+
+    @Test
+    fun `a renamed service is one row under its current title and rows sort by completed`() {
+        val c = user("customer")
+        completed(c, LocalDateTime.of(2026, 10, 5, 10, 0), Line(haircut, BigDecimal("1.00")))
+        completed(c, LocalDateTime.of(2026, 10, 6, 10, 0), Line(shave, BigDecimal("1.00")))
+        completed(c, LocalDateTime.of(2026, 10, 7, 10, 0), Line(shave, BigDecimal("1.00")))
+        shave.title = "Hot towel shave"
+        serviceRepo.saveAndFlush(shave)
+
+        val rows = stats.serviceBreakdown(biz.id!!, LocalDateTime.of(2026, 10, 1, 0, 0), TO)
+
+        assertEquals(listOf("Hot towel shave", "Haircut"), rows.map { it.title })
+        assertEquals(2, rows.first().completed)
+    }
+
+    @Test
+    fun `services with no activity are omitted`() {
+        assertEquals(emptyList<ServiceStats>(), stats.serviceBreakdown(biz.id!!, FROM, TO))
     }
 }
