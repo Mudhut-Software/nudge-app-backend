@@ -2,12 +2,14 @@ package com.mudhut.nudge.discovery.repositories
 
 import com.mudhut.nudge.discovery.entities.Review
 import com.mudhut.nudge.discovery.models.ReviewAggregate
+import com.mudhut.nudge.discovery.models.ReviewMonthRow
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
+import java.time.LocalDateTime
 
 @Repository
 interface ReviewRepository : JpaRepository<Review, Long> {
@@ -30,4 +32,15 @@ interface ReviewRepository : JpaRepository<Review, Long> {
         """
     )
     fun aggregatesFor(@Param("ids") ids: Collection<Long>): List<ReviewAggregate>
+
+    @Query("""
+        SELECT year(r.createdAt) AS y, month(r.createdAt) AS m, COUNT(r) AS count, SUM(r.rating) AS ratingSum
+        FROM Review r
+        WHERE r.business.id = :businessId AND r.createdAt < :before
+        GROUP BY year(r.createdAt), month(r.createdAt)
+    """)
+    fun monthlyReviewTotals(
+        @Param("businessId") businessId: Long,
+        @Param("before") before: LocalDateTime,
+    ): List<ReviewMonthRow>
 }
