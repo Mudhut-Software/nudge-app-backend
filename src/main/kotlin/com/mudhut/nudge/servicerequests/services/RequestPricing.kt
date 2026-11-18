@@ -53,19 +53,28 @@ object RequestPricing {
     }
 
     fun workByItem(items: List<PricingInputItem>, agreed: BigDecimal?): Map<Long?, BigDecimal> {
-        if (agreed == null) return items.associate { it.serviceId to itemTotal(it) }
+        if (agreed == null) return sumByKey(items.map { it.serviceId to itemTotal(it) })
         if (items.isEmpty()) return emptyMap()
         val targets = items.filter { it.isEstimate || it.price == null }.ifEmpty { items }
         val share = agreed.divide(BigDecimal(targets.size), 2, RoundingMode.DOWN)
         val remainder = agreed.setScale(2, RoundingMode.HALF_UP) - share * BigDecimal(targets.size)
         val first = targets.first()
-        return items.associate { item ->
-            item.serviceId to when {
-                item === first -> share + remainder
-                targets.any { it === item } -> share
-                else -> BigDecimal.ZERO.setScale(2)
-            }
-        }
+        return sumByKey(
+            items.map { item ->
+                item.serviceId to when {
+                    item === first -> share + remainder
+                    targets.any { it === item } -> share
+                    else -> BigDecimal.ZERO.setScale(2)
+                }
+            },
+        )
+    }
+
+    /** Sums amounts that share a key so colliding service ids never drop money. */
+    private fun sumByKey(pairs: List<Pair<Long?, BigDecimal>>): Map<Long?, BigDecimal> {
+        val out = LinkedHashMap<Long?, BigDecimal>()
+        pairs.forEach { (k, v) -> out.merge(k, v, BigDecimal::add) }
+        return out
     }
 
     fun currency(items: List<PricingInputItem>, agreedCurrency: String?): String =

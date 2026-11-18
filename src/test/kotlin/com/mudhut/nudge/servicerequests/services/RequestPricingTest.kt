@@ -138,4 +138,27 @@ class RequestPricingTest {
         assertThat(RequestPricing.currency(items, null)).isEqualTo("UGX")
         assertThat(RequestPricing.currency(listOf(item()), null)).isEqualTo("USD")
     }
+
+    @Test
+    fun `duplicate service ids sum to the request total`() {
+        val items = listOf(item(1, qty = 2), item(1, price = "700", picks = listOf(pick("1000", 3))))
+        val work = RequestPricing.workByItem(items, null)
+        assertThat(work).hasSize(1)
+        assertThat(work[1L]).isEqualByComparingTo(RequestPricing.total(items))
+    }
+
+    @Test
+    fun `several null service ids are summed`() {
+        val items = listOf(item(null, price = "100"), item(null, price = "250"))
+        assertThat(RequestPricing.workByItem(items, null)[null]).isEqualByComparingTo("350")
+    }
+
+    @Test
+    fun `duplicate ids with agreed price sum exactly to agreed`() {
+        val items = listOf(item(1, estimate = true), item(1, estimate = true), item(2, estimate = true))
+        val work = RequestPricing.workByItem(items, bd("100.01"))
+        assertThat(work.values.reduce(BigDecimal::add)).isEqualByComparingTo("100.01")
+        assertThat(work[1L]).isEqualByComparingTo("66.68")
+        assertThat(work[2L]).isEqualByComparingTo("33.33")
+    }
 }
