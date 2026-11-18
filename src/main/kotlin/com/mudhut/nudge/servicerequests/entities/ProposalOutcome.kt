@@ -11,4 +11,7 @@ enum class ProposalOutcome {
     OUTSTANDING,
     ACCEPTED,
     REJECTED,
+
+    /** Price proposals only: replaced by a newer proposal before the customer answered. */
+    SUPERSEDED,
 }

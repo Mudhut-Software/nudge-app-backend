@@ -1,13 +1,17 @@
 package com.mudhut.nudge.servicerequests.services
 
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestPriceProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.PriceEventKind
 import com.mudhut.nudge.servicerequests.events.RequestActor
+import com.mudhut.nudge.servicerequests.events.ServiceRequestPriceEvent
 import com.mudhut.nudge.servicerequests.events.ServiceRequestStatusChangedEvent
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 
 /**
  * Publishes [ServiceRequestStatusChangedEvent] for both request services.
@@ -68,6 +72,46 @@ class ServiceRequestEventPublisher(
                 changedAt = LocalDateTime.now(),
                 actor = actor,
                 proposedDate = proposedDate,
+            )
+        )
+    }
+
+    /** Same forgiving contract as [statusChanged]: anything unresolvable is logged and skipped. */
+    fun priceChanged(request: ServiceRequest, kind: PriceEventKind, proposal: ServiceRequestPriceProposal) {
+        val requestId = request.id
+        val business = request.business
+        val businessId = business?.id
+        val ownerEmail = business?.owner?.email
+        val customer = request.customer
+        val customerId = customer?.id
+        val amount = proposal.amount
+        val currency = proposal.currency
+
+        if (requestId == null || businessId == null || ownerEmail == null || customerId == null ||
+            amount == null || currency == null
+        ) {
+            log.warn(
+                "Not publishing price {} for request {}: unresolvable business owner, customer or figure",
+                kind,
+                requestId,
+            )
+            return
+        }
+
+        events.publishEvent(
+            ServiceRequestPriceEvent(
+                requestId = requestId,
+                kind = kind,
+                amount = amount,
+                currency = currency,
+                note = proposal.note,
+                businessId = businessId,
+                businessName = business.name ?: "your business",
+                ownerEmail = ownerEmail,
+                customerId = customerId,
+                customerName = customer.username ?: customer.email ?: "A customer",
+                serviceTitle = request.items.firstOrNull()?.snapshotTitle,
+                changedAt = LocalDateTime.now(ZoneOffset.UTC),
             )
         )
     }

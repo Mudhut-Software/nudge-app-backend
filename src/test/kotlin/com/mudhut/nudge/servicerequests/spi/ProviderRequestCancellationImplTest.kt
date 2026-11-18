@@ -1,13 +1,19 @@
 package com.mudhut.nudge.servicerequests.spi
 
 import com.mudhut.nudge.businesses.entities.Business
+import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestPriceProposal
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.events.RequestActor
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestPriceProposalRepository
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.servicerequests.services.ServiceRequestEventPublisher
 import com.mudhut.nudge.users.entities.User
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
@@ -16,12 +22,15 @@ import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import java.math.BigDecimal
 
 class ProviderRequestCancellationImplTest {
 
     private val repo: ServiceRequestRepository = mock()
     private val eventPublisher: ServiceRequestEventPublisher = mock()
-    private val sut = ProviderRequestCancellationImpl(repo, eventPublisher)
+    private val proposalRepo: ServiceRequestProposalRepository = mock()
+    private val priceProposalRepo: ServiceRequestPriceProposalRepository = mock()
+    private val sut = ProviderRequestCancellationImpl(repo, eventPublisher, proposalRepo, priceProposalRepo)
 
     private fun req(id: Long, status: ServiceRequestStatus) = ServiceRequest(
         id = id,
@@ -69,5 +78,29 @@ class ProviderRequestCancellationImplTest {
 
         assertEquals(1, sut.countLiveFor(10L))
         verify(repo, never()).save(any<ServiceRequest>())
+    }
+
+    @Test
+    fun `closing a business settles price proposals and date proposals`() {
+        val proposed = req(1L, ServiceRequestStatus.REVISION_REQUESTED)
+        val confirmed = req(2L, ServiceRequestStatus.CONFIRMED)
+        whenever(repo.findAllByBusinessIdAndStatusIn(eq(10L), any())).thenReturn(listOf(proposed, confirmed))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        val date = ServiceRequestProposal(id = 5L, outcome = ProposalOutcome.OUTSTANDING)
+        val price = ServiceRequestPriceProposal(
+            id = 6L, amount = BigDecimal("100"), currency = "UGX", outcome = ProposalOutcome.OUTSTANDING,
+        )
+        whenever(proposalRepo.findFirstByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING)).thenReturn(date)
+        whenever(priceProposalRepo.findFirstByRequestIdAndOutcome(2L, ProposalOutcome.OUTSTANDING)).thenReturn(price)
+
+        sut.cancelAllLiveFor(10L, "The provider closed their business.")
+
+        // Same outcome customer cancel and provider decline give an unanswered offer.
+        assertEquals(ProposalOutcome.REJECTED, date.outcome)
+        assertNotNull(date.respondedAt)
+        assertEquals(ProposalOutcome.REJECTED, price.outcome)
+        assertNotNull(price.respondedAt)
+        verify(proposalRepo).save(date)
+        verify(priceProposalRepo).save(price)
     }
 }

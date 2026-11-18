@@ -2,8 +2,12 @@ package com.mudhut.nudge.servicerequests.services
 
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestPriceProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.PriceEventKind
 import com.mudhut.nudge.servicerequests.events.RequestActor
+import com.mudhut.nudge.servicerequests.events.ServiceRequestPriceEvent
 import com.mudhut.nudge.servicerequests.events.ServiceRequestStatusChangedEvent
 import com.mudhut.nudge.users.entities.User
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -14,6 +18,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.springframework.context.ApplicationEventPublisher
+import java.math.BigDecimal
 
 class ServiceRequestEventPublisherTest {
 
@@ -92,5 +97,40 @@ class ServiceRequestEventPublisherTest {
         val captor = argumentCaptor<ServiceRequestStatusChangedEvent>()
         verify(events).publishEvent(captor.capture())
         assertEquals("c@x.com", captor.firstValue.customerName)
+    }
+
+    private val price = ServiceRequestPriceProposal(
+        id = 8L, amount = BigDecimal("4200000.00"), currency = "UGX", note = "including the canopy",
+    )
+
+    @Test
+    fun `price change carries the figure and both recipients`() {
+        val r = request(status = ServiceRequestStatus.CONFIRMED)
+        r.items.add(ServiceRequestItem(request = r, position = 0, snapshotTitle = "Venue dressing"))
+
+        sut.priceChanged(r, PriceEventKind.PROPOSED, price)
+
+        val captor = argumentCaptor<ServiceRequestPriceEvent>()
+        verify(events).publishEvent(captor.capture())
+        val e = captor.firstValue
+        assertEquals(1L, e.requestId)
+        assertEquals(PriceEventKind.PROPOSED, e.kind)
+        assertEquals(0, BigDecimal("4200000.00").compareTo(e.amount))
+        assertEquals("UGX", e.currency)
+        assertEquals("including the canopy", e.note)
+        assertEquals(3L, e.businessId)
+        assertEquals("SparkleClean", e.businessName)
+        assertEquals("owner@x.com", e.ownerEmail)
+        assertEquals(5L, e.customerId)
+        assertEquals("Alice", e.customerName)
+        assertEquals("Venue dressing", e.serviceTitle)
+    }
+
+    @Test
+    fun `price change skips publishing rather than throwing when relations are missing`() {
+        sut.priceChanged(request(owner = User(id = 9L, email = null)), PriceEventKind.ACCEPTED, price)
+        sut.priceChanged(request(customer = null), PriceEventKind.ACCEPTED, price)
+
+        verify(events, never()).publishEvent(any<ServiceRequestPriceEvent>())
     }
 }

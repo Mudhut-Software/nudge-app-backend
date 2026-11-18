@@ -105,6 +105,20 @@ class ServiceRequestController(
         authentication: Authentication,
     ): ServiceRequestResponse = service.rejectProposal(authentication.name, id, payload?.reason)
 
+    @PostMapping("/{id}/price/accept")
+    fun acceptPrice(
+        @PathVariable id: Long,
+        authentication: Authentication,
+    ): ServiceRequestResponse = service.acceptPrice(authentication.name, id)
+
+    /** Declining the price cancels the booking; the reason is recorded as its cancellation reason. */
+    @PostMapping("/{id}/price/reject")
+    fun rejectPrice(
+        @PathVariable id: Long,
+        @Valid @RequestBody(required = false) payload: CancelRequestPayload?,
+        authentication: Authentication,
+    ): ServiceRequestResponse = service.rejectPrice(authentication.name, id, payload?.reason)
+
     @DeleteMapping("/{id}")
     fun delete(
         @PathVariable id: Long,

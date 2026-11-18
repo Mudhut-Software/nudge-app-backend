@@ -12,6 +12,8 @@ import com.mudhut.nudge.servicerequests.models.ServiceRequestItemResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
 import com.mudhut.nudge.servicerequests.services.ServiceRequestService
 import com.mudhut.nudge.users.services.NudgeUserDetailsService
+import com.mudhut.nudge.utils.exceptions.InvalidStateTransitionException
+import com.mudhut.nudge.utils.exceptions.PriceNotSettledException
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.eq
@@ -85,6 +87,7 @@ class ServiceRequestControllerTest {
             proposal = null,
             attachments = emptyList<AttachmentResponse>(),
             pricing = PricingState.TO_BE_CONFIRMED, total = null,
+            agreedPrice = null, priceProposal = null, priceSettled = false,
             submittedAt = null,
             respondedAt = null,
             completedAt = null,
@@ -280,5 +283,76 @@ class ServiceRequestControllerTest {
             .andExpect(jsonPath("$.request.id").value(99))
             .andExpect(jsonPath("$.request.status").value("DRAFT"))
             .andExpect(jsonPath("$.unavailableItems[0]").value("Sofa Cleaning"))
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `POST price accept is mapped`() {
+        whenever(service.acceptPrice(eq("alice@example.com"), eq(1L)))
+            .thenReturn(sampleResponse(status = ServiceRequestStatus.CONFIRMED))
+        mockMvc.perform(post("/api/v1/requests/1/price/accept"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("CONFIRMED"))
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `POST price accept with nothing outstanding is 409`() {
+        whenever(service.acceptPrice(eq("alice@example.com"), eq(1L)))
+            .thenThrow(InvalidStateTransitionException(ServiceRequestStatus.CONFIRMED, ServiceRequestStatus.CONFIRMED))
+        mockMvc.perform(post("/api/v1/requests/1/price/accept"))
+            .andExpect(status().isConflict)
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `POST price reject passes the reason through`() {
+        whenever(service.rejectPrice(eq("alice@example.com"), eq(1L), eq("Too expensive")))
+            .thenReturn(sampleResponse(status = ServiceRequestStatus.CANCELLED))
+        mockMvc.perform(
+            post("/api/v1/requests/1/price/reject")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"reason":"Too expensive"}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.status").value("CANCELLED"))
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `POST price reject works with no body and rejects a long reason`() {
+        whenever(service.rejectPrice(eq("alice@example.com"), eq(1L), eq(null)))
+            .thenReturn(sampleResponse(status = ServiceRequestStatus.CANCELLED))
+        mockMvc.perform(post("/api/v1/requests/1/price/reject").contentType(MediaType.APPLICATION_JSON))
+            .andExpect(status().isOk)
+        mockMvc.perform(
+            post("/api/v1/requests/1/price/reject")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"reason":"${"x".repeat(501)}"}""")
+        ).andExpect(status().isBadRequest)
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `POST price reject with nothing outstanding is 409`() {
+        whenever(service.rejectPrice(eq("alice@example.com"), eq(1L), eq(null)))
+            .thenThrow(InvalidStateTransitionException(ServiceRequestStatus.CONFIRMED, ServiceRequestStatus.CANCELLED))
+        mockMvc.perform(post("/api/v1/requests/1/price/reject").contentType(MediaType.APPLICATION_JSON))
+            .andExpect(status().isConflict)
+    }
+
+    @Test
+    fun `POST price accept and reject return 401 anonymous`() {
+        mockMvc.perform(post("/api/v1/requests/1/price/accept")).andExpect(status().isUnauthorized)
+        mockMvc.perform(post("/api/v1/requests/1/price/reject")).andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `POST confirm-completion maps an unsettled price to 409`() {
+        whenever(service.confirmCompletion(eq("alice@example.com"), eq(1L)))
+            .thenThrow(PriceNotSettledException("The price for this booking hasn't been agreed yet"))
+        mockMvc.perform(post("/api/v1/requests/1/confirm-completion"))
+            .andExpect(status().isConflict)
     }
 }

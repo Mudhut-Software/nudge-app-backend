@@ -8,14 +8,18 @@ import com.mudhut.nudge.servicerequests.entities.ServiceRequestAttachment
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemPick
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.PriceEventKind
 import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentResponse
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
+import com.mudhut.nudge.servicerequests.models.MoneyDto
 import com.mudhut.nudge.servicerequests.models.PickInput
+import com.mudhut.nudge.servicerequests.models.PriceProposalResponse
 import com.mudhut.nudge.servicerequests.models.ProposalResponse
 import com.mudhut.nudge.servicerequests.models.RequestItemInput
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
 import com.mudhut.nudge.servicerequests.models.UpdateRequestPayload
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestPriceProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.servicesoffered.entities.GroupChoice
@@ -53,6 +57,7 @@ class ServiceRequestService(
     private val eventPublisher: ServiceRequestEventPublisher,
     private val popularityPublisher: RequestPopularityPublisher,
     private val proposalRepo: ServiceRequestProposalRepository,
+    private val priceProposalRepo: ServiceRequestPriceProposalRepository,
 ) {
 
     @Transactional
@@ -174,12 +179,20 @@ class ServiceRequestService(
         // Captured before the write — the event reports where the request came from.
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CANCELLED)
+        return cancelBooking(request, from, reason)
+    }
 
-        // Cancelling out of REVISION_REQUESTED must not leave an OUTSTANDING row
-        // on a terminal request.
-        settleOutstanding(id)
+    /**
+     * The customer's cancellation, shared by [cancel] and [rejectPrice] (declining a price
+     * cancels the booking). Caller has already checked the transition.
+     */
+    private fun cancelBooking(request: ServiceRequest, from: ServiceRequestStatus, reason: String?): ServiceRequestResponse {
+        // Cancelling out of REVISION_REQUESTED, or with a price unanswered, must not
+        // leave an OUTSTANDING row on a terminal request.
+        settleOutstanding(requireNotNull(request.id))
 
         request.status = ServiceRequestStatus.CANCELLED
+        // JVM-local on purpose, per DECISIONS 2026-10-28.
         request.cancelledAt = LocalDateTime.now()
         request.cancellationReason = reason?.trim()?.takeIf { it.isNotEmpty() }
         val saved = repo.save(request)
@@ -209,6 +222,7 @@ class ServiceRequestService(
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.COMPLETED)
         requireCompletionWindowOpen(request)
+        requirePriceSettled(request)
 
         request.status = ServiceRequestStatus.COMPLETED
         request.completedAt = LocalDateTime.now()
@@ -234,6 +248,7 @@ class ServiceRequestService(
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.NO_SHOW)
         requireCompletionWindowOpen(request)
+        requirePriceSettled(request)
 
         request.status = ServiceRequestStatus.NO_SHOW
         val saved = repo.save(request)
@@ -257,6 +272,66 @@ class ServiceRequestService(
         require(LocalDateTime.now().isAfter(date.plusHours(COMPLETION_PROMPT_DELAY_HOURS))) {
             "You can answer this $COMPLETION_PROMPT_DELAY_HOURS hours after the service time."
         }
+    }
+
+    /** The "did this happen?" prompt waits while the price is open; so do its answers. */
+    private fun requirePriceSettled(request: ServiceRequest) =
+        PriceGate.requireSettled(request, outstandingPrice = outstandingPrice(requireNotNull(request.id)) != null)
+
+    private fun outstandingPrice(requestId: Long) =
+        priceProposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
+
+    /**
+     * The price proposal being answered, or a 409 naming the move the caller attempted, mirroring
+     * [requireOutstanding] for date proposals.
+     */
+    private fun requireOutstandingPrice(request: ServiceRequest, target: ServiceRequestStatus) =
+        outstandingPrice(requireNotNull(request.id))
+            ?: throw InvalidStateTransitionException(
+                request.status,
+                target,
+                "There is no price proposal awaiting a reply on this booking",
+            )
+
+    /** Take the provider's price: it becomes the booking's agreed price, final from here on. */
+    @Transactional
+    fun acceptPrice(email: String, id: Long): ServiceRequestResponse {
+        val customer = requireUser(email)
+        val request = requireOwned(id, customer)
+        val proposal = requireOutstandingPrice(request, ServiceRequestStatus.CONFIRMED)
+        // Unreachable while every path off CONFIRMED settles the proposal; kept so a stray
+        // OUTSTANDING row can never price a cancelled or completed booking.
+        if (request.status != ServiceRequestStatus.CONFIRMED) {
+            throw InvalidStateTransitionException(request.status, ServiceRequestStatus.CONFIRMED)
+        }
+
+        proposal.outcome = ProposalOutcome.ACCEPTED
+        proposal.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
+        priceProposalRepo.save(proposal)
+
+        request.agreedPriceAmount = proposal.amount
+        request.agreedPriceCurrency = proposal.currency
+        request.agreedPriceNote = proposal.note
+        val saved = repo.save(request)
+        eventPublisher.priceChanged(saved, PriceEventKind.ACCEPTED, proposal)
+        return toResponse(saved)
+    }
+
+    /** Decline the provider's price, which cancels the booking with the customer's reason. */
+    @Transactional
+    fun rejectPrice(email: String, id: Long, reason: String?): ServiceRequestResponse {
+        val customer = requireUser(email)
+        val request = requireOwned(id, customer)
+        val proposal = requireOutstandingPrice(request, ServiceRequestStatus.CANCELLED)
+        val from = request.status
+        ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CANCELLED)
+
+        proposal.outcome = ProposalOutcome.REJECTED
+        proposal.responseNote = reason?.trim()?.takeIf { it.isNotEmpty() }
+        proposal.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
+        priceProposalRepo.save(proposal)
+
+        return cancelBooking(request, from, reason)
     }
 
     /**
@@ -332,13 +407,21 @@ class ServiceRequestService(
     ) = proposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
         ?: throw InvalidStateTransitionException(current, target)
 
-    /** Close any proposal still awaiting a reply, for paths that end the request another way. */
+    /** Close any date or price proposal still awaiting a reply, for paths that end the request another way. */
     private fun settleOutstanding(requestId: Long) {
         proposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
             ?.let {
                 it.outcome = ProposalOutcome.REJECTED
                 it.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
                 proposalRepo.save(it)
+            }
+        // Already REJECTED when rejectPrice got here first; this only catches a plain cancel.
+        outstandingPrice(requestId)
+            ?.takeIf { it.outcome == ProposalOutcome.OUTSTANDING }
+            ?.let {
+                it.outcome = ProposalOutcome.REJECTED
+                it.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
+                priceProposalRepo.save(it)
             }
     }
 
@@ -538,6 +621,8 @@ class ServiceRequestService(
     private fun toResponse(request: ServiceRequest): ServiceRequestResponse {
         val items = RequestItemMapping.items(request.items, live = request.status == ServiceRequestStatus.DRAFT)
         val (pricing, total) = RequestItemMapping.pricing(items)
+        val latestPrice = request.id?.let { priceProposalRepo.findFirstByRequestIdOrderByProposedAtDescIdDesc(it) }
+        val agreed = MoneyDto.agreedOf(request)
 
         return ServiceRequestResponse(
             id = request.id ?: 0L,
@@ -572,7 +657,15 @@ class ServiceRequestService(
                     )
                 },
             pricing = pricing,
-            total = total,
+            total = if (agreed != null) null else total,
+            agreedPrice = agreed,
+            priceProposal = latestPrice?.let { PriceProposalResponse.from(it) },
+            // Latest is the outstanding one whenever one exists: a new proposal supersedes the last.
+            priceSettled = PriceGate.settled(
+                pricing,
+                request.agreedPriceAmount,
+                latestPrice?.outcome == ProposalOutcome.OUTSTANDING,
+            ),
             submittedAt = request.submittedAt,
             respondedAt = request.respondedAt,
             completedAt = request.completedAt,

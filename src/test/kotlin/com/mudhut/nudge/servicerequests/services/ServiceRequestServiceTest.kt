@@ -9,14 +9,17 @@ import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.PricingState
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemPick
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestPriceProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.PriceEventKind
 import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentInput
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
 import com.mudhut.nudge.servicerequests.models.PickInput
 import com.mudhut.nudge.servicerequests.models.RequestItemInput
 import com.mudhut.nudge.servicerequests.models.UpdateRequestPayload
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestPriceProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.servicesoffered.entities.GroupChoice
@@ -30,6 +33,7 @@ import com.mudhut.nudge.users.entities.UserRole
 import com.mudhut.nudge.users.repositories.UserRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import com.mudhut.nudge.utils.exceptions.InvalidStateTransitionException
+import com.mudhut.nudge.utils.exceptions.PriceNotSettledException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -59,9 +63,10 @@ class ServiceRequestServiceTest {
     private val publisher: ServiceRequestEventPublisher = mock()
     private val popularityPublisher: RequestPopularityPublisher = mock()
     private val proposalRepo: ServiceRequestProposalRepository = mock()
+    private val priceProposalRepo: ServiceRequestPriceProposalRepository = mock()
 
     private val sut = ServiceRequestService(
-        repo, userRepo, businessRepo, serviceRepo, publisher, popularityPublisher, proposalRepo,
+        repo, userRepo, businessRepo, serviceRepo, publisher, popularityPublisher, proposalRepo, priceProposalRepo,
     )
 
     // --- fixtures ---
@@ -1426,5 +1431,162 @@ class ServiceRequestServiceTest {
         assertNull(after.items.single().priceCurrency)
         assertNull(after.items.single().coverImageUrl)
     }
-}
 
+    // --- price proposals (Task 7) ---
+
+    /** Alice's CONFIRMED booking, job time 30h ago (prompt window open), with one snapshotted item. */
+    private fun bookedWith(alice: User, price: String?, estimate: Boolean): ServiceRequest {
+        val r = confirmedRequest(alice, LocalDateTime.now().minusHours(30))
+        r.items.add(
+            ServiceRequestItem(
+                request = r, position = 0, quantity = 1, snapshotTitle = "Venue dressing",
+                snapshotPriceAmount = price?.let { BigDecimal(it) },
+                snapshotPriceCurrency = price?.let { "UGX" },
+                snapshotPriceIsEstimate = estimate,
+            ),
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(priceProposalRepo.save(any<ServiceRequestPriceProposal>()))
+            .thenAnswer { it.arguments[0] as ServiceRequestPriceProposal }
+        return r
+    }
+
+    private fun outstandingPrice(amount: String = "4200000.00", note: String? = "after visiting the venue") =
+        ServiceRequestPriceProposal(
+            id = 7L, amount = BigDecimal(amount), currency = "UGX", note = note,
+            proposedAt = LocalDateTime.now(ZoneOffset.UTC).minusHours(1), outcome = ProposalOutcome.OUTSTANDING,
+        ).also {
+            whenever(priceProposalRepo.findFirstByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING)).thenReturn(it)
+            whenever(priceProposalRepo.findFirstByRequestIdOrderByProposedAtDescIdDesc(1L)).thenReturn(it)
+        }
+
+    @Test
+    fun `accepting sets the agreed price`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val alice = user()
+        val r = bookedWith(alice, null, estimate = false)
+        val proposal = outstandingPrice()
+
+        val response = sut.acceptPrice(alice.email!!, 1L)
+
+        assertEquals(ProposalOutcome.ACCEPTED, proposal.outcome)
+        assertWrittenInUtcNotLocalZone(proposal.respondedAt)
+        assertEquals(0, BigDecimal("4200000.00").compareTo(r.agreedPriceAmount))
+        assertEquals("UGX", r.agreedPriceCurrency)
+        assertEquals("after visiting the venue", r.agreedPriceNote)
+        assertEquals(ServiceRequestStatus.CONFIRMED, response.status)
+        assertEquals(0, BigDecimal("4200000.00").compareTo(response.agreedPrice!!.amount))
+        assertEquals("UGX", response.agreedPrice!!.currency)
+        assertEquals("after visiting the venue", response.agreedPrice!!.note)
+        assertNull(response.total)
+        assertTrue(response.priceSettled)
+        assertEquals(ProposalOutcome.ACCEPTED, response.priceProposal?.outcome)
+        verify(publisher).priceChanged(any(), eq(PriceEventKind.ACCEPTED), eq(proposal))
+    }
+
+    @Test
+    fun `accept with nothing outstanding is 409`() {
+        val alice = user()
+        val r = bookedWith(alice, null, estimate = false)
+
+        assertThrows(InvalidStateTransitionException::class.java) { sut.acceptPrice(alice.email!!, 1L) }
+        assertNull(r.agreedPriceAmount)
+    }
+
+    @Test
+    fun `reject with nothing outstanding is 409`() {
+        val alice = user()
+        val r = bookedWith(alice, null, estimate = false)
+
+        assertThrows(InvalidStateTransitionException::class.java) { sut.rejectPrice(alice.email!!, 1L, "No") }
+        assertEquals(ServiceRequestStatus.CONFIRMED, r.status)
+    }
+
+    @Test
+    fun `price responses on another customer's request throw 404`() {
+        val alice = user(id = 1L, email = "alice@example.com")
+        val bob = user(id = 2L, email = "bob@example.com")
+        bookedWith(bob, null, estimate = false)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        outstandingPrice()
+
+        assertThrows(BusinessNotFoundException::class.java) { sut.acceptPrice(alice.email!!, 1L) }
+        assertThrows(BusinessNotFoundException::class.java) { sut.rejectPrice(alice.email!!, 1L, null) }
+    }
+
+    @Test
+    fun `rejecting cancels with the reason and notifies via status change`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val alice = user()
+        val r = bookedWith(alice, "3500000.00", estimate = true)
+        val proposal = outstandingPrice()
+
+        val response = sut.rejectPrice(alice.email!!, 1L, "  Too expensive  ")
+
+        assertEquals(ServiceRequestStatus.CANCELLED, response.status)
+        assertEquals("Too expensive", r.cancellationReason)
+        assertNotNull(r.cancelledAt)
+        assertNull(r.agreedPriceAmount)
+        assertEquals(ProposalOutcome.REJECTED, proposal.outcome)
+        assertEquals("Too expensive", proposal.responseNote)
+        assertWrittenInUtcNotLocalZone(proposal.respondedAt)
+        verify(publisher).statusChanged(
+            any(), eq(ServiceRequestStatus.CONFIRMED), eq(RequestActor.CUSTOMER), eq("Too expensive"), eq(null),
+        )
+        verify(popularityPublisher).recomputeAndPublish(10L)
+        verify(publisher, never()).priceChanged(any(), any(), any())
+    }
+
+    @Test
+    fun `customer cancel settles an outstanding price proposal`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val alice = user()
+        bookedWith(alice, null, estimate = false)
+        val proposal = outstandingPrice()
+
+        sut.cancel(alice.email!!, 1L, "Plans changed")
+
+        assertEquals(ProposalOutcome.REJECTED, proposal.outcome)
+        assertWrittenInUtcNotLocalZone(proposal.respondedAt)
+        // The customer's cancellation reason is not an answer to the price.
+        assertNull(proposal.responseNote)
+    }
+
+    @Test
+    fun `confirm-completion and no-show are refused while unsettled`() {
+        val alice = user()
+        val r = bookedWith(alice, "3500000.00", estimate = true)
+        outstandingPrice()
+
+        assertThrows(PriceNotSettledException::class.java) { sut.confirmCompletion(alice.email!!, 1L) }
+        assertThrows(PriceNotSettledException::class.java) { sut.reportNoShow(alice.email!!, 1L) }
+        assertEquals(ServiceRequestStatus.CONFIRMED, r.status)
+    }
+
+    @Test
+    fun `confirm-completion and no-show are refused for a to-be-confirmed booking with no agreed price`() {
+        val alice = user()
+        bookedWith(alice, null, estimate = false)
+
+        assertThrows(PriceNotSettledException::class.java) { sut.confirmCompletion(alice.email!!, 1L) }
+        assertThrows(PriceNotSettledException::class.java) { sut.reportNoShow(alice.email!!, 1L) }
+    }
+
+    @Test
+    fun `the response reports an unanswered price as unsettled`() {
+        val alice = user()
+        bookedWith(alice, "3500000.00", estimate = true)
+        outstandingPrice()
+
+        val response = sut.get(alice.email!!, 1L)
+
+        assertEquals(false, response.priceSettled)
+        assertEquals(ProposalOutcome.OUTSTANDING, response.priceProposal?.outcome)
+        assertEquals(0, BigDecimal("4200000.00").compareTo(response.priceProposal!!.amount))
+        // The estimate stays the visible total until the new price is accepted.
+        assertEquals(0, BigDecimal("3500000.00").compareTo(response.total))
+        assertNull(response.agreedPrice)
+    }
+}

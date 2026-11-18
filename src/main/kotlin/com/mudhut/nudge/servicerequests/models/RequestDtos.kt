@@ -3,6 +3,8 @@ package com.mudhut.nudge.servicerequests.models
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.mudhut.nudge.servicerequests.entities.PricingState
 import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
+import com.mudhut.nudge.servicerequests.entities.ServiceRequest
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestPriceProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import jakarta.validation.Valid
@@ -90,6 +92,19 @@ data class ProposeTimePayload(
     val note: String? = null,
 )
 
+data class ProposePricePayload(
+    @field:NotNull
+    @field:Positive
+    val amount: BigDecimal? = null,
+
+    @field:NotNull
+    @field:Pattern(regexp = "^[A-Z]{3}$", message = "currency must be a 3-letter ISO-4217 code")
+    val currency: String? = null,
+
+    @field:Size(max = 500)
+    val note: String? = null,
+)
+
 @JsonInclude(JsonInclude.Include.ALWAYS)
 data class ServiceRequestResponse(
     val id: Long,
@@ -113,8 +128,14 @@ data class ServiceRequestResponse(
     val proposal: ProposalResponse?,
     val attachments: List<AttachmentResponse>,
     val pricing: PricingState,
-    /** Sum of item and pick prices; null while any item is unpriced. */
+    /** Sum of item and pick prices; null while any item is unpriced, and null once [agreedPrice] is set. */
     val total: BigDecimal?,
+    /** The price the customer accepted; replaces [total] for display and invoicing. */
+    val agreedPrice: MoneyDto?,
+    /** The most recent price proposal whatever its outcome, or null when none was ever made. */
+    val priceProposal: PriceProposalResponse?,
+    /** False while a price proposal awaits an answer, or a to-be-confirmed booking has no agreed price. */
+    val priceSettled: Boolean,
     val submittedAt: LocalDateTime?,
     val respondedAt: LocalDateTime?,
     val completedAt: LocalDateTime?,
@@ -144,6 +165,41 @@ data class ProposalResponse(
             outcome = proposal.outcome,
             proposedAt = requireNotNull(proposal.proposedAt),
             responseNote = proposal.responseNote,
+        )
+    }
+}
+
+data class MoneyDto(
+    val amount: BigDecimal,
+    val currency: String,
+    val note: String?,
+) {
+    companion object {
+        fun agreedOf(request: ServiceRequest): MoneyDto? {
+            val amount = request.agreedPriceAmount ?: return null
+            return MoneyDto(amount, requireNotNull(request.agreedPriceCurrency), request.agreedPriceNote)
+        }
+    }
+}
+
+data class PriceProposalResponse(
+    val amount: BigDecimal,
+    val currency: String,
+    val note: String?,
+    val outcome: ProposalOutcome,
+    val proposedAt: LocalDateTime,
+    val responseNote: String?,
+    val respondedAt: LocalDateTime?,
+) {
+    companion object {
+        fun from(p: ServiceRequestPriceProposal) = PriceProposalResponse(
+            amount = requireNotNull(p.amount),
+            currency = requireNotNull(p.currency),
+            note = p.note,
+            outcome = p.outcome,
+            proposedAt = requireNotNull(p.proposedAt),
+            responseNote = p.responseNote,
+            respondedAt = p.respondedAt,
         )
     }
 }
