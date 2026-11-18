@@ -96,9 +96,8 @@ class PublicBrowseServiceTest {
         }
 
     private fun stubSummaryHelpers(bizId: Long, coverFromService: String? = null) {
-        whenever(serviceRepository.findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(eq(bizId), eq(ServiceOfferedStatus.ACTIVE)))
-            .thenReturn(coverFromService?.let { service(id = bizId * 10, biz = business(bizId), coverUrl = it) })
-        whenever(serviceRepository.countByBusinessIdAndStatusAndSoldOnItsOwnTrue(eq(bizId), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
+        whenever(serviceRepository.findAllByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(eq(bizId), eq(ServiceOfferedStatus.ACTIVE)))
+            .thenReturn(listOf(service(id = bizId * 10, biz = business(bizId), coverUrl = coverFromService ?: "https://cdn/x.jpg")))
     }
 
     @Test
@@ -106,9 +105,8 @@ class PublicBrowseServiceTest {
         val biz = business(id = 5, coverImageUrl = null)
         val firstActiveService = service(id = 50, biz = biz, coverUrl = "https://cdn/svc-50.jpg")
         whenever(discoveryRepository.findPublicQualifiedNewest(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
-        whenever(serviceRepository.findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
-            .thenReturn(firstActiveService)
-        whenever(serviceRepository.countByBusinessIdAndStatusAndSoldOnItsOwnTrue(eq(5), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
+        whenever(serviceRepository.findAllByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
+            .thenReturn(listOf(firstActiveService))
 
         val summary = sut.list(null, BusinessSort.NEWEST, null, null, Pageable.ofSize(20)).content.single()
 
@@ -119,9 +117,8 @@ class PublicBrowseServiceTest {
     fun `summary cover prefers business coverImageUrl when set`() {
         val biz = business(id = 5, coverImageUrl = "https://cdn/biz-5.jpg")
         whenever(discoveryRepository.findPublicQualifiedNewest(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
-        whenever(serviceRepository.findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
-            .thenReturn(service(id = 50, biz = biz, coverUrl = "https://cdn/svc-50.jpg"))
-        whenever(serviceRepository.countByBusinessIdAndStatusAndSoldOnItsOwnTrue(eq(5), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
+        whenever(serviceRepository.findAllByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
+            .thenReturn(listOf(service(id = 50, biz = biz, coverUrl = "https://cdn/svc-50.jpg")))
 
         val summary = sut.list(null, BusinessSort.NEWEST, null, null, Pageable.ofSize(20)).content.single()
 
@@ -315,6 +312,38 @@ class PublicBrowseServiceTest {
         val choices = sut.detail(63).services.single().groups.single().choices
         assertEquals(BigDecimal("100.00"), choices[0].price)
         assertEquals(BigDecimal("5.00"), choices[1].price)
+    }
+
+    @Test
+    fun `serviceCount excludes unbookable packages`() {
+        val biz = business(id = 70)
+        val broken = packageItem(biz, 701, service(id = 702, biz = biz, status = ServiceOfferedStatus.INACTIVE) to null)
+        whenever(discoveryRepository.findPublicQualifiedNewest(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
+        whenever(serviceRepository.findAllByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(eq(70), eq(ServiceOfferedStatus.ACTIVE)))
+            .thenReturn(listOf(service(id = 703, biz = biz), broken))
+
+        assertEquals(1, sut.list(null, BusinessSort.NEWEST, null, null, Pageable.ofSize(20)).content.single().serviceCount)
+    }
+
+    @Test
+    fun `cover fallback skips an unbookable package`() {
+        val biz = business(id = 71)
+        val broken = packageItem(biz, 711, service(id = 712, biz = biz, status = ServiceOfferedStatus.INACTIVE) to null)
+            .also { it.coverImageUrl = "https://cdn/broken.jpg" }
+        whenever(discoveryRepository.findPublicQualifiedNewest(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
+        whenever(serviceRepository.findAllByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(eq(71), eq(ServiceOfferedStatus.ACTIVE)))
+            .thenReturn(listOf(broken, service(id = 713, biz = biz, coverUrl = "https://cdn/ok.jpg")))
+
+        assertEquals("https://cdn/ok.jpg", sut.list(null, BusinessSort.NEWEST, null, null, Pageable.ofSize(20)).content.single().coverImageUrl)
+    }
+
+    @Test
+    fun `detail returns the business with no items when its only package is unbookable`() {
+        val biz = business(id = 72)
+        val broken = packageItem(biz, 721, service(id = 722, biz = biz, status = ServiceOfferedStatus.INACTIVE) to null)
+        stubDetail(biz, broken)
+
+        assertTrue(sut.detail(72).services.isEmpty())
     }
 
     @Test

@@ -5,7 +5,6 @@ import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.discovery.entities.BusinessFavorite
 import com.mudhut.nudge.discovery.models.PublicBusinessSummary
 import com.mudhut.nudge.discovery.repositories.BusinessFavoriteRepository
-import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.repositories.UserRepository
@@ -46,16 +45,15 @@ class FavoriteService(
         userRepo.findByEmail(email).orElseThrow { UserNotFoundException("User not found") }
 
     private fun Business.toSummary(): PublicBusinessSummary {
-        val firstActive = serviceRepo
-            .findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(id!!, ServiceOfferedStatus.ACTIVE)
+        val bookable = serviceRepo.bookableItems(id!!)
         return PublicBusinessSummary(
             id = id!!,
             name = name!!,
             categoryId = category!!.id!!,
             categoryName = category!!.name!!,
             address = address,
-            coverImageUrl = coverImageUrl ?: firstActive?.coverImageUrl,
-            serviceCount = serviceRepo.countByBusinessIdAndStatusAndSoldOnItsOwnTrue(id!!, ServiceOfferedStatus.ACTIVE).toInt(),
+            coverImageUrl = coverImageUrl ?: bookable.firstOrNull()?.coverImageUrl,
+            serviceCount = bookable.size,
             distanceKm = null,
         )
     }

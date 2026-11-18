@@ -87,11 +87,15 @@ class PublicBrowseService(
 
         val activeServices = serviceRepository
             .findTop20ByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtDesc(biz.id!!, ServiceOfferedStatus.ACTIVE)
-            .filter { it.soldOnItsOwn && Bookability.blockingGroup(it) == null }
+            .filter { it.soldOnItsOwn }
 
+        // No public item at all: the business is not listed, so 404 (agrees with Explore's EXISTS).
         if (activeServices.isEmpty()) {
             throw BusinessNotFoundException("Business not found")
         }
+
+        // Unbookable packages are hidden; a business left with none still renders, with no items.
+        val bookableServices = activeServices.filter { Bookability.blockingGroup(it) == null }
 
         return PublicBusinessDetail(
             id = biz.id!!,
@@ -104,25 +108,23 @@ class PublicBrowseService(
             phoneNumbers = biz.phoneNumbers.mapNotNull { it.phoneNumber },
             email = biz.email,
             serviceAreas = biz.serviceAreas.toList(),
-            coverImageUrl = deriveCover(biz, activeServices.firstOrNull()),
-            services = activeServices.map { toServiceSummary(it) },
+            coverImageUrl = deriveCover(biz, bookableServices.firstOrNull()),
+            services = bookableServices.map { toServiceSummary(it) },
             averageRating = reviewRepository.averageForBusiness(biz.id!!),
             reviewCount = reviewRepository.countByBusinessId(biz.id!!).toInt(),
         )
     }
 
     private fun toSummary(biz: Business, distanceKm: Double? = null): PublicBusinessSummary {
-        val firstActive = serviceRepository
-            .findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(biz.id!!, ServiceOfferedStatus.ACTIVE)
+        val bookable = serviceRepository.bookableItems(biz.id!!)
         return PublicBusinessSummary(
             id = biz.id!!,
             name = biz.name!!,
             categoryId = biz.category!!.id!!,
             categoryName = biz.category!!.name!!,
             address = biz.address,
-            coverImageUrl = deriveCover(biz, firstActive),
-            serviceCount = serviceRepository
-                .countByBusinessIdAndStatusAndSoldOnItsOwnTrue(biz.id!!, ServiceOfferedStatus.ACTIVE).toInt(),
+            coverImageUrl = deriveCover(biz, bookable.firstOrNull()),
+            serviceCount = bookable.size,
             distanceKm = distanceKm,
         )
     }

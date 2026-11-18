@@ -4,6 +4,8 @@ import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessCategory
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.discovery.repositories.BusinessFavoriteRepository
+import com.mudhut.nudge.servicesoffered.entities.OptionGroup
+import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.users.entities.User
@@ -79,9 +81,8 @@ class FavoriteServiceTest {
     fun `list maps favorited businesses to summaries`() {
         whenever(userRepo.findByEmail("a@e.com")).thenReturn(Optional.of(user))
         whenever(favoriteRepo.findFavoritedBusinesses(1L)).thenReturn(listOf(business(10L)))
-        whenever(serviceRepo.findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(10L, ServiceOfferedStatus.ACTIVE))
-            .thenReturn(null)
-        whenever(serviceRepo.countByBusinessIdAndStatusAndSoldOnItsOwnTrue(10L, ServiceOfferedStatus.ACTIVE)).thenReturn(2L)
+        whenever(serviceRepo.findAllByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(10L, ServiceOfferedStatus.ACTIVE))
+            .thenReturn(listOf(item(1L), item(2L)))
 
         val result = sut.listFavorites("a@e.com")
 
@@ -91,15 +92,32 @@ class FavoriteServiceTest {
         assertThat(result[0].categoryName).isEqualTo("Catering")
     }
 
+    private fun item(id: Long, cover: String = "https://cdn/$id.jpg") =
+        ServiceOffered(id = id, title = "Item $id", coverImageUrl = cover, status = ServiceOfferedStatus.ACTIVE)
+
+    private fun unbookablePackage(id: Long): ServiceOffered {
+        val pkg = item(id)
+        pkg.groups.add(OptionGroup(id = id, item = pkg, name = "Flavours", required = true))
+        return pkg
+    }
+
     @Test
-    fun `serviceCount counts only sold-on-its-own active items`() {
+    fun `serviceCount excludes unbookable packages`() {
         whenever(userRepo.findByEmail("a@e.com")).thenReturn(Optional.of(user))
         whenever(favoriteRepo.findFavoritedBusinesses(1L)).thenReturn(listOf(business(10L)))
-        whenever(serviceRepo.findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(10L, ServiceOfferedStatus.ACTIVE))
-            .thenReturn(null)
-        whenever(serviceRepo.countByBusinessIdAndStatusAndSoldOnItsOwnTrue(10L, ServiceOfferedStatus.ACTIVE)).thenReturn(3L)
+        whenever(serviceRepo.findAllByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(10L, ServiceOfferedStatus.ACTIVE))
+            .thenReturn(listOf(item(1L), unbookablePackage(2L)))
 
-        assertThat(sut.listFavorites("a@e.com")[0].serviceCount).isEqualTo(3)
-        verify(serviceRepo).countByBusinessIdAndStatusAndSoldOnItsOwnTrue(10L, ServiceOfferedStatus.ACTIVE)
+        assertThat(sut.listFavorites("a@e.com")[0].serviceCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `cover fallback skips an unbookable package`() {
+        whenever(userRepo.findByEmail("a@e.com")).thenReturn(Optional.of(user))
+        whenever(favoriteRepo.findFavoritedBusinesses(1L)).thenReturn(listOf(business(10L)))
+        whenever(serviceRepo.findAllByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(10L, ServiceOfferedStatus.ACTIVE))
+            .thenReturn(listOf(unbookablePackage(2L), item(1L, "https://cdn/ok.jpg")))
+
+        assertThat(sut.listFavorites("a@e.com")[0].coverImageUrl).isEqualTo("https://cdn/ok.jpg")
     }
 }
