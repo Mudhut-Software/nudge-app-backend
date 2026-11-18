@@ -22,9 +22,11 @@ class RequestLineQueryImpl(
         val currency = req.items.firstNotNullOfOrNull { it.snapshotPriceCurrency } ?: "USD"
         val lines = buildList {
             req.items.forEach { item ->
-                add(RequestLineItem(item.snapshotTitle ?: "Item", item.snapshotPriceAmount ?: BigDecimal.ZERO, 1))
-                item.addons.forEach { a ->
-                    add(RequestLineItem("+ " + (a.snapshotTitle ?: "Add-on"), a.snapshotPriceDelta ?: BigDecimal.ZERO, a.quantity))
+                add(RequestLineItem(item.snapshotTitle ?: "Item", item.snapshotPriceAmount ?: BigDecimal.ZERO, item.quantity))
+                // Interim until Task 6 moves this onto RequestPricing.lines.
+                item.picks.sortedBy { it.position }.forEach { p ->
+                    val label = "+ " + listOfNotNull(p.snapshotGroupName, p.snapshotTitle).joinToString(": ").ifEmpty { "Choice" }
+                    add(RequestLineItem(label, p.snapshotPrice ?: BigDecimal.ZERO, p.quantity))
                 }
             }
         }

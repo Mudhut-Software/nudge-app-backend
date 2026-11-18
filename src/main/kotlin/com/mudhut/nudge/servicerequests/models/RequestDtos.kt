@@ -1,6 +1,7 @@
 package com.mudhut.nudge.servicerequests.models
 
 import com.fasterxml.jackson.annotation.JsonInclude
+import com.mudhut.nudge.servicerequests.entities.PricingState
 import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
@@ -47,16 +48,21 @@ data class RequestItemInput(
     @field:NotNull
     @field:Positive
     val serviceId: Long? = null,
+
+    /** Units of the item; null means 1. Only items with quantity on accept anything else. */
+    @field:Positive
+    val quantity: Int? = null,
+
+    @field:Valid
+    val picks: List<PickInput> = emptyList(),
 )
 
-data class ServiceRequestItemAddonResponse(
-    val id: Long,
-    val addonId: Long?,
-    val title: String,
-    val priceDelta: java.math.BigDecimal?,
-    val priceUnit: String?,
-    val quantity: Int,
-    val position: Int,
+data class PickInput(
+    @field:Positive
+    val choiceId: Long,
+
+    @field:Positive
+    val quantity: Int = 1,
 )
 
 data class AttachmentInput(
@@ -106,6 +112,9 @@ data class ServiceRequestResponse(
     /** The most recent proposal, or null when none was ever made. */
     val proposal: ProposalResponse?,
     val attachments: List<AttachmentResponse>,
+    val pricing: PricingState,
+    /** Sum of item and pick prices; null while any item is unpriced. */
+    val total: BigDecimal?,
     val submittedAt: LocalDateTime?,
     val respondedAt: LocalDateTime?,
     val completedAt: LocalDateTime?,
@@ -144,9 +153,26 @@ data class ServiceRequestItemResponse(
     val title: String,
     val priceAmount: BigDecimal?,
     val priceCurrency: String?,
+    val priceIsEstimate: Boolean,
+    val estimateReason: String?,
+    val quantity: Int,
+    val quantityUnit: String?,
     val coverImageUrl: String?,
     val position: Int,
-    val addons: List<ServiceRequestItemAddonResponse> = emptyList(),
+    val picks: List<ItemPickResponse>,
+)
+
+data class ItemPickResponse(
+    val id: Long,
+    /** Null once the choice has been deleted from the catalogue. */
+    val choiceId: Long?,
+    val groupId: Long?,
+    val groupName: String,
+    val title: String,
+    /** Effective price in the group; null = included. */
+    val price: BigDecimal?,
+    val quantity: Int,
+    val position: Int,
 )
 
 data class AttachmentResponse(

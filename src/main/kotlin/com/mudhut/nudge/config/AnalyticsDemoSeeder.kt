@@ -3,7 +3,7 @@ package com.mudhut.nudge.config
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
-import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemAddon
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemPick
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
@@ -82,7 +82,7 @@ class AnalyticsDemoSeeder(
                         Triple(services[0], if (quote) null else BigDecimal(if (usd) "40.00" else "150000.00"), if (usd) "USD" else "UGX"),
                         Triple(services[1], BigDecimal(if (usd) "10.00" else "50000.00"), if (usd) "USD" else "UGX"),
                     ),
-                    addonDelta = BigDecimal(if (usd) "5.00" else "10000.00"), addonQty = 2,
+                    pickPrice = BigDecimal(if (usd) "5.00" else "10000.00"), pickQty = 2,
                 )
                 // Most completed jobs are invoiced and paid three days later; one per month is voided.
                 if (i % 3 != 2) {
@@ -129,8 +129,8 @@ class AnalyticsDemoSeeder(
         responded: LocalDateTime? = null,
         completed: LocalDateTime? = null,
         lines: List<Triple<com.mudhut.nudge.servicesoffered.entities.ServiceOffered, BigDecimal?, String>> = emptyList(),
-        addonDelta: BigDecimal? = null,
-        addonQty: Int = 1,
+        pickPrice: BigDecimal? = null,
+        pickQty: Int = 1,
     ): ServiceRequest {
         val r = ServiceRequest(
             customer = customer, business = business, status = status,
@@ -143,8 +143,8 @@ class AnalyticsDemoSeeder(
                 request = r, service = svc, position = idx, snapshotTitle = svc.title,
                 snapshotPriceAmount = price, snapshotPriceCurrency = currency,
             )
-            if (idx == 0 && addonDelta != null) {
-                item.addons.add(ServiceRequestItemAddon(item = item, snapshotTitle = "Extra", snapshotPriceDelta = addonDelta, quantity = addonQty, position = 0))
+            if (idx == 0 && pickPrice != null) {
+                item.picks.add(ServiceRequestItemPick(item = item, snapshotGroupName = "Extras", snapshotTitle = "Extra", snapshotPrice = pickPrice, quantity = pickQty, position = 0))
             }
             r.items.add(item)
         }

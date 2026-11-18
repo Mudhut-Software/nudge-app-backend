@@ -11,7 +11,7 @@ import com.mudhut.nudge.businesses.repositories.BusinessCategoryRepository
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
-import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemAddon
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemPick
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.COMPLETED
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
@@ -81,11 +81,11 @@ class RequestStatsQueryImplTest {
         ),
     )
 
-    /** One line on a request: a service, its snapshot price (null = QUOTE), and addons as (delta, quantity). */
+    /** One line on a request: a service, its snapshot price (null = QUOTE), and picks as (price, quantity). */
     data class Line(
         val service: ServiceOffered,
         val price: BigDecimal?,
-        val addons: List<Pair<BigDecimal, Int>> = emptyList(),
+        val picks: List<Pair<BigDecimal, Int>> = emptyList(),
         val currency: String? = "UGX",
     )
 
@@ -108,9 +108,9 @@ class RequestStatsQueryImplTest {
                 snapshotTitle = line.service.title, snapshotPriceAmount = line.price,
                 snapshotPriceCurrency = line.currency,
             )
-            line.addons.forEachIndexed { j, (delta, qty) ->
-                item.addons.add(
-                    ServiceRequestItemAddon(item = item, snapshotTitle = "addon", snapshotPriceDelta = delta, quantity = qty, position = j),
+            line.picks.forEachIndexed { j, (price, qty) ->
+                item.picks.add(
+                    ServiceRequestItemPick(item = item, snapshotGroupName = "Extras", snapshotTitle = "pick", snapshotPrice = price, quantity = qty, position = j),
                 )
             }
             r.items.add(item)
@@ -134,11 +134,11 @@ class RequestStatsQueryImplTest {
     }
 
     @Test
-    fun `work sums item prices and addon delta times quantity per currency`() {
+    fun `work sums item prices and pick price times quantity per currency`() {
         val c = user("customer")
         completed(
             c, LocalDateTime.of(2026, 10, 5, 10, 0),
-            Line(haircut, BigDecimal("100.00"), addons = listOf(BigDecimal("10.00") to 3)),   // 130
+            Line(haircut, BigDecimal("100.00"), picks = listOf(BigDecimal("10.00") to 3)),   // 130
             Line(shave, BigDecimal("20.00")),                                                 // +20 = 150 UGX
         )
         completed(c, LocalDateTime.of(2026, 10, 6, 10, 0), Line(haircut, BigDecimal("5.50"), currency = "USD"))
@@ -244,11 +244,11 @@ class RequestStatsQueryImplTest {
     }
 
     @Test
-    fun `addons are credited to their own service and quote services are flagged`() {
+    fun `picks are credited to their own service and quote services are flagged`() {
         val c = user("customer")
         completed(
             c, LocalDateTime.of(2026, 10, 5, 10, 0),
-            Line(haircut, BigDecimal("100.00"), addons = listOf(BigDecimal("10.00") to 2)),   // 120 to Haircut
+            Line(haircut, BigDecimal("100.00"), picks = listOf(BigDecimal("10.00") to 2)),   // 120 to Haircut
             Line(shave, null),                                                                 // QUOTE
         )
 

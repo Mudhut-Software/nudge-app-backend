@@ -6,18 +6,20 @@ import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestAttachment
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemPick
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentResponse
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
+import com.mudhut.nudge.servicerequests.models.PickInput
 import com.mudhut.nudge.servicerequests.models.ProposalResponse
 import com.mudhut.nudge.servicerequests.models.RequestItemInput
-import com.mudhut.nudge.servicerequests.models.ServiceRequestItemAddonResponse
-import com.mudhut.nudge.servicerequests.models.ServiceRequestItemResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
 import com.mudhut.nudge.servicerequests.models.UpdateRequestPayload
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
+import com.mudhut.nudge.servicesoffered.entities.GroupChoice
+import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.users.entities.User
@@ -84,7 +86,6 @@ class ServiceRequestService(
 
         payload.items?.let { items ->
             require(items.isNotEmpty()) { "items must not be empty" }
-            request.items.clear()
             attachItems(request, items, request.business!!)
         }
         payload.requestedDate?.let { request.requestedDate = it }
@@ -126,12 +127,20 @@ class ServiceRequestService(
         }
         require(!request.serviceLocation.isNullOrBlank()) { "serviceLocation is required" }
 
+        // The catalogue may have changed since the draft was saved: re-check against it as it is now.
+        val problems = request.items.sortedBy { it.position }.flatMap { liveProblems(it) }
+        require(problems.isEmpty()) { problems.joinToString("; ") }
+
         request.items.forEach { item ->
             val source = item.service!!
             item.snapshotTitle = source.title
             item.snapshotPriceAmount = source.priceAmount
             item.snapshotPriceCurrency = source.priceCurrency
             item.snapshotCoverUrl = source.coverImageUrl
+            item.snapshotPriceIsEstimate = source.priceIsEstimate
+            item.snapshotEstimateReason = source.estimateReason?.takeIf { source.priceIsEstimate }
+            item.snapshotQuantityUnit = source.quantityUnit?.takeIf { source.quantityEnabled }
+            item.picks.forEach { pick -> snapshot(pick, pick.choice!!) }
         }
 
         request.status = ServiceRequestStatus.PENDING
@@ -399,17 +408,28 @@ class ServiceRequestService(
 
         val servicesById = services.associateBy { it.id }
 
-        original.items.forEachIndexed { _, item ->
+        original.items.sortedBy { it.position }.forEach { item ->
             val sid = item.service?.id
             val survivingService = sid?.let { if (it in availableServiceIds) servicesById[it] else null }
             if (survivingService != null) {
-                draft.items.add(
-                    ServiceRequestItem(
-                        request = draft,
-                        service = survivingService,
-                        position = draft.items.size,
-                    )
+                val copy = ServiceRequestItem(
+                    request = draft,
+                    service = survivingService,
+                    position = draft.items.size,
+                    quantity = if (survivingService.quantityEnabled) item.quantity else 1,
                 )
+                // Picks whose choice is gone or paused are dropped; the customer re-picks on review.
+                val liveChoices = survivingService.groups.flatMap { it.choices }.associateBy { it.id }
+                item.picks.sortedBy { it.position }.forEach { pick ->
+                    val choice = pick.choice?.id?.let { liveChoices[it] }
+                    if (choice != null && choice.item?.status == ServiceOfferedStatus.ACTIVE) {
+                        copy.picks.add(
+                            ServiceRequestItemPick(item = copy, choice = choice, quantity = pick.quantity, position = copy.picks.size)
+                                .also { snapshot(it, choice) },
+                        )
+                    }
+                }
+                draft.items.add(copy)
             }
         }
 
@@ -432,6 +452,11 @@ class ServiceRequestService(
         return request
     }
 
+    /**
+     * Writes [items] onto the draft, diffing against what is there: the item at each position is
+     * kept and updated, extra ones removed, and each item's picks are matched by choice (kept ones
+     * updated in place, new ones added, missing ones removed). Never clear-and-re-add.
+     */
     private fun attachItems(
         request: ServiceRequest,
         items: List<RequestItemInput>,
@@ -446,74 +471,71 @@ class ServiceRequestService(
         }
 
         val byServiceId = services.associateBy { it.id }
-
-        items.forEachIndexed { idx, input ->
+        val resolved = items.map { input ->
             val serviceId = input.serviceId
                 ?: throw IllegalArgumentException("serviceId is required")
             val svc = byServiceId[serviceId] ?: error("Service $serviceId not found")
+            val quantity = input.quantity ?: 1
+            val problems = PickValidator.problems(svc, quantity, input.picks)
+            require(problems.isEmpty()) { problems.joinToString("; ") }
+            Triple(svc, quantity, input.picks)
+        }
 
-            val item = ServiceRequestItem(
-                request = request,
-                service = svc,
-                position = idx,
-            )
-
-            request.items.add(item)
+        val existing = request.items.sortedBy { it.position }
+        request.items.removeAll(existing.drop(resolved.size).toSet())
+        resolved.forEachIndexed { idx, (svc, quantity, picks) ->
+            val item = existing.getOrNull(idx)
+                ?: ServiceRequestItem(request = request).also { request.items.add(it) }
+            item.service = svc
+            item.position = idx
+            item.quantity = quantity
+            syncPicks(item, svc, picks)
         }
     }
 
+    private fun syncPicks(item: ServiceRequestItem, svc: ServiceOffered, inputs: List<PickInput>) {
+        val choices = svc.groups.flatMap { it.choices }.associateBy { it.id }
+        val wanted = inputs.map { it.choiceId }.toSet()
+        item.picks.removeIf { it.choice?.id !in wanted }
+        inputs.forEachIndexed { idx, input ->
+            val choice = choices.getValue(input.choiceId)
+            val pick = item.picks.firstOrNull { it.choice?.id == input.choiceId }
+                ?: ServiceRequestItemPick(item = item, choice = choice).also { item.picks.add(it) }
+            pick.quantity = input.quantity
+            pick.position = idx
+            snapshot(pick, choice)
+        }
+        item.picks.sortBy { it.position }
+    }
+
+    /** Copies the choice's current group, title and effective price onto the pick. */
+    private fun snapshot(pick: ServiceRequestItemPick, choice: GroupChoice) {
+        pick.groupId = choice.group?.id
+        pick.snapshotGroupName = choice.group?.name
+        pick.snapshotTitle = choice.item?.title
+        pick.snapshotPrice = RequestItemMapping.effectivePrice(choice)
+    }
+
+    /** Problems with a draft item against the live catalogue, including picks whose choice was deleted. */
+    private fun liveProblems(item: ServiceRequestItem): List<String> {
+        val svc = item.service!!
+        if (svc.status != ServiceOfferedStatus.ACTIVE) return listOf("${svc.title}: no longer available")
+        val (present, missing) = item.picks.partition { it.choice != null }
+        val liveGroupIds = svc.groups.mapNotNull { it.id }.toSet()
+        // A deleted choice whose whole group is gone too can only be named from its snapshot.
+        val orphaned = missing.filter { it.groupId !in liveGroupIds }
+            .map { "${it.snapshotGroupName ?: "A group"}: this choice is no longer available" }
+        return orphaned + PickValidator.problems(
+            svc,
+            item.quantity,
+            present.sortedBy { it.position }.map { PickInput(it.choice!!.id!!, it.quantity) },
+            missingGroupIds = missing.mapNotNull { it.groupId }.toSet(),
+        )
+    }
+
     private fun toResponse(request: ServiceRequest): ServiceRequestResponse {
-        val items = request.items
-            .sortedBy { it.position }
-            .map { item ->
-                val isDraft = request.status == ServiceRequestStatus.DRAFT
-                val title = if (isDraft) {
-                    item.service?.title ?: "(unknown)"
-                } else {
-                    item.snapshotTitle ?: item.service?.title ?: "(unknown)"
-                }
-                val priceAmount = if (isDraft) {
-                    item.service?.priceAmount
-                } else {
-                    item.snapshotPriceAmount ?: item.service?.priceAmount
-                }
-                val priceCurrency = if (isDraft) {
-                    item.service?.priceCurrency
-                } else {
-                    item.snapshotPriceCurrency ?: item.service?.priceCurrency
-                }
-                val cover = if (isDraft) {
-                    item.service?.coverImageUrl
-                } else {
-                    item.snapshotCoverUrl ?: item.service?.coverImageUrl
-                }
-
-                val addons = item.addons.sortedBy { it.position }.map { a ->
-                    // Task 5 rebuilds picks; until then only the snapshot rows remain.
-                    val aTitle = a.snapshotTitle ?: "(unknown)"
-                    val aPriceDelta = a.snapshotPriceDelta
-                    val aPriceUnit = a.snapshotPriceUnit
-                    ServiceRequestItemAddonResponse(
-                        id = a.id ?: 0L,
-                        addonId = null,
-                        title = aTitle,
-                        priceDelta = aPriceDelta,
-                        priceUnit = aPriceUnit,
-                        quantity = a.quantity,
-                        position = a.position,
-                    )
-                }
-
-                ServiceRequestItemResponse(
-                    serviceId = item.service?.id,
-                    title = title,
-                    priceAmount = priceAmount,
-                    priceCurrency = priceCurrency,
-                    coverImageUrl = cover,
-                    position = item.position,
-                    addons = addons,
-                )
-            }
+        val items = RequestItemMapping.items(request.items, live = request.status == ServiceRequestStatus.DRAFT)
+        val (pricing, total) = RequestItemMapping.pricing(items)
 
         return ServiceRequestResponse(
             id = request.id ?: 0L,
@@ -547,6 +569,8 @@ class ServiceRequestService(
                         position = it.position,
                     )
                 },
+            pricing = pricing,
+            total = total,
             submittedAt = request.submittedAt,
             respondedAt = request.respondedAt,
             completedAt = request.completedAt,

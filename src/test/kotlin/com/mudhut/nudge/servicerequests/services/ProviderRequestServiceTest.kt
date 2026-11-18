@@ -5,10 +5,14 @@ import com.mudhut.nudge.businesses.entities.BusinessCategory
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.services.BusinessService
+import com.mudhut.nudge.servicerequests.entities.PricingState
 import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemPick
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.models.ItemPickResponse
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.users.entities.User
@@ -30,6 +34,7 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
+import java.math.BigDecimal
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -477,4 +482,37 @@ class ProviderRequestServiceTest {
 
         verify(quotaService, never()).requireCapacity(any())
     }
+
+    @Test
+    fun `the provider sees the sent quantity, estimate and snapshotted picks`() {
+        val r = req(ServiceRequestStatus.PENDING, viewedAt = LocalDateTime.now())
+        val item = ServiceRequestItem(
+            request = r, position = 0, quantity = 40,
+            snapshotTitle = "Catering", snapshotPriceAmount = BigDecimal("20000.00"), snapshotPriceCurrency = "UGX",
+            snapshotPriceIsEstimate = true, snapshotEstimateReason = "Final count may change", snapshotQuantityUnit = "guest",
+        )
+        item.picks.add(
+            ServiceRequestItemPick(
+                id = 7L, item = item, choice = null, groupId = 32L, snapshotGroupName = "Juices",
+                snapshotTitle = "Mango", snapshotPrice = BigDecimal("3000.00"), quantity = 2, position = 0,
+            ),
+        )
+        r.items.add(item)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+
+        val response = sut.get("owner@example.com", 10L, 100L)
+
+        val dto = response.items.single()
+        assertEquals(40, dto.quantity)
+        assertEquals("guest", dto.quantityUnit)
+        assertTrue(dto.priceIsEstimate)
+        assertEquals("Final count may change", dto.estimateReason)
+        assertEquals(
+            listOf(ItemPickResponse(7L, null, 32L, "Juices", "Mango", BigDecimal("3000.00"), 2, 0)),
+            dto.picks,
+        )
+        assertEquals(PricingState.ESTIMATED, response.pricing)
+        assertEquals(0, BigDecimal("806000.00").compareTo(response.total))
+    }
 }
+

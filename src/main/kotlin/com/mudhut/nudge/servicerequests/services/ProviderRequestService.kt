@@ -9,7 +9,6 @@ import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentResponse
 import com.mudhut.nudge.servicerequests.models.ProposalResponse
-import com.mudhut.nudge.servicerequests.models.ServiceRequestItemResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
@@ -226,23 +225,9 @@ class ProviderRequestService(
     }
 
     private fun toResponse(request: ServiceRequest): ServiceRequestResponse {
-        val items = request.items
-            .sortedBy { it.position }
-            .map { item ->
-                ServiceRequestItemResponse(
-                    serviceId = item.service?.id,
-                    title = item.snapshotTitle
-                        ?: item.service?.title
-                        ?: "(unknown)",
-                    priceAmount = item.snapshotPriceAmount
-                        ?: item.service?.priceAmount,
-                    priceCurrency = item.snapshotPriceCurrency
-                        ?: item.service?.priceCurrency,
-                    coverImageUrl = item.snapshotCoverUrl
-                        ?: item.service?.coverImageUrl,
-                    position = item.position,
-                )
-            }
+        // Providers never see drafts, so every request here reads its snapshot.
+        val items = RequestItemMapping.items(request.items, live = false)
+        val (pricing, total) = RequestItemMapping.pricing(items)
 
         return ServiceRequestResponse(
             id = request.id ?: 0L,
@@ -276,6 +261,8 @@ class ProviderRequestService(
                         position = it.position,
                     )
                 },
+            pricing = pricing,
+            total = total,
             submittedAt = request.submittedAt,
             respondedAt = request.respondedAt,
             completedAt = request.completedAt,

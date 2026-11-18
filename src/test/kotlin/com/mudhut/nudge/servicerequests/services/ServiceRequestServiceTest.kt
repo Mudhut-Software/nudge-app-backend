@@ -6,15 +6,22 @@ import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
+import com.mudhut.nudge.servicerequests.entities.PricingState
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemPick
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentInput
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
+import com.mudhut.nudge.servicerequests.models.PickInput
 import com.mudhut.nudge.servicerequests.models.RequestItemInput
 import com.mudhut.nudge.servicerequests.models.UpdateRequestPayload
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
+import com.mudhut.nudge.servicesoffered.entities.GroupChoice
+import com.mudhut.nudge.servicesoffered.entities.GroupSelection
+import com.mudhut.nudge.servicesoffered.entities.OptionGroup
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
@@ -1143,4 +1150,252 @@ class ServiceRequestServiceTest {
             sut.confirmCompletion(alice.email!!, 1L)
         }
     }
+
+    // --- quantity and picks ---
+
+    /** A catering package: quantity per guest, a required palette and a "choose exactly 3" juice group. */
+    private inner class Package(biz: Business) {
+        val catering = ServiceOffered(
+            id = 300L, business = biz, title = "Catering", coverImageUrl = "https://cdn/cat.jpg",
+            priceAmount = BigDecimal("20000.00"), priceCurrency = "UGX",
+            priceIsEstimate = true, estimateReason = "Final count may change",
+            quantityEnabled = true, quantityUnit = "guest", quantityMin = 10, quantityMax = 200,
+        )
+        val palette = OptionGroup(id = 31L, item = catering, name = "Palette", selection = GroupSelection.SINGLE, required = true, position = 0)
+        val juices = OptionGroup(
+            id = 32L, item = catering, name = "Juices", selection = GroupSelection.MULTIPLE,
+            required = true, minPicks = 3, maxPicks = 3, position = 1,
+        )
+        val warmItem = ServiceOffered(id = 301L, business = biz, title = "Warm", priceAmount = null)
+        val coolItem = ServiceOffered(id = 302L, business = biz, title = "Cool", priceAmount = null)
+        val mangoItem = ServiceOffered(id = 303L, business = biz, title = "Mango", priceAmount = BigDecimal("3000.00"), priceCurrency = "UGX")
+        val passionItem = ServiceOffered(id = 304L, business = biz, title = "Passion", priceAmount = BigDecimal("2500.00"), priceCurrency = "UGX")
+        val warm = GroupChoice(id = 401L, group = palette, item = warmItem, position = 0)
+        val cool = GroupChoice(id = 402L, group = palette, item = coolItem, position = 1)
+        val mango = GroupChoice(id = 403L, group = juices, item = mangoItem, quantityEnabled = true, maxQuantity = 3, position = 0)
+        // Group price overrides the linked item's own price.
+        val passion = GroupChoice(
+            id = 404L, group = juices, item = passionItem, priceOverride = BigDecimal("2000.00"),
+            quantityEnabled = true, maxQuantity = 3, position = 1,
+        )
+
+        init {
+            palette.choices.addAll(listOf(warm, cool))
+            juices.choices.addAll(listOf(mango, passion))
+            catering.groups.addAll(listOf(palette, juices))
+        }
+
+        val validPicks = listOf(PickInput(warm.id!!), PickInput(mango.id!!, 2), PickInput(passion.id!!, 1))
+    }
+
+    private fun draftWith(alice: User, biz: Business, pkg: Package, picks: Boolean = true): ServiceRequest {
+        val req = ServiceRequest(
+            id = 1L, customer = alice, business = biz, status = ServiceRequestStatus.DRAFT,
+            requestedDate = LocalDateTime.now().plusDays(3), serviceLocation = "Kampala",
+        )
+        val item = ServiceRequestItem(request = req, service = pkg.catering, position = 0, quantity = 40)
+        if (picks) {
+            listOf(Triple(pkg.warm, 1, 0), Triple(pkg.mango, 2, 1), Triple(pkg.passion, 1, 2)).forEach { (c, q, pos) ->
+                item.picks.add(ServiceRequestItemPick(item = item, choice = c, groupId = c.group!!.id, quantity = q, position = pos))
+            }
+        }
+        req.items.add(item)
+        return req
+    }
+
+    @Test
+    fun `draft stores item quantity and picks`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(businessRepo.findById(biz.id!!)).thenReturn(Optional.of(biz))
+        whenever(serviceRepo.findAllById(listOf(300L))).thenReturn(listOf(pkg.catering))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.create(
+            alice.email!!,
+            CreateRequestPayload(
+                businessId = biz.id,
+                items = listOf(RequestItemInput(serviceId = 300L, quantity = 40, picks = pkg.validPicks)),
+            ),
+        )
+
+        val saved = argumentCaptor<ServiceRequest>().also { verify(repo).save(it.capture()) }.firstValue
+        val item = saved.items.single()
+        assertEquals(40, item.quantity)
+        assertEquals(listOf(401L, 403L, 404L), item.picks.map { it.choice?.id })
+        assertEquals(listOf(1, 2, 1), item.picks.map { it.quantity })
+        assertEquals(listOf(31L, 32L, 32L), item.picks.map { it.groupId })
+
+        val dto = response.items.single()
+        assertEquals(40, dto.quantity)
+        assertEquals("guest", dto.quantityUnit)
+        assertTrue(dto.priceIsEstimate)
+        assertEquals("Final count may change", dto.estimateReason)
+        assertEquals(listOf("Warm", "Mango", "Passion"), dto.picks.map { it.title })
+        assertEquals(listOf("Palette", "Juices", "Juices"), dto.picks.map { it.groupName })
+        assertEquals(listOf(null, BigDecimal("3000.00"), BigDecimal("2000.00")), dto.picks.map { it.price })
+        assertEquals(PricingState.ESTIMATED, response.pricing)
+        // 20000 x 40 + 3000 x 2 + 2000 x 1
+        assertEquals(0, BigDecimal("808000.00").compareTo(response.total))
+    }
+
+    @Test
+    fun `draft refuses an incomplete selection, naming the group`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(businessRepo.findById(biz.id!!)).thenReturn(Optional.of(biz))
+        whenever(serviceRepo.findAllById(listOf(300L))).thenReturn(listOf(pkg.catering))
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            sut.create(
+                alice.email!!,
+                CreateRequestPayload(
+                    businessId = biz.id,
+                    items = listOf(RequestItemInput(serviceId = 300L, quantity = 40, picks = listOf(PickInput(pkg.warm.id!!)))),
+                ),
+            )
+        }
+        assertEquals("Juices: choose exactly 3", ex.message)
+    }
+
+    @Test
+    fun `patching items keeps surviving picks in place instead of re-creating them`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        val req = draftWith(alice, biz, pkg)
+        val item = req.items.single()
+        val warmPick = item.picks[0]
+        val mangoPick = item.picks[1]
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+        whenever(serviceRepo.findAllById(listOf(300L))).thenReturn(listOf(pkg.catering))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        sut.patch(
+            alice.email!!, 1L,
+            UpdateRequestPayload(
+                items = listOf(
+                    RequestItemInput(
+                        serviceId = 300L, quantity = 50,
+                        picks = listOf(PickInput(pkg.cool.id!!), PickInput(pkg.mango.id!!, 3)),
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(req.items.single() === item, "the item row is kept")
+        assertEquals(50, item.quantity)
+        assertEquals(listOf(402L, 403L), item.picks.map { it.choice?.id })
+        assertTrue(item.picks.none { it === warmPick }, "dropped pick is removed")
+        assertTrue(item.picks[1] === mangoPick, "kept pick is updated in place")
+        assertEquals(3, mangoPick.quantity)
+        assertEquals(1, mangoPick.position)
+    }
+
+    @Test
+    fun `submit snapshots item estimate and each pick's group, title and effective price`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        val req = draftWith(alice, biz, pkg)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.submit(alice.email!!, 1L)
+
+        val item = req.items.single()
+        assertTrue(item.snapshotPriceIsEstimate)
+        assertEquals("Final count may change", item.snapshotEstimateReason)
+        assertEquals("guest", item.snapshotQuantityUnit)
+        assertEquals(40, item.quantity)
+        assertEquals(listOf("Palette", "Juices", "Juices"), item.picks.map { it.snapshotGroupName })
+        assertEquals(listOf("Warm", "Mango", "Passion"), item.picks.map { it.snapshotTitle })
+        assertEquals(listOf(null, BigDecimal("3000.00"), BigDecimal("2000.00")), item.picks.map { it.snapshotPrice })
+        assertEquals(ServiceRequestStatus.PENDING, response.status)
+        assertEquals(PricingState.ESTIMATED, response.pricing)
+    }
+
+    @Test
+    fun `submit refuses when a required group's pick was paused, naming the group`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        val req = draftWith(alice, biz, pkg)
+        pkg.warmItem.status = ServiceOfferedStatus.INACTIVE
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+
+        val ex = assertThrows(IllegalArgumentException::class.java) { sut.submit(alice.email!!, 1L) }
+
+        assertEquals("Palette: this choice is no longer available", ex.message)
+        assertEquals(ServiceRequestStatus.DRAFT, req.status)
+        verify(repo, never()).save(any<ServiceRequest>())
+    }
+
+    @Test
+    fun `submit refuses when a picked choice was deleted, naming its group`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        val req = draftWith(alice, biz, pkg)
+        // GroupChoicesDeletionListener nulled the pointer; the choice is gone from the group.
+        req.items.single().picks[0].choice = null
+        pkg.palette.choices.remove(pkg.warm)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+
+        val ex = assertThrows(IllegalArgumentException::class.java) { sut.submit(alice.email!!, 1L) }
+
+        assertEquals("Palette: this choice is no longer available", ex.message)
+    }
+
+    @Test
+    fun `renaming a choice after submit leaves the snapshot`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        val req = draftWith(alice, biz, pkg)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        sut.submit(alice.email!!, 1L)
+
+        pkg.mangoItem.title = "Mango Deluxe"
+        pkg.passion.priceOverride = BigDecimal("9999.00")
+        pkg.juices.name = "Fresh juices"
+
+        val pick = sut.get(alice.email!!, 1L).items.single().picks
+        assertEquals(listOf("Warm", "Mango", "Passion"), pick.map { it.title })
+        assertEquals("Juices", pick[2].groupName)
+        assertEquals(BigDecimal("2000.00"), pick[2].price)
+    }
+
+    @Test
+    fun `duplicate copies picks still available and drops the rest`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        val original = draftWith(alice, biz, pkg).apply { status = ServiceRequestStatus.COMPLETED }
+        pkg.passionItem.status = ServiceOfferedStatus.INACTIVE          // paused
+        original.items.single().picks[0].choice = null                  // deleted
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(original))
+        whenever(serviceRepo.findAllById(listOf(300L))).thenReturn(listOf(pkg.catering))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.duplicate(alice.email!!, 1L)
+
+        val copy = response.request.items.single()
+        assertEquals(40, copy.quantity)
+        assertEquals(listOf("Mango"), copy.picks.map { it.title })
+        assertEquals(listOf(2), copy.picks.map { it.quantity })
+        assertEquals(listOf(403L), copy.picks.map { it.choiceId })
+    }
 }
+

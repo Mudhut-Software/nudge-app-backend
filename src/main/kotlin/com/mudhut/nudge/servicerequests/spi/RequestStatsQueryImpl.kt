@@ -28,7 +28,7 @@ class RequestStatsQueryImpl(
         CompletionStats(
             jobs = repo.completedJobsByMonth(businessId, from, to).map(::count),
             unpricedJobs = repo.unpricedJobsByMonth(businessId, from, to).map(::count),
-            work = (repo.itemWorkByMonth(businessId, from, to) + repo.addonWorkByMonth(businessId, from, to)).map(::money),
+            work = (repo.itemWorkByMonth(businessId, from, to) + repo.pickWorkByMonth(businessId, from, to)).map(::money),
         )
 
     @Transactional(readOnly = true)
@@ -47,7 +47,7 @@ class RequestStatsQueryImpl(
     override fun serviceBreakdown(businessId: Long, from: LocalDateTime, to: LocalDateTime): List<ServiceStats> {
         val received = repo.receivedByService(businessId, from, to).associateBy { it.serviceId }
         val completed = repo.completedByService(businessId, from, to).associateBy { it.serviceId }
-        val work = (repo.itemWorkByService(businessId, from, to) + repo.addonWorkByService(businessId, from, to))
+        val work = (repo.itemWorkByService(businessId, from, to) + repo.pickWorkByService(businessId, from, to))
             .groupBy { it.serviceId }
         val unpriced = repo.unpricedServiceIds(businessId, from, to).toSet()
 

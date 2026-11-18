@@ -22,8 +22,8 @@ interface ServiceMoneyRow { val serviceId: Long; val currency: String; val amoun
  * Read-only aggregates for the analytics SPI. A separate repository so the
  * reporting queries don't bloat `ServiceRequestRepository`.
  *
- * Item and addon money are summed in separate queries: joining both in one
- * would repeat each item's price once per addon.
+ * Item and pick money are summed in separate queries: joining both in one
+ * would repeat each item's price once per pick. (Task 6 moves this onto RequestPricing.)
  */
 interface RequestAnalyticsRepository : Repository<ServiceRequest, Long> {
 
@@ -58,7 +58,7 @@ interface RequestAnalyticsRepository : Repository<ServiceRequest, Long> {
 
     @Query("""
         SELECT year(r.completedAt) AS y, month(r.completedAt) AS m,
-               i.snapshotPriceCurrency AS currency, SUM(i.snapshotPriceAmount) AS amount
+               i.snapshotPriceCurrency AS currency, SUM(i.snapshotPriceAmount * i.quantity) AS amount
         FROM ServiceRequestItem i JOIN i.request r
         WHERE r.business.id = :businessId
           AND r.status = com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.COMPLETED
@@ -74,15 +74,15 @@ interface RequestAnalyticsRepository : Repository<ServiceRequest, Long> {
 
     @Query("""
         SELECT year(r.completedAt) AS y, month(r.completedAt) AS m,
-               i.snapshotPriceCurrency AS currency, SUM(a.snapshotPriceDelta * a.quantity) AS amount
-        FROM ServiceRequestItemAddon a JOIN a.item i JOIN i.request r
+               i.snapshotPriceCurrency AS currency, SUM(p.snapshotPrice * p.quantity) AS amount
+        FROM ServiceRequestItemPick p JOIN p.item i JOIN i.request r
         WHERE r.business.id = :businessId
           AND r.status = com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.COMPLETED
           AND r.completedAt >= :from AND r.completedAt < :to
-          AND a.snapshotPriceDelta IS NOT NULL AND i.snapshotPriceCurrency IS NOT NULL
+          AND p.snapshotPrice IS NOT NULL AND i.snapshotPriceCurrency IS NOT NULL
         GROUP BY year(r.completedAt), month(r.completedAt), i.snapshotPriceCurrency
     """)
-    fun addonWorkByMonth(
+    fun pickWorkByMonth(
         @Param("businessId") businessId: Long,
         @Param("from") from: LocalDateTime,
         @Param("to") to: LocalDateTime,
@@ -155,7 +155,7 @@ interface RequestAnalyticsRepository : Repository<ServiceRequest, Long> {
     ): List<ServiceCountRow>
 
     @Query("""
-        SELECT s.id AS serviceId, i.snapshotPriceCurrency AS currency, SUM(i.snapshotPriceAmount) AS amount
+        SELECT s.id AS serviceId, i.snapshotPriceCurrency AS currency, SUM(i.snapshotPriceAmount * i.quantity) AS amount
         FROM ServiceRequestItem i JOIN i.request r JOIN i.service s
         WHERE r.business.id = :businessId
           AND r.status = com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.COMPLETED
@@ -170,15 +170,15 @@ interface RequestAnalyticsRepository : Repository<ServiceRequest, Long> {
     ): List<ServiceMoneyRow>
 
     @Query("""
-        SELECT s.id AS serviceId, i.snapshotPriceCurrency AS currency, SUM(a.snapshotPriceDelta * a.quantity) AS amount
-        FROM ServiceRequestItemAddon a JOIN a.item i JOIN i.request r JOIN i.service s
+        SELECT s.id AS serviceId, i.snapshotPriceCurrency AS currency, SUM(p.snapshotPrice * p.quantity) AS amount
+        FROM ServiceRequestItemPick p JOIN p.item i JOIN i.request r JOIN i.service s
         WHERE r.business.id = :businessId
           AND r.status = com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.COMPLETED
           AND r.completedAt >= :from AND r.completedAt < :to
-          AND a.snapshotPriceDelta IS NOT NULL AND i.snapshotPriceCurrency IS NOT NULL
+          AND p.snapshotPrice IS NOT NULL AND i.snapshotPriceCurrency IS NOT NULL
         GROUP BY s.id, i.snapshotPriceCurrency
     """)
-    fun addonWorkByService(
+    fun pickWorkByService(
         @Param("businessId") businessId: Long,
         @Param("from") from: LocalDateTime,
         @Param("to") to: LocalDateTime,

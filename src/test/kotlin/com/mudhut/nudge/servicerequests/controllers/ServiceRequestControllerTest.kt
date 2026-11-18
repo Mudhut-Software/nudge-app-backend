@@ -6,6 +6,7 @@ import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
 import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.entities.PricingState
 import com.mudhut.nudge.servicerequests.models.AttachmentResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestItemResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
@@ -70,7 +71,8 @@ class ServiceRequestControllerTest {
                 ServiceRequestItemResponse(
                     serviceId = 100L,
                     title = "Deep Clean", priceAmount = null, priceCurrency = "UGX",
-                    coverImageUrl = null, position = 0,
+                    priceIsEstimate = false, estimateReason = null, quantity = 1, quantityUnit = null,
+                coverImageUrl = null, position = 0, picks = emptyList(),
                 )
             ),
             requestedDate = null,
@@ -82,6 +84,7 @@ class ServiceRequestControllerTest {
             cancellationReason = null,
             proposal = null,
             attachments = emptyList<AttachmentResponse>(),
+            pricing = PricingState.TO_BE_CONFIRMED, total = null,
             submittedAt = null,
             respondedAt = null,
             completedAt = null,

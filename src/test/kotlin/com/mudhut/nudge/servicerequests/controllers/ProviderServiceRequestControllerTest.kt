@@ -5,6 +5,7 @@ import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
 import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.entities.PricingState
 import com.mudhut.nudge.servicerequests.models.AttachmentResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestItemResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
@@ -60,13 +61,15 @@ class ProviderServiceRequestControllerTest {
             ServiceRequestItemResponse(
                 serviceId = 100L,
                 title = "Deep Clean", priceAmount = null, priceCurrency = null,
-                coverImageUrl = null, position = 0,
+                priceIsEstimate = false, estimateReason = null, quantity = 1, quantityUnit = null,
+                coverImageUrl = null, position = 0, picks = emptyList(),
             )
         ),
         requestedDate = null,
         serviceLocation = null, serviceLatitude = null, serviceLongitude = null,
         note = null, accessDirections = null, declineReason = null, cancellationReason = null,
         proposal = null, attachments = emptyList<AttachmentResponse>(),
+            pricing = PricingState.TO_BE_CONFIRMED, total = null,
         submittedAt = LocalDateTime.now(),
         respondedAt = null, completedAt = null, cancelledAt = null, viewedAt = null,
         createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now(),
