@@ -4,7 +4,10 @@ import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemPick
+import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestPriceProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestPriceProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.users.entities.User
@@ -38,6 +41,7 @@ class AnalyticsDemoSeeder(
     private val businessRepo: BusinessRepository,
     private val serviceRepo: ServiceOfferedRepository,
     private val requestRepo: ServiceRequestRepository,
+    private val priceProposalRepo: ServiceRequestPriceProposalRepository,
     private val jdbc: JdbcTemplate,
     private val passwordEncoder: PasswordEncoder,
 ) {
@@ -90,6 +94,36 @@ class AnalyticsDemoSeeder(
                     invoice(business.id!!, customer.id!!, owner.id!!, req.id!!, ++invoiceSeq, status, if (usd) "USD" else "UGX",
                         if (usd) BigDecimal("70.00") else BigDecimal("220000.00"), minOf(done.plusDays(3), clock))
                 }
+            }
+            // One booking whose provider-set price the customer accepted: the agreed price replaces
+            // the itemised lines on its invoice and in analytics.
+            if (ago == 2) {
+                val customer = customers[4]
+                val done = day(24)
+                val agreedAmount = BigDecimal("180000.00")
+                val proposedAt = done.minusDays(2)
+                val req = request(
+                    customer, business, ServiceRequestStatus.COMPLETED,
+                    submitted = done.minusDays(6), responded = done.minusDays(6).plusMinutes(30),
+                    completed = done,
+                    lines = listOf(
+                        Triple(services[0], null, "UGX"),
+                        Triple(services[1], BigDecimal("50000.00"), "UGX"),
+                    ),
+                )
+                req.agreedPriceAmount = agreedAmount
+                req.agreedPriceCurrency = "UGX"
+                req.agreedPriceNote = "After visiting the site"
+                requestRepo.save(req)
+                priceProposalRepo.save(
+                    ServiceRequestPriceProposal(
+                        request = req, amount = agreedAmount, currency = "UGX", note = "After visiting the site",
+                        proposedAt = proposedAt, outcome = ProposalOutcome.ACCEPTED,
+                        respondedAt = proposedAt.plusHours(3),
+                    ),
+                )
+                invoice(business.id!!, customer.id!!, owner.id!!, req.id!!, ++invoiceSeq, "PAID", "UGX", agreedAmount,
+                    minOf(done.plusDays(3), clock))
             }
             // Leaks: one declined each month, plus a cancellation and a no-show on alternating months.
             fun leak(c: User, status: ServiceRequestStatus, at: LocalDateTime, respondAfter: java.time.Duration? = null) {
@@ -144,7 +178,7 @@ class AnalyticsDemoSeeder(
                 snapshotPriceAmount = price, snapshotPriceCurrency = currency,
             )
             if (idx == 0 && pickPrice != null) {
-                item.picks.add(ServiceRequestItemPick(item = item, snapshotGroupName = "Extras", snapshotTitle = "Extra", snapshotPrice = pickPrice, quantity = pickQty, position = 0))
+                item.picks.add(ServiceRequestItemPick(item = item, snapshotGroupName = "Optional extras", snapshotTitle = "Extra", snapshotPrice = pickPrice, quantity = pickQty, position = 0))
             }
             r.items.add(item)
         }

@@ -9,6 +9,9 @@ import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.repositories.BusinessCategoryRepository
 import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
+import com.mudhut.nudge.servicesoffered.entities.GroupChoice
+import com.mudhut.nudge.servicesoffered.entities.GroupSelection
+import com.mudhut.nudge.servicesoffered.entities.OptionGroup
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
 import java.time.LocalDate
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
@@ -299,35 +302,9 @@ class DevDataSeeder(
 
             val owner = seedOwner(spec)
             owners.add(owner)
-
-            val biz = Business(
-                name = spec.name,
-                description = spec.description,
-                owner = owner,
-                category = category,
-                email = spec.email,
-                address = spec.address,
-                latitude = spec.latitude,
-                longitude = spec.longitude,
-                serviceAreas = spec.serviceAreas.toMutableList(),
-                status = BusinessStatus.ACTIVE,
-            ).also { b ->
-                b.phoneNumbers = mutableListOf(
-                    BusinessPhoneNumber(phoneNumber = spec.phone, business = b),
-                )
-            }
-            val savedBiz = businessRepo.save(biz)
-
-            businessMemberRepo.save(
-                BusinessMember(
-                    user = owner,
-                    business = savedBiz,
-                    role = BusinessRole.OWNER,
-                    isActive = true,
-                )
-            )
-
+            val savedBiz = createBusiness(spec, category, owner)
             val (coverUrl, coverPublicId) = COVER_BY_CATEGORY[spec.category] ?: DEFAULT_COVER
+
             spec.services.forEach { svc ->
                 serviceRepo.save(
                     ServiceOffered(
@@ -369,9 +346,231 @@ class DevDataSeeder(
             log.info("DevDataSeeder: seeded business '{}' (owner {}) with {} services and {} bundle services.",
                 spec.name, owner.email, spec.services.size, spec.bundles.size)
         }
+        seedCatalogueBusinesses(categories)
         return owners
     }
+
+    private fun createBusiness(spec: BusinessSpec, category: BusinessCategory, owner: User): Business {
+            val biz = Business(
+                name = spec.name,
+                description = spec.description,
+                owner = owner,
+                category = category,
+                email = spec.email,
+                address = spec.address,
+                latitude = spec.latitude,
+                longitude = spec.longitude,
+                serviceAreas = spec.serviceAreas.toMutableList(),
+                status = BusinessStatus.ACTIVE,
+            ).also { b ->
+                b.phoneNumbers = mutableListOf(
+                    BusinessPhoneNumber(phoneNumber = spec.phone, business = b),
+                )
+            }
+            val savedBiz = businessRepo.save(biz)
+
+            businessMemberRepo.save(
+                BusinessMember(
+                    user = owner,
+                    business = savedBiz,
+                    role = BusinessRole.OWNER,
+                    isActive = true,
+                )
+            )
+
+        return savedBiz
+    }
+
+    /**
+     * Two businesses that show off the item catalogue: a wedding designer (one package with
+     * single- and multiple-choice groups, one unpriced service) and a juice seller (bottles sold
+     * alone, a sized drink, and a "choose 3 bottles" pack with quantity steppers).
+     * Everything here satisfies the rules OptionGroupService enforces at the API.
+     */
+    private fun seedCatalogueBusinesses(categories: Map<String, BusinessCategory>) {
+        val rustic = seedCatalogueBusiness(
+            categories,
+            BusinessSpec(
+                name = "Rustic Weddings",
+                category = "Events & Photography",
+                ownerName = "Mercy Namutebi",
+                ownerEmail = "mercy@rusticweddings.local",
+                ownerPhone = "+256781000006",
+                description = "Barn-style and garden wedding design, styling and planning.",
+                address = "Muyenga Hill, Kampala",
+                latitude = 0.29500, longitude = 32.61500,
+                serviceAreas = listOf("Kampala", "Wakiso", "Entebbe"),
+                email = "hello@rusticweddings.local",
+                phone = "+256700000060",
+                services = emptyList(),
+                bundles = emptyList(),
+            ),
+        )
+        val wedding = rustic.item(
+            "Rustic Wedding", "A complete rustic wedding set-up: choose your style, palette and table layout.",
+            price = BigDecimal("3500000"), estimateReason = "Final price depends on venue size and guest count",
+        )
+        rustic.item("Full Wedding Planning", "Month-by-month planning and day-of coordination. Price agreed after a consultation.")
+        val hayBale = rustic.choiceItem("Hay-bale lounge", "Relaxed seating corner of stacked hay bales and throws.", BigDecimal("300000"))
+        val canopy = rustic.choiceItem("Fairy-light canopy", "Overhead canopy of warm fairy lights.", BigDecimal("450000"))
+        rustic.group(
+            wedding, "Style", GroupSelection.SINGLE, required = true,
+            rustic.choiceItem("Classic rustic", "Timber, linen and wildflowers.").choice(),
+            rustic.choiceItem("Boho rustic", "Pampas grass, macrame and earthy tones.").choice(),
+        )
+        rustic.group(
+            wedding, "Colour palette", GroupSelection.SINGLE, required = true,
+            rustic.choiceItem("Sage & gold", "Soft green with gold accents.").choice(),
+            rustic.choiceItem("Terracotta & cream", "Warm clay tones with cream.").choice(),
+        )
+        rustic.group(
+            wedding, "Table arrangement", GroupSelection.SINGLE, required = false,
+            rustic.choiceItem("Long banquet tables", "Family-style long tables.").choice(),
+            rustic.choiceItem("Round tables of 10", "Classic round tables seating ten.").choice(),
+        )
+        rustic.group(
+            wedding, "Optional extras", GroupSelection.MULTIPLE, required = false,
+            hayBale.choice(), canopy.choice(),
+        )
+
+        val juice = seedCatalogueBusiness(
+            categories,
+            BusinessSpec(
+                name = "Fresh Press Juice",
+                category = "Catering",
+                ownerName = "Joan Akello",
+                ownerEmail = "joan@freshpress.local",
+                ownerPhone = "+256781000007",
+                description = "Cold-pressed fruit juice, bottled to order.",
+                address = "Ntinda, Kampala",
+                latitude = 0.35400, longitude = 32.61700,
+                serviceAreas = listOf("Kampala"),
+                email = "hello@freshpress.local",
+                phone = "+256700000070",
+                services = emptyList(),
+                bundles = emptyList(),
+            ),
+        )
+        val bottlePrice = BigDecimal("14000")
+        val mango = juice.item("Mango 1L", "One litre of cold-pressed mango juice.", price = bottlePrice)
+        val passion = juice.item("Passion 1L", "One litre of cold-pressed passion juice.", price = bottlePrice)
+        val ginger = juice.item("Pineapple-ginger 1L", "One litre of pineapple juice with fresh ginger.", price = bottlePrice)
+        // Priced at zero so the total is driven entirely by the Size pick (no price would read "to be confirmed").
+        val fresh = juice.item("Fresh Juice", "Pressed to order: pick a size and the flavours you want.", price = BigDecimal.ZERO)
+        juice.group(
+            fresh, "Size", GroupSelection.SINGLE, required = true,
+            juice.choiceItem("300ml", "A small bottle.", BigDecimal("5000")).choice(),
+            juice.choiceItem("1 litre", "A family bottle.", BigDecimal("14000")).choice(),
+        )
+        juice.group(
+            fresh, "Flavour", GroupSelection.MULTIPLE, required = false,
+            juice.choiceItem("Mango", "Sweet and thick.").choice(),
+            juice.choiceItem("Passion", "Sharp and bright.").choice(),
+            juice.choiceItem("Pineapple-ginger", "Tangy with a kick.").choice(),
+        )
+        val pack = juice.item("Party Pack", "Three one-litre bottles, mixed as you like.", price = BigDecimal("36000"))
+        juice.group(
+            pack, "Choose 3 bottles", GroupSelection.MULTIPLE, required = true, minPicks = 3, maxPicks = 3,
+            listOf(mango, passion, ginger).map { it.choice(priceOverride = BigDecimal.ZERO, quantityEnabled = true, maxQuantity = 3) },
+        )
+    }
+
+    private fun seedCatalogueBusiness(categories: Map<String, BusinessCategory>, spec: BusinessSpec): CatalogueSeed {
+        val category = categories[spec.category]
+            ?: error("Seeder: category '${spec.category}' missing for business '${spec.name}'")
+        val owner = seedOwner(spec)
+        val biz = createBusiness(spec, category, owner)
+        val (coverUrl, coverPublicId) = COVER_BY_CATEGORY[spec.category] ?: DEFAULT_COVER
+        log.info("DevDataSeeder: seeded catalogue business '{}' (owner {}).", spec.name, owner.email)
+        return CatalogueSeed(biz, coverUrl, coverPublicId, serviceRepo)
+    }
 }
+
+/** Small builder around one seeded business: items, then groups linking them. */
+private class CatalogueSeed(
+    private val business: Business,
+    private val coverUrl: String,
+    private val coverPublicId: String,
+    private val serviceRepo: ServiceOfferedRepository,
+) {
+    fun item(
+        title: String,
+        description: String,
+        price: BigDecimal? = null,
+        estimateReason: String? = null,
+        soldOnItsOwn: Boolean = true,
+    ): ServiceOffered = serviceRepo.save(
+        ServiceOffered(
+            business = business,
+            title = title,
+            description = description,
+            coverImageUrl = coverUrl,
+            coverImagePublicId = coverPublicId,
+            priceAmount = price,
+            priceCurrency = if (price == null) null else DEMO_CURRENCY,
+            priceIsEstimate = estimateReason != null,
+            estimateReason = estimateReason,
+            soldOnItsOwn = soldOnItsOwn,
+            status = ServiceOfferedStatus.ACTIVE,
+        )
+    )
+
+    /** An item that exists only to be picked inside a group, so it is not bookable on its own. */
+    fun choiceItem(title: String, description: String, price: BigDecimal? = null): ServiceOffered =
+        item(title, description, price, soldOnItsOwn = false)
+
+    fun group(
+        parent: ServiceOffered,
+        name: String,
+        selection: GroupSelection,
+        required: Boolean,
+        vararg choices: ChoiceSpec,
+    ) = group(parent, name, selection, required, null, null, choices.toList())
+
+    fun group(
+        parent: ServiceOffered,
+        name: String,
+        selection: GroupSelection,
+        required: Boolean,
+        minPicks: Int? = null,
+        maxPicks: Int? = null,
+        choices: List<ChoiceSpec>,
+    ) {
+        require(selection == GroupSelection.MULTIPLE || (minPicks == null && maxPicks == null && choices.none { it.quantityEnabled })) {
+            "Seeder: single-choice group '$name' cannot set picks limits or quantity choices"
+        }
+        val group = OptionGroup(
+            item = parent, name = name, selection = selection, required = required,
+            minPicks = minPicks, maxPicks = maxPicks, position = parent.groups.size,
+        )
+        choices.forEachIndexed { index, spec ->
+            require(spec.item.business?.id == business.id) { "Seeder: '${spec.item.title}' belongs to another business" }
+            group.choices.add(
+                GroupChoice(
+                    group = group, item = spec.item, priceOverride = spec.priceOverride,
+                    quantityEnabled = spec.quantityEnabled,
+                    maxQuantity = if (spec.quantityEnabled) spec.maxQuantity else null,
+                    position = index,
+                )
+            )
+        }
+        parent.groups.add(group)
+        serviceRepo.save(parent)
+    }
+}
+
+private class ChoiceSpec(
+    val item: ServiceOffered,
+    val priceOverride: BigDecimal?,
+    val quantityEnabled: Boolean,
+    val maxQuantity: Int?,
+)
+
+private fun ServiceOffered.choice(
+    priceOverride: BigDecimal? = null,
+    quantityEnabled: Boolean = false,
+    maxQuantity: Int? = null,
+) = ChoiceSpec(this, priceOverride, quantityEnabled, maxQuantity)
 
 private data class BusinessSpec(
     val name: String,
