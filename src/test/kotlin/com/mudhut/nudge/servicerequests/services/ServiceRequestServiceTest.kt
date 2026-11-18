@@ -1397,5 +1397,53 @@ class ServiceRequestServiceTest {
         assertEquals(listOf(2), copy.picks.map { it.quantity })
         assertEquals(listOf(403L), copy.picks.map { it.choiceId })
     }
+
+    @Test
+    fun `pricing an unpriced item after submit leaves the sent request to be confirmed`() {
+        val alice = user()
+        val biz = business()
+        val svc = service(id = 100L, biz = biz).apply { priceAmount = null; priceCurrency = null; coverImageUrl = null }
+        val req = ServiceRequest(
+            id = 1L, customer = alice, business = biz, status = ServiceRequestStatus.DRAFT,
+            requestedDate = LocalDateTime.now().plusDays(3), serviceLocation = "Kampala",
+        )
+        req.items.add(ServiceRequestItem(request = req, service = svc, position = 0))
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        val sent = sut.submit(alice.email!!, 1L)
+        assertEquals(PricingState.TO_BE_CONFIRMED, sent.pricing)
+
+        // The provider prices the item (and adds a cover) in the catalogue afterwards.
+        svc.priceAmount = BigDecimal("300000.00")
+        svc.priceCurrency = "UGX"
+        svc.coverImageUrl = "https://cdn/new.jpg"
+
+        val after = sut.get(alice.email!!, 1L)
+        assertEquals(PricingState.TO_BE_CONFIRMED, after.pricing)
+        assertNull(after.total)
+        assertNull(after.items.single().priceAmount)
+        assertNull(after.items.single().priceCurrency)
+        assertNull(after.items.single().coverImageUrl)
+    }
+
+    @Test
+    fun `submit writes submittedAt in UTC, not the JVM-local zone`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val alice = user()
+        val biz = business()
+        val req = ServiceRequest(
+            id = 1L, customer = alice, business = biz, status = ServiceRequestStatus.DRAFT,
+            requestedDate = LocalDateTime.now().plusDays(3), serviceLocation = "Kampala",
+        )
+        req.items.add(ServiceRequestItem(request = req, service = service(id = 100L, biz = biz), position = 0))
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        sut.submit(alice.email!!, 1L)
+
+        assertWrittenInUtcNotLocalZone(req.submittedAt)
+    }
 }
 

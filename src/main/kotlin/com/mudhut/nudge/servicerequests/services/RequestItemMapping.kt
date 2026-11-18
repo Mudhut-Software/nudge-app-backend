@@ -11,7 +11,8 @@ import java.math.BigDecimal
 /**
  * Item and pick mapping shared by the customer and provider `toResponse`, so the two sides of the
  * wire read the same. A draft (`live = true`) shows the catalogue as it is now; a sent request shows
- * its snapshot, falling back to the catalogue only for columns written before snapshots existed.
+ * its snapshot and nothing else: a null snapshot price means "to be confirmed" and must stay so even
+ * if the provider prices the item later. Only the title falls back, as a label, never a price.
  */
 internal object RequestItemMapping {
 
@@ -42,13 +43,13 @@ internal object RequestItemMapping {
         return ServiceRequestItemResponse(
             serviceId = svc?.id,
             title = (if (live) svc?.title else item.snapshotTitle ?: svc?.title) ?: "(unknown)",
-            priceAmount = if (live) svc?.priceAmount else item.snapshotPriceAmount ?: svc?.priceAmount,
-            priceCurrency = if (live) svc?.priceCurrency else item.snapshotPriceCurrency ?: svc?.priceCurrency,
+            priceAmount = if (live) svc?.priceAmount else item.snapshotPriceAmount,
+            priceCurrency = if (live) svc?.priceCurrency else item.snapshotPriceCurrency,
             priceIsEstimate = if (live) svc?.priceIsEstimate ?: false else item.snapshotPriceIsEstimate,
             estimateReason = if (live) svc?.estimateReason?.takeIf { svc.priceIsEstimate } else item.snapshotEstimateReason,
             quantity = item.quantity,
             quantityUnit = if (live) liveUnit else item.snapshotQuantityUnit,
-            coverImageUrl = if (live) svc?.coverImageUrl else item.snapshotCoverUrl ?: svc?.coverImageUrl,
+            coverImageUrl = if (live) svc?.coverImageUrl else item.snapshotCoverUrl,
             position = item.position,
             picks = item.picks.sortedBy { it.position }.map { pick(it, live) },
         )
