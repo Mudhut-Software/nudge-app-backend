@@ -2,7 +2,9 @@ package com.mudhut.nudge.notifications
 
 import com.mudhut.nudge.email.IEmailService
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.PriceEventKind
 import com.mudhut.nudge.servicerequests.events.RequestActor
+import com.mudhut.nudge.servicerequests.events.ServiceRequestPriceEvent
 import com.mudhut.nudge.servicerequests.events.ServiceRequestStatusChangedEvent
 import com.mudhut.nudge.users.repositories.UserRepository
 import org.slf4j.LoggerFactory
@@ -11,6 +13,9 @@ import org.springframework.modulith.events.ApplicationModuleListener
 import org.springframework.stereotype.Component
 import org.thymeleaf.TemplateEngine
 import org.thymeleaf.context.Context
+import java.math.BigDecimal
+import java.text.DecimalFormat
+import java.text.DecimalFormatSymbols
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -59,12 +64,45 @@ class RequestNotificationListener(
         // no second template are needed.
         val formattedDate = (event.proposedDate ?: event.requestedDate)?.format(dateFormat)
 
+        send(mail, event.reason, event.serviceTitle, formattedDate)
+    }
+
+    /** A proposed price goes to the customer, an accepted one to the provider. */
+    @ApplicationModuleListener
+    fun onPriceChanged(event: ServiceRequestPriceEvent) {
+        val service = event.serviceTitle ?: "your request"
+        val amount = formatMoney(event.amount, event.currency)
+        val mail = when (event.kind) {
+            PriceEventKind.PROPOSED -> customerMail(
+                event.customerId,
+                event.requestId,
+                event.kind,
+                subject = "${event.businessName} proposed a new price",
+                heading = "A new price was proposed",
+                body = "${event.businessName} proposed $amount for $service. " +
+                    "Accept it to keep the booking, or decline to cancel it.",
+            )
+
+            PriceEventKind.ACCEPTED -> Mail(
+                to = event.ownerEmail,
+                subject = "${event.customerName} accepted your price",
+                heading = "That price works",
+                body = "${event.customerName} accepted $amount for $service.",
+                ctaLabel = "Open requests",
+                ctaPath = "/calendar?tab=requests",
+            )
+        } ?: return
+        // The note rides in the template's existing `reason` slot.
+        send(mail, event.note, event.serviceTitle, null)
+    }
+
+    private fun send(mail: Mail, reason: String?, serviceTitle: String?, formattedDate: String?) {
         val context = Context().apply {
             setVariable("subject", mail.subject)
             setVariable("heading", mail.heading)
             setVariable("body", mail.body)
-            setVariable("reason", event.reason)
-            setVariable("serviceTitle", event.serviceTitle)
+            setVariable("reason", reason)
+            setVariable("serviceTitle", serviceTitle)
             setVariable("requestedDate", formattedDate)
             setVariable("ctaLabel", mail.ctaLabel)
             setVariable("ctaUrl", url(mail.ctaPath))
@@ -73,7 +111,14 @@ class RequestNotificationListener(
         }
         val html = templateEngine.process("emails/request-status", context)
 
-        emailService.sendHtmlEmail(mail.to, mail.subject, html, plainText(mail, event, formattedDate))
+        emailService.sendHtmlEmail(mail.to, mail.subject, html, plainText(mail, reason, formattedDate))
+    }
+
+    // English separators pinned for the same reason as the date format. No
+    // decimals for whole amounts (UGX), up to two otherwise.
+    private fun formatMoney(amount: BigDecimal, currency: String): String {
+        val format = DecimalFormat("#,##0.##", DecimalFormatSymbols(Locale.ENGLISH))
+        return "$currency ${format.format(amount)}"
     }
 
     private fun ownerMail(
@@ -223,14 +268,27 @@ class RequestNotificationListener(
         body: String,
         secondaryLabel: String? = null,
         secondaryPath: String? = null,
+    ): Mail? = customerMail(
+        event.customerId, event.requestId, event.to, subject, heading, body, secondaryLabel, secondaryPath,
+    )
+
+    private fun customerMail(
+        customerId: Long,
+        requestId: Long,
+        trigger: Any,
+        subject: String,
+        heading: String,
+        body: String,
+        secondaryLabel: String? = null,
+        secondaryPath: String? = null,
     ): Mail? {
-        val email = userRepository.findById(event.customerId).orElse(null)?.email
+        val email = userRepository.findById(customerId).orElse(null)?.email
         if (email == null) {
             log.warn(
                 "Skipping {} notification for request {}: customer {} has no resolvable email",
-                event.to,
-                event.requestId,
-                event.customerId,
+                trigger,
+                requestId,
+                customerId,
             )
             return null
         }
@@ -250,14 +308,14 @@ class RequestNotificationListener(
 
     private fun plainText(
         mail: Mail,
-        event: ServiceRequestStatusChangedEvent,
+        reason: String?,
         formattedDate: String?,
     ): String = buildString {
         appendLine(mail.heading)
         appendLine()
         appendLine(mail.body)
         formattedDate?.let { appendLine("When: $it") }
-        event.reason?.let {
+        reason?.let {
             appendLine()
             appendLine("Reason: $it")
         }
