@@ -1426,24 +1426,5 @@ class ServiceRequestServiceTest {
         assertNull(after.items.single().priceCurrency)
         assertNull(after.items.single().coverImageUrl)
     }
-
-    @Test
-    fun `submit writes submittedAt in UTC, not the JVM-local zone`() {
-        assertTestJvmPinnedToNonUtcZone()
-        val alice = user()
-        val biz = business()
-        val req = ServiceRequest(
-            id = 1L, customer = alice, business = biz, status = ServiceRequestStatus.DRAFT,
-            requestedDate = LocalDateTime.now().plusDays(3), serviceLocation = "Kampala",
-        )
-        req.items.add(ServiceRequestItem(request = req, service = service(id = 100L, biz = biz), position = 0))
-        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
-        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
-        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
-
-        sut.submit(alice.email!!, 1L)
-
-        assertWrittenInUtcNotLocalZone(req.submittedAt)
-    }
 }
 

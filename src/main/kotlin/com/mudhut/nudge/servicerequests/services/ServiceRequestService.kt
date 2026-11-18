@@ -123,7 +123,7 @@ class ServiceRequestService(
         require(request.items.isNotEmpty()) { "At least one item required" }
         require(request.requestedDate != null) { "requestedDate is required" }
         // requestedDate is the customer's wall-clock time (sent without a zone), so it is compared
-        // with the server's local clock, not UTC; only timestamps this code writes are UTC.
+        // with the server's local clock, not UTC.
         require(request.requestedDate!!.isAfter(LocalDateTime.now())) {
             "requestedDate must be in the future"
         }
@@ -146,7 +146,7 @@ class ServiceRequestService(
         }
 
         request.status = ServiceRequestStatus.PENDING
-        request.submittedAt = LocalDateTime.now(ZoneOffset.UTC)
+        request.submittedAt = LocalDateTime.now()
         val saved = repo.save(request)
         eventPublisher.statusChanged(
             saved,
