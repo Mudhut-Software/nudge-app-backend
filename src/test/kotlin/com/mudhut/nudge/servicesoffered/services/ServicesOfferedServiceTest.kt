@@ -12,7 +12,12 @@ import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
 import com.mudhut.nudge.servicesoffered.models.MediaInput
 import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
 import com.mudhut.nudge.media.PendingMediaDeletionRepository
+import com.mudhut.nudge.servicesoffered.entities.GroupChoice
+import com.mudhut.nudge.servicesoffered.entities.OptionGroup
+import com.mudhut.nudge.servicesoffered.events.GroupChoicesDeletedEvent
+import com.mudhut.nudge.servicesoffered.repositories.GroupChoiceRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
+import org.springframework.context.ApplicationEventPublisher
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
@@ -44,6 +49,12 @@ class ServicesOfferedServiceTest {
     @Mock
     private lateinit var pendingMediaDeletionRepository: PendingMediaDeletionRepository
 
+
+    @Mock
+    private lateinit var groupChoiceRepository: GroupChoiceRepository
+
+    @Mock
+    private lateinit var events: ApplicationEventPublisher
 
     @Captor
     private lateinit var pendingDeletionCaptor: ArgumentCaptor<List<PendingMediaDeletion>>
@@ -589,6 +600,29 @@ class ServicesOfferedServiceTest {
 
         verify(businessService).requireRole(1L, "owner@test.com", BusinessRole.MANAGER)
         verify(serviceRepository).delete(entity)
+    }
+
+    @Test
+    fun `deleting an item removes its choices from other items' groups and publishes their ids`() {
+        val entity = ServiceOffered(id = 7L, business = businessFixture(), title = "Mango")
+        val otherParent = ServiceOffered(id = 8L, business = businessFixture(), title = "Platter")
+        val otherGroup = OptionGroup(id = 3L, item = otherParent, name = "Flavours")
+        val linking = GroupChoice(id = 70L, group = otherGroup, item = entity)
+        otherGroup.choices.add(linking)
+        // The item's own group goes with it, so its choice ids are announced too.
+        val ownGroup = OptionGroup(id = 4L, item = entity, name = "Sizes")
+        ownGroup.choices.add(GroupChoice(id = 71L, group = ownGroup, item = otherParent))
+        entity.groups.add(ownGroup)
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(groupChoiceRepository.findAllByItemId(7L)).thenReturn(listOf(linking))
+
+        offeringService.deleteService(7L, "owner@test.com")
+
+        val order = org.mockito.Mockito.inOrder(events, groupChoiceRepository, serviceRepository)
+        order.verify(events).publishEvent(GroupChoicesDeletedEvent(listOf(70L, 71L)))
+        order.verify(groupChoiceRepository).deleteAll(listOf(linking))
+        order.verify(serviceRepository).delete(entity)
+        assertTrue(otherGroup.choices.isEmpty())
     }
 
     @Test

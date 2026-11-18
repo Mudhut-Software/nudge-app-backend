@@ -11,9 +11,12 @@ import com.mudhut.nudge.servicesoffered.models.MediaResponse
 import com.mudhut.nudge.servicesoffered.models.ServiceOfferedResponse
 import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
 import com.mudhut.nudge.media.PendingMediaDeletionRepository
+import com.mudhut.nudge.servicesoffered.repositories.GroupChoiceRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
+import com.mudhut.nudge.servicesoffered.events.GroupChoicesDeletedEvent
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import jakarta.transaction.Transactional
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
@@ -25,6 +28,8 @@ class ServicesOfferedService(
     private val serviceOfferedRepository: ServiceOfferedRepository,
     private val businessService: BusinessService,
     private val pendingMediaDeletionRepository: PendingMediaDeletionRepository,
+    private val groupChoiceRepository: GroupChoiceRepository,
+    private val events: ApplicationEventPublisher,
 ) {
 
     @Transactional
@@ -183,6 +188,18 @@ class ServicesOfferedService(
             )
         }
 
+        // Choices that link this item into other items' groups, plus the choices inside its own
+        // groups (removed by cascade): announce their ids before any row goes, so other modules
+        // can release their references first.
+        val linking = groupChoiceRepository.findAllByItemId(serviceId)
+        val choiceIds = (linking.mapNotNull { it.id } +
+            entity.groups.flatMap { g -> g.choices.mapNotNull { it.id } }).distinct()
+        if (choiceIds.isNotEmpty()) {
+            events.publishEvent(GroupChoicesDeletedEvent(choiceIds))
+        }
+        linking.forEach { it.group?.choices?.remove(it) }
+        groupChoiceRepository.deleteAll(linking)
+
         serviceOfferedRepository.delete(entity)
     }
 
@@ -323,6 +340,7 @@ class ServicesOfferedService(
                         position = it.position
                     )
                 },
+            groups = entity.groups.sortedBy { it.position }.map { it.toResponse() },
             createdAt = entity.createdAt!!,
             updatedAt = entity.updatedAt!!
         )

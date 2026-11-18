@@ -1,7 +1,6 @@
 package com.mudhut.nudge.discovery.models
 
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
-import com.mudhut.nudge.servicesoffered.models.PublicServiceAddon
 import java.math.BigDecimal
 import java.time.LocalDate
 
@@ -22,5 +21,4 @@ data class PublicServiceSummary(
     val tag: ServiceOfferedTag? = null,
     val validFrom: LocalDate? = null,
     val validUntil: LocalDate? = null,
-    val addons: List<PublicServiceAddon> = emptyList(),
 )

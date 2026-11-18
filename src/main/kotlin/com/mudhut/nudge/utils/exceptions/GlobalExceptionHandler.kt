@@ -243,15 +243,6 @@ class GlobalExceptionHandler {
         )
     }
 
-    @ExceptionHandler(ServiceAddonNotFoundException::class)
-    fun handleServiceAddonNotFoundException(ex: ServiceAddonNotFoundException): ResponseEntity<ErrorResponse> {
-        logger.warn("Service addon not found: {}", ex.message)
-        return ResponseEntity(
-            ErrorResponse(ERROR_CODE_NOT_FOUND, ex.message ?: "Service addon not found"),
-            HttpStatus.NOT_FOUND
-        )
-    }
-
     @ExceptionHandler(SessionNotFoundException::class)
     fun handleSessionNotFound(ex: SessionNotFoundException): ResponseEntity<ErrorResponse> {
         logger.warn("Session not found: {}", ex.message)

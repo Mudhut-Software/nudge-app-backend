@@ -27,6 +27,7 @@ data class ServiceOfferedResponse(
     val validUntil: LocalDate?,
     val isCurrentlyActive: Boolean,
     val galleryImages: List<MediaResponse>,
+    val groups: List<OptionGroupResponse> = emptyList(),
     val createdAt: LocalDateTime,
     val updatedAt: LocalDateTime
 )

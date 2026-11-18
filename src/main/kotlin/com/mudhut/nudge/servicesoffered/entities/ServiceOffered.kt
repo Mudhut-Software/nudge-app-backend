@@ -85,13 +85,13 @@ class ServiceOffered(
     var galleryImages: MutableList<ServiceOfferedImage> = mutableListOf(),
 
     @OneToMany(
-        mappedBy = "service",
+        mappedBy = "item",
         cascade = [CascadeType.ALL],
         orphanRemoval = true,
         fetch = FetchType.LAZY
     )
     @OrderBy("position ASC")
-    var addons: MutableList<ServiceAddon> = mutableListOf(),
+    var groups: MutableList<OptionGroup> = mutableListOf(),
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

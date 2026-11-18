@@ -49,13 +49,12 @@ class ServiceRequestServiceTest {
     private val userRepo: UserRepository = mock()
     private val businessRepo: BusinessRepository = mock()
     private val serviceRepo: ServiceOfferedRepository = mock()
-    private val addonRepo: com.mudhut.nudge.servicesoffered.repositories.ServiceAddonRepository = mock()
     private val publisher: ServiceRequestEventPublisher = mock()
     private val popularityPublisher: RequestPopularityPublisher = mock()
     private val proposalRepo: ServiceRequestProposalRepository = mock()
 
     private val sut = ServiceRequestService(
-        repo, userRepo, businessRepo, serviceRepo, addonRepo, publisher, popularityPublisher, proposalRepo,
+        repo, userRepo, businessRepo, serviceRepo, publisher, popularityPublisher, proposalRepo,
     )
 
     // --- fixtures ---

@@ -47,17 +47,6 @@ data class RequestItemInput(
     @field:NotNull
     @field:Positive
     val serviceId: Long? = null,
-
-    @field:Valid
-    val addonInputs: List<ServiceRequestItemAddonInput> = emptyList(),
-)
-
-data class ServiceRequestItemAddonInput(
-    @field:Positive
-    val addonId: Long?,
-
-    @field:jakarta.validation.constraints.Min(0)
-    val quantity: Int = 1,
 )
 
 data class ServiceRequestItemAddonResponse(

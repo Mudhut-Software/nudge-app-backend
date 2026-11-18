@@ -145,21 +145,6 @@ class PublicBrowseService(
         tag = s.tag,
         validFrom = s.validFrom,
         validUntil = s.validUntil,
-        addons = s.addons.sortedBy { it.position }.map { a ->
-            com.mudhut.nudge.servicesoffered.models.PublicServiceAddon(
-                id = a.id!!,
-                title = a.title!!,
-                description = a.description,
-                coverImageUrl = a.coverImageUrl,
-                priceDelta = a.priceDelta,
-                priceUnit = a.priceUnit,
-                defaultSelected = a.defaultSelected,
-                quantifiable = a.quantifiable,
-                defaultQuantity = a.defaultQuantity,
-                maxQuantity = a.maxQuantity,
-                position = a.position,
-            )
-        },
     )
 
 }
