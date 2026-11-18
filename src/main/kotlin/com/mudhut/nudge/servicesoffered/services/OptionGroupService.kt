@@ -79,8 +79,10 @@ class OptionGroupService(
             applyChoices(group, input.choices, linked)
         }
 
-        val saved = serviceRepo.save(item)
-        return saved.groups.sortedBy { it.position }.map { it.toResponse() }
+        // `item` is managed: flush cascades persist to the new children (stamping ids on the
+        // very instances we map from). save() would merge and persist copies instead.
+        serviceRepo.flush()
+        return item.groups.sortedBy { it.position }.map { it.toResponse() }
     }
 
     fun usedIn(serviceId: Long, userEmail: String): List<UsedInResponse> {

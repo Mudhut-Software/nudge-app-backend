@@ -9,9 +9,6 @@ import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.repositories.BusinessCategoryRepository
 import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
-import com.mudhut.nudge.servicesoffered.entities.GroupChoice
-import com.mudhut.nudge.servicesoffered.entities.GroupSelection
-import com.mudhut.nudge.servicesoffered.entities.OptionGroup
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
 import java.time.LocalDate
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
@@ -56,7 +53,7 @@ private val DEFAULT_COVER =
  *     be created lazily on the first quota read and every seeded provider's period would start
  *     from whenever someone happened to open the screen.
  *   • Five businesses across different categories, each owned by its own provider
- *   • Each business has 3–4 ACTIVE services plus one tagged bundle service (with an "Included" group)
+ *   • Each business has 3–4 ACTIVE services plus one tagged bundle service (contents listed in its description)
  *
  * Skipped silently in other profiles or when data already exists, so re-running the app
  * never duplicates rows.
@@ -348,15 +345,15 @@ class DevDataSeeder(
                 )
             }
 
-            // Former "packages" are now tagged, FIXED-price services whose included
-            // items are linked choices in a required group (price 0). Demonstrates the
-            // promo tag + validity window and the group model in one shot.
+            // Former "packages" are now tagged, fixed-price services; what comes with
+            // the package goes in its description (there is no "included" group kind).
+            // Demonstrates the promo tag + validity window.
             val today = LocalDate.now()
             for (bundle in spec.bundles) {
                 val bundleService = ServiceOffered(
                     business = savedBiz,
                     title = bundle.title,
-                    description = "Bundle offer — included items below, plus optional add-ons.",
+                    description = "Bundle offer. Includes: ${bundle.includedItems.joinToString(", ")}.",
                     coverImageUrl = coverUrl,
                     coverImagePublicId = coverPublicId,
                     priceAmount = bundle.priceAmount,
@@ -366,34 +363,6 @@ class DevDataSeeder(
                     validFrom = today.minusDays(1),
                     validUntil = today.plusDays(30),
                 )
-                // Included items are real catalogue items (not sold on their own), linked into
-                // one required group with a 0 price so they read as "included".
-                val includedGroup = OptionGroup(
-                    item = bundleService,
-                    name = "Included",
-                    selection = GroupSelection.MULTIPLE,
-                    required = true,
-                    position = 0,
-                )
-                bundle.includedItems.forEachIndexed { idx, itemTitle ->
-                    val child = serviceRepo.save(
-                        ServiceOffered(
-                            business = savedBiz,
-                            title = itemTitle,
-                            soldOnItsOwn = false,
-                            status = ServiceOfferedStatus.ACTIVE,
-                        )
-                    )
-                    includedGroup.choices.add(
-                        GroupChoice(
-                            group = includedGroup,
-                            item = child,
-                            priceOverride = BigDecimal.ZERO,
-                            position = idx,
-                        )
-                    )
-                }
-                bundleService.groups.add(includedGroup)
                 serviceRepo.save(bundleService)
             }
 

@@ -65,13 +65,13 @@ class OptionGroupServiceTest {
             known.filter { it.id in ids }
         }
         var nextId = 500L
-        whenever(serviceRepo.save(any<ServiceOffered>())).thenAnswer { inv ->
-            val saved = inv.arguments[0] as ServiceOffered
-            saved.groups.forEach { g ->
+        // Cascade-persist on flush stamps ids onto the very instances the service maps from.
+        whenever(serviceRepo.flush()).thenAnswer {
+            parent.groups.forEach { g ->
                 if (g.id == null) g.id = nextId++
                 g.choices.forEach { c -> if (c.id == null) c.id = nextId++ }
             }
-            saved
+            null
         }
     }
 
@@ -176,7 +176,7 @@ class OptionGroupServiceTest {
             .isInstanceOf(IllegalArgumentException::class.java)
             .hasMessageContaining(groupName)
         fragment?.let { ex.hasMessageContaining(it) }
-        verify(serviceRepo, never()).save(any<ServiceOffered>())
+        verify(serviceRepo, never()).flush()
     }
 
     @Test
