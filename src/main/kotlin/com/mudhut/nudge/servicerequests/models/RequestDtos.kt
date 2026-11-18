@@ -142,7 +142,10 @@ data class ServiceRequestResponse(
     val proposal: ProposalResponse?,
     val attachments: List<AttachmentResponse>,
     val pricing: PricingState,
-    /** Sum of item and pick prices; null while any item is unpriced, and null once [agreedPrice] is set. */
+    /**
+     * Sum of item and pick prices. Null while pricing is TO_BE_CONFIRMED (any item unpriced), once
+     * [agreedPrice] is set, or when the items are priced in more than one currency.
+     */
     val total: BigDecimal?,
     /** The price the customer accepted; replaces [total] for display and invoicing. */
     val agreedPrice: MoneyDto?,

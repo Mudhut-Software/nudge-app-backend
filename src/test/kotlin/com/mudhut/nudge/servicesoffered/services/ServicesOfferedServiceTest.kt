@@ -288,6 +288,43 @@ class ServicesOfferedServiceTest {
         assertNull(response.estimateReason)
     }
 
+    private fun quantityEntity() = ServiceOffered(
+        id = 7L, business = businessFixture(), title = "Platter",
+        quantityEnabled = true, quantityUnit = "plate", quantityMin = 2, quantityMax = 9,
+        createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+    )
+
+    @Test
+    fun `updateService clearQuantityMax removes the upper limit and keeps quantity on`() {
+        val entity = quantityEntity()
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        val response = offeringService.updateService(
+            7L, "owner@test.com", UpdateServiceOfferedRequest(clearQuantityMax = true)
+        )
+
+        assertNull(response.quantityMax)
+        assertTrue(response.quantityEnabled)
+        assertEquals(2, response.quantityMin)
+        assertEquals("plate", response.quantityUnit)
+    }
+
+    @Test
+    fun `updateService with a blank quantityUnit clears the unit`() {
+        val entity = quantityEntity()
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        val response = offeringService.updateService(
+            7L, "owner@test.com", UpdateServiceOfferedRequest(quantityUnit = "")
+        )
+
+        assertNull(response.quantityUnit)
+        assertNull(entity.quantityUnit)
+        assertEquals(9, response.quantityMax)
+    }
+
     @Test
     fun `updateService clearCover queues the old cover for deletion`() {
         val entity = ServiceOffered(

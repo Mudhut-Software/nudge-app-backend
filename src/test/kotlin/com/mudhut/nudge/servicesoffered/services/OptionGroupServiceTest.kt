@@ -169,6 +169,39 @@ class OptionGroupServiceTest {
         }.isInstanceOf(IllegalArgumentException::class.java).hasMessageContaining("Flavours")
     }
 
+    @Test
+    fun `replace treats a kept choice id pointing at a different item as remove plus add`() {
+        val kept = existingGroup(5L, "Flavours", 0, 50L to mango, 51L to passion)
+        val oldMango = kept.choices[0]
+
+        val result = sut.replace(
+            10L, email,
+            listOf(group("Flavours", GroupSelection.MULTIPLE, 5L, null, null, choice(22L, id = 50L), choice(21L, id = 51L))),
+        )
+
+        verify(events).publishEvent(GroupChoicesDeletedEvent(listOf(50L)))
+        assertThat(kept.choices).doesNotContain(oldMango)
+        assertThat(oldMango.item).isSameAs(mango)
+        assertThat(kept.choices.sortedBy { it.position }.map { it.item }).containsExactly(pineapple, passion)
+        assertThat(result[0].choices.map { it.id }).doesNotContain(50L).contains(51L)
+    }
+
+    @Test
+    fun `replace rejects a choice id inside a new group`() {
+        existingGroup(5L, "Flavours", 0, 50L to mango)
+
+        assertThatThrownBy {
+            sut.replace(
+                10L, email,
+                listOf(
+                    group("Flavours", GroupSelection.MULTIPLE, 5L, null, null, choice(20L, id = 50L)),
+                    group("Extras", GroupSelection.MULTIPLE, null, null, null, choice(21L, id = 50L)),
+                ),
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java).hasMessageContaining("Extras")
+        verify(serviceRepo, never()).flush()
+    }
+
     // --- validation ---
 
     private fun assertRejected(groups: List<OptionGroupInput>, groupName: String = "Meals", fragment: String? = null) {

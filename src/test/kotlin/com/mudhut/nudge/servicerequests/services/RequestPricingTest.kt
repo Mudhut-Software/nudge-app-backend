@@ -161,4 +161,17 @@ class RequestPricingTest {
         assertThat(work[1L]).isEqualByComparingTo("66.68")
         assertThat(work[2L]).isEqualByComparingTo("33.33")
     }
+
+    @Test
+    fun `total is null when items carry different currencies`() {
+        val items = listOf(item(1, currency = "UGX"), item(2, currency = "USD"), item(3, currency = null))
+        assertThat(RequestPricing.total(items)).isNull()
+        assertThat(RequestPricing.state(items)).isEqualTo(PricingState.FIRM)
+    }
+
+    @Test
+    fun `total ignores items without a currency when the rest agree`() {
+        val items = listOf(item(1, currency = "UGX"), item(2, currency = null))
+        assertThat(RequestPricing.total(items)).isEqualByComparingTo("10000")
+    }
 }

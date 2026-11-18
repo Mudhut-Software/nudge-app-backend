@@ -64,4 +64,16 @@ class BookabilityTest {
         val p = packageWith("Extras")
         assertNull(Bookability.blockingGroup(p))
     }
+
+    @Test
+    fun `required group with min 0 counts as min 1`() {
+        val stepperOfZero = choice(1, quantityEnabled = true, maxQuantity = 0)
+        assertEquals("Flavours", Bookability.blockingGroup(packageWith("Flavours", true, 0, stepperOfZero)))
+        assertNull(Bookability.blockingGroup(packageWith("Flavours", true, 0, choice(2))))
+    }
+
+    @Test
+    fun `optional group with min 0 does not block`() {
+        assertNull(Bookability.blockingGroup(packageWith("Extras", false, 0, choice(1, quantityEnabled = true, maxQuantity = 0))))
+    }
 }

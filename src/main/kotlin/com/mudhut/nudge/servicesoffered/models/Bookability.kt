@@ -17,7 +17,8 @@ object Bookability {
     private fun isBlocked(group: OptionGroup): Boolean {
         val active = group.choices.filter { it.item?.status == ServiceOfferedStatus.ACTIVE }
         if (group.required && active.isEmpty()) return true
-        val min = group.minPicks ?: return false
+        // A required group always needs at least one pick, even if minPicks says 0 (see PickValidator).
+        val min = (if (group.required) maxOf(group.minPicks ?: 1, 1) else group.minPicks) ?: return false
         // Capacity: a stepper choice contributes up to its max quantity (unbounded if none).
         var capacity = 0L
         for (c in active) {

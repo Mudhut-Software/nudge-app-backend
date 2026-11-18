@@ -1366,6 +1366,67 @@ class ServiceRequestServiceTest {
         assertEquals("Palette: this choice is no longer available", ex.message)
     }
 
+    // --- sold on its own ---
+
+    @Test
+    fun `draft refuses an item that is not sold on its own, naming it`() {
+        val alice = user()
+        val biz = business()
+        val svc = service(id = 100L, biz = biz).apply { soldOnItsOwn = false }
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(businessRepo.findById(biz.id!!)).thenReturn(Optional.of(biz))
+        whenever(serviceRepo.findAllById(listOf(100L))).thenReturn(listOf(svc))
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            sut.create(
+                alice.email!!,
+                CreateRequestPayload(businessId = biz.id, items = listOf(RequestItemInput(serviceId = 100L))),
+            )
+        }
+        assertEquals("Deep Clean isn't sold on its own", ex.message)
+        verify(repo, never()).save(any<ServiceRequest>())
+    }
+
+    @Test
+    fun `submit refuses a draft whose item was switched off as sold on its own`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        val req = draftWith(alice, biz, pkg)
+        pkg.catering.soldOnItsOwn = false
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+
+        val ex = assertThrows(IllegalArgumentException::class.java) { sut.submit(alice.email!!, 1L) }
+
+        assertEquals("Catering: this item is no longer available on its own", ex.message)
+        assertEquals(ServiceRequestStatus.DRAFT, req.status)
+    }
+
+    @Test
+    fun `duplicate treats an item no longer sold on its own as unavailable`() {
+        val alice = user()
+        val biz = business()
+        val kept = service(id = 100L, biz = biz)
+        val addOnly = service(id = 101L, biz = biz).apply { soldOnItsOwn = false }
+        val original = ServiceRequest(id = 1L, customer = alice, business = biz, status = ServiceRequestStatus.COMPLETED)
+        original.items.addAll(
+            listOf(
+                ServiceRequestItem(request = original, service = kept, position = 0, snapshotTitle = "Deep Clean"),
+                ServiceRequestItem(request = original, service = addOnly, position = 1, snapshotTitle = "Fairy lights"),
+            ),
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(original))
+        whenever(serviceRepo.findAllById(listOf(100L, 101L))).thenReturn(listOf(kept, addOnly))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.duplicate(alice.email!!, 1L)
+
+        assertEquals(listOf(100L), response.request.items.map { it.serviceId })
+        assertEquals(listOf("Fairy lights"), response.unavailableItems)
+    }
+
     @Test
     fun `renaming a choice after submit leaves the snapshot`() {
         val alice = user()

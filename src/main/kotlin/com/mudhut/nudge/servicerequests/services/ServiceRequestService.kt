@@ -487,7 +487,7 @@ class ServiceRequestService(
         val services = if (serviceIds.isNotEmpty()) serviceRepo.findAllById(serviceIds) else emptyList()
 
         val availableServiceIds = services
-            .filter { it.business?.id == business.id && it.status == ServiceOfferedStatus.ACTIVE }
+            .filter { it.business?.id == business.id && it.status == ServiceOfferedStatus.ACTIVE && it.soldOnItsOwn }
             .mapNotNull { it.id }
             .toSet()
 
@@ -575,6 +575,7 @@ class ServiceRequestService(
         services.forEach {
             require(it.business?.id == business.id) { "Service ${it.id} belongs to a different business" }
             require(it.status == ServiceOfferedStatus.ACTIVE) { "Service ${it.id} is not active" }
+            require(it.soldOnItsOwn) { "${it.title} isn't sold on its own" }
         }
 
         val byServiceId = services.associateBy { it.id }
@@ -627,6 +628,7 @@ class ServiceRequestService(
     private fun liveProblems(item: ServiceRequestItem): List<String> {
         val svc = item.service!!
         if (svc.status != ServiceOfferedStatus.ACTIVE) return listOf("${svc.title}: no longer available")
+        if (!svc.soldOnItsOwn) return listOf("${svc.title}: this item is no longer available on its own")
         val (present, missing) = item.picks.partition { it.choice != null }
         val liveGroupIds = svc.groups.mapNotNull { it.id }.toSet()
         // A deleted choice whose whole group is gone too can only be named from its snapshot.

@@ -209,4 +209,23 @@ class PickValidatorTest {
             PickValidator.problems(paint, 1, emptyList(), missingGroupIds = setOf(palette.id!!)),
         )
     }
+
+    @Test
+    fun `required multiple group with min 0 still needs one pick`() {
+        val cake = item("Cake")
+        val toppings = group(cake, "Toppings", GroupSelection.MULTIPLE, required = true, minPicks = 0)
+        val sprinkles = choice(toppings, item("Sprinkles"))
+
+        assertEquals(listOf("Toppings: pick at least 1"), PickValidator.problems(cake, 1, emptyList()))
+        assertEquals(emptyList<String>(), PickValidator.problems(cake, 1, listOf(PickInput(sprinkles.id!!))))
+    }
+
+    @Test
+    fun `optional multiple group with min 0 can be empty`() {
+        val cake = item("Cake")
+        val toppings = group(cake, "Toppings", GroupSelection.MULTIPLE, minPicks = 0)
+        choice(toppings, item("Sprinkles"))
+
+        assertEquals(emptyList<String>(), PickValidator.problems(cake, 1, emptyList()))
+    }
 }

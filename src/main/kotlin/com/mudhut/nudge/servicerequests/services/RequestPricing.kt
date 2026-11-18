@@ -34,8 +34,10 @@ object RequestPricing {
         else -> PricingState.FIRM
     }
 
+    /** Null when anything is unpriced, or when the items are priced in more than one currency. */
     fun total(items: List<PricingInputItem>): BigDecimal? {
         if (state(items) == PricingState.TO_BE_CONFIRMED) return null
+        if (items.mapNotNull { it.currency }.distinct().size > 1) return null
         return items.fold(BigDecimal.ZERO) { acc, i -> acc + itemTotal(i) }
     }
 

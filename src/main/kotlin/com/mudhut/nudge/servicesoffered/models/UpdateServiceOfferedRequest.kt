@@ -41,6 +41,9 @@ data class UpdateServiceOfferedRequest(
 
     val quantityMax: Int? = null,
 
+    // Null means "unchanged"; true removes the upper quantity limit. A blank quantityUnit clears the unit.
+    val clearQuantityMax: Boolean? = null,
+
     val soldOnItsOwn: Boolean? = null,
 
     val status: ServiceOfferedStatus? = null,

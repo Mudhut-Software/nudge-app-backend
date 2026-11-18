@@ -47,6 +47,11 @@ class OptionGroupService(
                 }
             }
         }
+        groups.filter { it.id == null }.forEach { input ->
+            input.choices.forEach { c ->
+                require(c.id == null) { "Group '${input.name.trim()}': choice ${c.id} does not belong to it" }
+            }
+        }
         val keptGroupIds = groups.mapNotNull { it.id }.toSet()
         val removedGroups = item.groups.filter { it.id !in keptGroupIds }
 
@@ -54,12 +59,12 @@ class OptionGroupService(
         val removedChoices = removedGroups.flatMap { it.choices } + groups.mapNotNull { input ->
             input.id?.let { gid ->
                 val group = existingGroups.getValue(gid)
-                val keptChoiceIds = input.choices.mapNotNull { it.id }.toSet()
                 input.choices.forEach { c ->
                     if (c.id != null) require(group.choices.any { it.id == c.id }) {
                         "Group '${input.name.trim()}': choice ${c.id} does not belong to it"
                     }
                 }
+                val keptChoiceIds = keptChoiceIds(group, input.choices)
                 group.choices.filter { it.id !in keptChoiceIds }
             }
         }.flatten()
@@ -100,10 +105,10 @@ class OptionGroupService(
 
     private fun applyChoices(group: OptionGroup, inputs: List<GroupChoiceInput>, linked: Map<Long, ServiceOffered>) {
         val existing = group.choices.associateBy { it.id }
-        val keptIds = inputs.mapNotNull { it.id }.toSet()
+        val keptIds = keptChoiceIds(group, inputs)
         group.choices.removeAll { it.id !in keptIds }
         inputs.forEachIndexed { index, input ->
-            val choice = input.id?.let { existing.getValue(it) }
+            val choice = input.id?.takeIf { it in keptIds }?.let { existing.getValue(it) }
                 ?: GroupChoice(group = group).also { group.choices.add(it) }
             choice.item = linked.getValue(input.itemId)
             choice.priceOverride = input.priceOverride
@@ -111,6 +116,17 @@ class OptionGroupService(
             choice.maxQuantity = if (input.quantityEnabled) input.maxQuantity else null
             choice.position = index
         }
+    }
+
+    /**
+     * Ids of [group]'s choices that [inputs] keep: sent with their id and still linking the same
+     * item. A kept id re-pointed at another item is a remove plus an add, so picks of the old item
+     * are released via [GroupChoicesDeletedEvent] instead of silently switching to the new one.
+     */
+    private fun keptChoiceIds(group: OptionGroup, inputs: List<GroupChoiceInput>): Set<Long> {
+        val existing = group.choices.associateBy { it.id }
+        return inputs.filter { it.id != null && existing[it.id]?.item?.id == it.itemId }
+            .mapNotNull { it.id }.toSet()
     }
 
     private fun loadLinkedItems(parent: ServiceOffered, groups: List<OptionGroupInput>): Map<Long, ServiceOffered> {

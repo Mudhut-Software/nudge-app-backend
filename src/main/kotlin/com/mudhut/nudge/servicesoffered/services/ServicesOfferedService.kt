@@ -109,7 +109,7 @@ class ServicesOfferedService(
             quantityEnabled = request.quantityEnabled ?: entity.quantityEnabled,
             quantityUnit = request.quantityUnit ?: entity.quantityUnit,
             quantityMin = request.quantityMin ?: entity.quantityMin,
-            quantityMax = request.quantityMax ?: entity.quantityMax,
+            quantityMax = if (request.clearQuantityMax == true) null else (request.quantityMax ?: entity.quantityMax),
         )
 
         request.title?.let { entity.title = it }

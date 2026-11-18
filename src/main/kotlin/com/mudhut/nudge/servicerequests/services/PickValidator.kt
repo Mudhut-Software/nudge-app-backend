@@ -91,7 +91,8 @@ object PickValidator {
             if (count > 1 || (group.required && count == 0)) out += "$name: choose one"
             return out
         }
-        val min = group.minPicks ?: if (group.required) 1 else null
+        // A required group always needs at least one pick, even if minPicks says 0 (see Bookability).
+        val min = if (group.required) maxOf(group.minPicks ?: 1, 1) else group.minPicks
         val max = group.maxPicks
         when {
             min != null && min == max && count != min -> out += "$name: choose exactly $min"
