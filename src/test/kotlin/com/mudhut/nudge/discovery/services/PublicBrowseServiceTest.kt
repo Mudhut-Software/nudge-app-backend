@@ -8,6 +8,8 @@ import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.discovery.repositories.DiscoveryBusinessRepository
 import com.mudhut.nudge.discovery.repositories.BusinessWithDistance
 import com.mudhut.nudge.discovery.repositories.ReviewRepository
+import com.mudhut.nudge.servicesoffered.entities.GroupChoice
+import com.mudhut.nudge.servicesoffered.entities.OptionGroup
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
@@ -73,6 +75,7 @@ class PublicBrowseServiceTest {
         title: String = "Service $id",
         status: ServiceOfferedStatus = ServiceOfferedStatus.ACTIVE,
         coverUrl: String = "https://cdn/svc-$id.jpg",
+        soldOnItsOwn: Boolean = true,
     ): ServiceOffered = ServiceOffered(
         id = id,
         business = biz,
@@ -83,6 +86,7 @@ class PublicBrowseServiceTest {
         priceAmount = BigDecimal("100.00"),
         priceCurrency = "UGX",
         status = status,
+        soldOnItsOwn = soldOnItsOwn,
     )
 
     private fun businessWithDistance(id: Long, distanceKm: Double): BusinessWithDistance =
@@ -92,9 +96,9 @@ class PublicBrowseServiceTest {
         }
 
     private fun stubSummaryHelpers(bizId: Long, coverFromService: String? = null) {
-        whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(bizId), eq(ServiceOfferedStatus.ACTIVE)))
+        whenever(serviceRepository.findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(eq(bizId), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(coverFromService?.let { service(id = bizId * 10, biz = business(bizId), coverUrl = it) })
-        whenever(serviceRepository.countByBusinessIdAndStatus(eq(bizId), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
+        whenever(serviceRepository.countByBusinessIdAndStatusAndSoldOnItsOwnTrue(eq(bizId), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
     }
 
     @Test
@@ -102,9 +106,9 @@ class PublicBrowseServiceTest {
         val biz = business(id = 5, coverImageUrl = null)
         val firstActiveService = service(id = 50, biz = biz, coverUrl = "https://cdn/svc-50.jpg")
         whenever(discoveryRepository.findPublicQualifiedNewest(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
-        whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
+        whenever(serviceRepository.findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(firstActiveService)
-        whenever(serviceRepository.countByBusinessIdAndStatus(eq(5), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
+        whenever(serviceRepository.countByBusinessIdAndStatusAndSoldOnItsOwnTrue(eq(5), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
 
         val summary = sut.list(null, BusinessSort.NEWEST, null, null, Pageable.ofSize(20)).content.single()
 
@@ -115,9 +119,9 @@ class PublicBrowseServiceTest {
     fun `summary cover prefers business coverImageUrl when set`() {
         val biz = business(id = 5, coverImageUrl = "https://cdn/biz-5.jpg")
         whenever(discoveryRepository.findPublicQualifiedNewest(eq(null), any())).thenReturn(PageImpl(listOf(biz)))
-        whenever(serviceRepository.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
+        whenever(serviceRepository.findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(eq(5), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(service(id = 50, biz = biz, coverUrl = "https://cdn/svc-50.jpg"))
-        whenever(serviceRepository.countByBusinessIdAndStatus(eq(5), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
+        whenever(serviceRepository.countByBusinessIdAndStatusAndSoldOnItsOwnTrue(eq(5), eq(ServiceOfferedStatus.ACTIVE))).thenReturn(1L)
 
         val summary = sut.list(null, BusinessSort.NEWEST, null, null, Pageable.ofSize(20)).content.single()
 
@@ -204,7 +208,7 @@ class PublicBrowseServiceTest {
         }
 
         whenever(businessRepository.findById(12)).thenReturn(Optional.of(biz))
-        whenever(serviceRepository.findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(eq(12), eq(ServiceOfferedStatus.ACTIVE)))
+        whenever(serviceRepository.findTop20ByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtDesc(eq(12), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(listOf(svc))
 
         val detail = sut.detail(12)
@@ -220,7 +224,7 @@ class PublicBrowseServiceTest {
         val biz = business(id = 10)
         val svc = service(id = 90, biz = biz, title = "Svc")
         whenever(businessRepository.findById(10)).thenReturn(Optional.of(biz))
-        whenever(serviceRepository.findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(eq(10), eq(ServiceOfferedStatus.ACTIVE)))
+        whenever(serviceRepository.findTop20ByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtDesc(eq(10), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(listOf(svc))
         whenever(reviewRepository.averageForBusiness(10)).thenReturn(4.5)
         whenever(reviewRepository.countByBusinessId(10)).thenReturn(8L)
@@ -238,12 +242,79 @@ class PublicBrowseServiceTest {
         val older = service(id = 92, biz = biz, title = "Older")
 
         whenever(businessRepository.findById(9)).thenReturn(Optional.of(biz))
-        whenever(serviceRepository.findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(eq(9), eq(ServiceOfferedStatus.ACTIVE)))
+        whenever(serviceRepository.findTop20ByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtDesc(eq(9), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(listOf(newer, older))
 
         val detail = sut.detail(9)
 
         assertEquals(listOf(91L, 92L), detail.services.map { it.id })
+    }
+
+    private fun stubDetail(biz: Business, vararg services: ServiceOffered) {
+        whenever(businessRepository.findById(biz.id!!)).thenReturn(Optional.of(biz))
+        whenever(
+            serviceRepository.findTop20ByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtDesc(
+                eq(biz.id!!), eq(ServiceOfferedStatus.ACTIVE),
+            )
+        ).thenReturn(services.toList())
+    }
+
+    private fun packageItem(biz: Business, id: Long, vararg choices: Pair<ServiceOffered, BigDecimal?>): ServiceOffered {
+        val pkg = service(id = id, biz = biz, title = "Package $id")
+        val group = OptionGroup(id = id, item = pkg, name = "Flavours", required = true)
+        choices.forEachIndexed { i, (linked, override) ->
+            group.choices.add(
+                GroupChoice(id = id * 10 + i, group = group, item = linked, priceOverride = override, position = i)
+            )
+        }
+        pkg.groups.add(group)
+        return pkg
+    }
+
+    @Test
+    fun `detail hides items not sold on their own`() {
+        val biz = business(id = 60)
+        val sold = service(id = 601, biz = biz)
+        val hidden = service(id = 602, biz = biz, soldOnItsOwn = false)
+        stubDetail(biz, sold, hidden)
+
+        assertEquals(listOf(601L), sut.detail(60).services.map { it.id })
+    }
+
+    @Test
+    fun `detail hides unbookable packages`() {
+        val biz = business(id = 61)
+        val paused = service(id = 611, biz = biz, status = ServiceOfferedStatus.INACTIVE, soldOnItsOwn = false)
+        val broken = packageItem(biz, 612, paused to null)
+        val fine = service(id = 613, biz = biz)
+        stubDetail(biz, broken, fine)
+
+        assertEquals(listOf(613L), sut.detail(61).services.map { it.id })
+    }
+
+    @Test
+    fun `paused choices are omitted from groups`() {
+        val biz = business(id = 62)
+        val live = service(id = 621, biz = biz, soldOnItsOwn = false)
+        val paused = service(id = 622, biz = biz, status = ServiceOfferedStatus.INACTIVE, soldOnItsOwn = false)
+        val pkg = packageItem(biz, 623, live to null, paused to null)
+        stubDetail(biz, pkg)
+
+        val choices = sut.detail(62).services.single().groups.single().choices
+        assertEquals(listOf(6230L), choices.map { it.id })
+    }
+
+    @Test
+    fun `choice price falls back to the item price`() {
+        val biz = business(id = 63)
+        val a = service(id = 631, biz = biz, soldOnItsOwn = false)
+        val b = service(id = 632, biz = biz, soldOnItsOwn = false)
+        val pkg = packageItem(biz, 633, a to null, b to BigDecimal("5.00"))
+        stubDetail(biz, pkg)
+
+        val choices = sut.detail(63).services.single().groups.single().choices
+        assertEquals(BigDecimal("100.00"), choices[0].price)
+        assertEquals(BigDecimal("5.00"), choices[1].price)
     }
 
     @Test
@@ -257,7 +328,7 @@ class PublicBrowseServiceTest {
     fun `detail throws 404 when business has no active services`() {
         val biz = business(id = 50)
         whenever(businessRepository.findById(50)).thenReturn(Optional.of(biz))
-        whenever(serviceRepository.findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(eq(50), eq(ServiceOfferedStatus.ACTIVE)))
+        whenever(serviceRepository.findTop20ByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtDesc(eq(50), eq(ServiceOfferedStatus.ACTIVE)))
             .thenReturn(emptyList())
 
         assertThrows(BusinessNotFoundException::class.java) { sut.detail(50) }

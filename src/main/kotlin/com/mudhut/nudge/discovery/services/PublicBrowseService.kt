@@ -4,12 +4,16 @@ import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.discovery.models.BusinessSort
 import com.mudhut.nudge.discovery.models.PublicBusinessDetail
 import com.mudhut.nudge.discovery.models.PublicBusinessSummary
+import com.mudhut.nudge.discovery.models.PublicGroupChoice
+import com.mudhut.nudge.discovery.models.PublicOptionGroup
 import com.mudhut.nudge.discovery.models.PublicServiceSummary
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.discovery.repositories.DiscoveryBusinessRepository
 import com.mudhut.nudge.discovery.repositories.ReviewRepository
+import com.mudhut.nudge.servicesoffered.entities.OptionGroup
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
+import com.mudhut.nudge.servicesoffered.models.Bookability
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import org.springframework.data.domain.Page
@@ -82,7 +86,8 @@ class PublicBrowseService(
             .orElseThrow { BusinessNotFoundException("Business not found") }
 
         val activeServices = serviceRepository
-            .findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(biz.id!!, ServiceOfferedStatus.ACTIVE)
+            .findTop20ByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtDesc(biz.id!!, ServiceOfferedStatus.ACTIVE)
+            .filter { it.soldOnItsOwn && Bookability.blockingGroup(it) == null }
 
         if (activeServices.isEmpty()) {
             throw BusinessNotFoundException("Business not found")
@@ -108,7 +113,7 @@ class PublicBrowseService(
 
     private fun toSummary(biz: Business, distanceKm: Double? = null): PublicBusinessSummary {
         val firstActive = serviceRepository
-            .findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(biz.id!!, ServiceOfferedStatus.ACTIVE)
+            .findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(biz.id!!, ServiceOfferedStatus.ACTIVE)
         return PublicBusinessSummary(
             id = biz.id!!,
             name = biz.name!!,
@@ -117,7 +122,7 @@ class PublicBrowseService(
             address = biz.address,
             coverImageUrl = deriveCover(biz, firstActive),
             serviceCount = serviceRepository
-                .countByBusinessIdAndStatus(biz.id!!, ServiceOfferedStatus.ACTIVE).toInt(),
+                .countByBusinessIdAndStatusAndSoldOnItsOwnTrue(biz.id!!, ServiceOfferedStatus.ACTIVE).toInt(),
             distanceKm = distanceKm,
         )
     }
@@ -145,6 +150,31 @@ class PublicBrowseService(
         tag = s.tag,
         validFrom = s.validFrom,
         validUntil = s.validUntil,
+        groups = s.groups.sortedBy { it.position }.map { it.toPublic() },
+    )
+
+    private fun OptionGroup.toPublic() = PublicOptionGroup(
+        id = id!!,
+        name = name!!,
+        selection = selection,
+        required = required,
+        minPicks = minPicks,
+        maxPicks = maxPicks,
+        choices = choices
+            .sortedBy { it.position }
+            .filter { it.item!!.status == ServiceOfferedStatus.ACTIVE }
+            .map {
+                val linked = it.item!!
+                PublicGroupChoice(
+                    id = it.id!!,
+                    title = linked.title!!,
+                    description = linked.description,
+                    coverImageUrl = linked.coverImageUrl,
+                    price = it.priceOverride ?: linked.priceAmount,
+                    quantityEnabled = it.quantityEnabled,
+                    maxQuantity = it.maxQuantity,
+                )
+            },
     )
 
 }

@@ -29,6 +29,7 @@ interface DiscoveryBusinessRepository : Repository<Business, Long> {
             SELECT 1 FROM ServiceOffered s
             WHERE s.business = b
               AND s.status = com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus.ACTIVE
+              AND s.soldOnItsOwn = true
           )
         ORDER BY b.createdAt DESC
         """
@@ -47,6 +48,7 @@ interface DiscoveryBusinessRepository : Repository<Business, Long> {
             SELECT 1 FROM ServiceOffered s
             WHERE s.business = b
               AND s.status = com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus.ACTIVE
+              AND s.soldOnItsOwn = true
           )
         ORDER BY b.popularityCount DESC, b.createdAt DESC
         """
@@ -70,7 +72,7 @@ interface DiscoveryBusinessRepository : Repository<Business, Long> {
               AND b.latitude IS NOT NULL AND b.longitude IS NOT NULL
               AND EXISTS (
                 SELECT 1 FROM services_offered s
-                WHERE s.business_id = b.id AND s.status = 'ACTIVE'
+                WHERE s.business_id = b.id AND s.status = 'ACTIVE' AND s.sold_on_its_own = true
               )
             ORDER BY distanceKm ASC
         """,
@@ -81,7 +83,7 @@ interface DiscoveryBusinessRepository : Repository<Business, Long> {
               AND b.latitude IS NOT NULL AND b.longitude IS NOT NULL
               AND EXISTS (
                 SELECT 1 FROM services_offered s
-                WHERE s.business_id = b.id AND s.status = 'ACTIVE'
+                WHERE s.business_id = b.id AND s.status = 'ACTIVE' AND s.sold_on_its_own = true
               )
         """,
         nativeQuery = true,

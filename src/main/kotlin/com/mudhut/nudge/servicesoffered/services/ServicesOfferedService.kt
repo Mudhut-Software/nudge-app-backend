@@ -7,6 +7,7 @@ import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedImage
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
+import com.mudhut.nudge.servicesoffered.models.Bookability
 import com.mudhut.nudge.servicesoffered.models.MediaResponse
 import com.mudhut.nudge.servicesoffered.models.ServiceOfferedResponse
 import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
@@ -309,6 +310,7 @@ class ServicesOfferedService(
     }
 
     private fun toResponse(entity: ServiceOffered): ServiceOfferedResponse {
+        val blocking = Bookability.blockingGroup(entity)
         return ServiceOfferedResponse(
             id = entity.id!!,
             businessId = entity.business!!.id!!,
@@ -341,6 +343,8 @@ class ServicesOfferedService(
                     )
                 },
             groups = entity.groups.sortedBy { it.position }.map { it.toResponse() },
+            bookable = blocking == null,
+            unbookableGroup = blocking,
             createdAt = entity.createdAt!!,
             updatedAt = entity.updatedAt!!
         )

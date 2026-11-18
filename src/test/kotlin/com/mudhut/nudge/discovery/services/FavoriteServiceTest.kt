@@ -79,9 +79,9 @@ class FavoriteServiceTest {
     fun `list maps favorited businesses to summaries`() {
         whenever(userRepo.findByEmail("a@e.com")).thenReturn(Optional.of(user))
         whenever(favoriteRepo.findFavoritedBusinesses(1L)).thenReturn(listOf(business(10L)))
-        whenever(serviceRepo.findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(10L, ServiceOfferedStatus.ACTIVE))
+        whenever(serviceRepo.findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(10L, ServiceOfferedStatus.ACTIVE))
             .thenReturn(null)
-        whenever(serviceRepo.countByBusinessIdAndStatus(10L, ServiceOfferedStatus.ACTIVE)).thenReturn(2L)
+        whenever(serviceRepo.countByBusinessIdAndStatusAndSoldOnItsOwnTrue(10L, ServiceOfferedStatus.ACTIVE)).thenReturn(2L)
 
         val result = sut.listFavorites("a@e.com")
 
@@ -89,5 +89,17 @@ class FavoriteServiceTest {
         assertThat(result[0].id).isEqualTo(10L)
         assertThat(result[0].serviceCount).isEqualTo(2)
         assertThat(result[0].categoryName).isEqualTo("Catering")
+    }
+
+    @Test
+    fun `serviceCount counts only sold-on-its-own active items`() {
+        whenever(userRepo.findByEmail("a@e.com")).thenReturn(Optional.of(user))
+        whenever(favoriteRepo.findFavoritedBusinesses(1L)).thenReturn(listOf(business(10L)))
+        whenever(serviceRepo.findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(10L, ServiceOfferedStatus.ACTIVE))
+            .thenReturn(null)
+        whenever(serviceRepo.countByBusinessIdAndStatusAndSoldOnItsOwnTrue(10L, ServiceOfferedStatus.ACTIVE)).thenReturn(3L)
+
+        assertThat(sut.listFavorites("a@e.com")[0].serviceCount).isEqualTo(3)
+        verify(serviceRepo).countByBusinessIdAndStatusAndSoldOnItsOwnTrue(10L, ServiceOfferedStatus.ACTIVE)
     }
 }

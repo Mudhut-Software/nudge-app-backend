@@ -28,6 +28,9 @@ data class ServiceOfferedResponse(
     val isCurrentlyActive: Boolean,
     val galleryImages: List<MediaResponse>,
     val groups: List<OptionGroupResponse> = emptyList(),
+    /** False when a group can no longer be satisfied (e.g. its only choice is paused). */
+    val bookable: Boolean = true,
+    val unbookableGroup: String? = null,
     val createdAt: LocalDateTime,
     val updatedAt: LocalDateTime
 )

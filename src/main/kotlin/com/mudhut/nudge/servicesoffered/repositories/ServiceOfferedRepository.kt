@@ -29,17 +29,17 @@ interface ServiceOfferedRepository : JpaRepository<ServiceOffered, Long> {
         pageable: Pageable
     ): Page<ServiceOffered>
 
-    fun findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(
+    fun findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(
         businessId: Long,
         status: ServiceOfferedStatus,
     ): ServiceOffered?
 
-    fun countByBusinessIdAndStatus(
+    fun countByBusinessIdAndStatusAndSoldOnItsOwnTrue(
         businessId: Long,
         status: ServiceOfferedStatus,
     ): Long
 
-    fun findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(
+    fun findTop20ByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtDesc(
         businessId: Long,
         status: ServiceOfferedStatus,
     ): List<ServiceOffered>

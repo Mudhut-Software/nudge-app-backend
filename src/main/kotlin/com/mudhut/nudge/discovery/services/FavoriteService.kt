@@ -47,7 +47,7 @@ class FavoriteService(
 
     private fun Business.toSummary(): PublicBusinessSummary {
         val firstActive = serviceRepo
-            .findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(id!!, ServiceOfferedStatus.ACTIVE)
+            .findFirstByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(id!!, ServiceOfferedStatus.ACTIVE)
         return PublicBusinessSummary(
             id = id!!,
             name = name!!,
@@ -55,7 +55,7 @@ class FavoriteService(
             categoryName = category!!.name!!,
             address = address,
             coverImageUrl = coverImageUrl ?: firstActive?.coverImageUrl,
-            serviceCount = serviceRepo.countByBusinessIdAndStatus(id!!, ServiceOfferedStatus.ACTIVE).toInt(),
+            serviceCount = serviceRepo.countByBusinessIdAndStatusAndSoldOnItsOwnTrue(id!!, ServiceOfferedStatus.ACTIVE).toInt(),
             distanceKm = null,
         )
     }
