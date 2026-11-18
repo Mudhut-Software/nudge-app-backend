@@ -185,6 +185,36 @@ class RequestStatsQueryImplTest {
     }
 
     @Test
+    fun `mixed currencies on one request stay in separate buckets`() {
+        completed(
+            user("customer"), LocalDateTime.of(2026, 10, 5, 10, 0),
+            Line(haircut, BigDecimal("100000.00"), currency = "UGX"),
+            Line(shave, BigDecimal("20.00"), currency = "USD"),
+        )
+        val work = stats.completions(biz.id!!, FROM, TO).work.associate { it.currency to it.amount }
+        assertEquals(0, BigDecimal("100000.00").compareTo(work["UGX"]))
+        assertEquals(0, BigDecimal("20.00").compareTo(work["USD"]))
+
+        val rows = stats.serviceBreakdown(biz.id!!, LocalDateTime.of(2026, 10, 1, 0, 0), TO).associateBy { it.title }
+        assertEquals(listOf("UGX"), rows.getValue("Haircut").work.map { it.currency })
+        assertEquals(listOf("USD"), rows.getValue("Shave").work.map { it.currency })
+    }
+
+    @Test
+    fun `agreed price on a mixed-currency request counts once in the agreed currency`() {
+        val at = LocalDateTime.of(2026, 10, 5, 10, 0)
+        request(
+            user("customer"), COMPLETED,
+            listOf(Line(haircut, BigDecimal("100000.00"), currency = "UGX"), Line(shave, null, currency = "USD")),
+            completedAt = at, submittedAt = at.minusDays(1),
+            agreed = BigDecimal("500.00"), agreedCurrency = "KES",
+        )
+        val work = stats.completions(biz.id!!, FROM, TO).work
+        assertEquals(listOf("KES"), work.map { it.currency })
+        assertEquals(0, BigDecimal("500.00").compareTo(work.single().amount))
+    }
+
+    @Test
     fun `a quote-priced item marks the job unpriced and is left out of work`() {
         val c = user("customer")
         completed(

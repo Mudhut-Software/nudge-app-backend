@@ -72,13 +72,33 @@ class RequestStatsQueryImpl(
         return requests
     }
 
+    /** One slice of a request's work: which service, in which currency, how much. */
+    private data class WorkSlice(val serviceId: Long?, val currency: String, val amount: BigDecimal)
+
+    /**
+     * Without an agreed price each item is bucketed under its own snapshot currency, so a request
+     * mixing currencies never adds them together. An item with no currency (unpriced) falls back to
+     * the request default for its picks. With an agreed price the whole figure goes under the agreed
+     * currency, split across items by [RequestPricing.workByItem].
+     */
+    private fun slices(r: ServiceRequest): List<WorkSlice> {
+        val input = RequestItemMapping.pricingInput(r.items)
+        val agreed = r.agreedPriceAmount
+        if (agreed != null) {
+            val currency = RequestPricing.currency(input, r.agreedPriceCurrency)
+            return RequestPricing.workByItem(input, agreed).map { (id, amt) -> WorkSlice(id, currency, amt) }
+        }
+        val fallback = RequestPricing.currency(input, null)
+        return input.flatMap { item ->
+            RequestPricing.workByItem(listOf(item), null).map { (id, amt) -> WorkSlice(id, item.currency ?: fallback, amt) }
+        }
+    }
+
     private fun monthlyWork(requests: List<ServiceRequest>): List<MonthlyMoney> {
         val totals = LinkedHashMap<Pair<YearMonth, String>, BigDecimal>()
         requests.forEach { r ->
-            val input = RequestItemMapping.pricingInput(r.items)
-            val amount = RequestPricing.workByItem(input, r.agreedPriceAmount).values.fold(BigDecimal.ZERO, BigDecimal::add)
-            val key = YearMonth.from(r.completedAt!!) to RequestPricing.currency(input, r.agreedPriceCurrency)
-            totals.merge(key, amount, BigDecimal::add)
+            val month = YearMonth.from(r.completedAt!!)
+            slices(r).forEach { totals.merge(month to it.currency, it.amount, BigDecimal::add) }
         }
         // A month of only unpriced jobs has no money, matching the old SQL sums that skipped null prices.
         return totals.filterValues { it.signum() != 0 }.map { (k, v) -> MonthlyMoney(k.first, k.second, v) }
@@ -88,10 +108,10 @@ class RequestStatsQueryImpl(
     private fun workByService(requests: List<ServiceRequest>): Map<Long, Map<String, BigDecimal>> {
         val out = HashMap<Long, MutableMap<String, BigDecimal>>()
         requests.forEach { r ->
-            val input = RequestItemMapping.pricingInput(r.items)
-            val currency = RequestPricing.currency(input, r.agreedPriceCurrency)
-            RequestPricing.workByItem(input, r.agreedPriceAmount).forEach { (serviceId, amount) ->
-                if (serviceId != null && amount.signum() != 0) out.getOrPut(serviceId) { HashMap() }.merge(currency, amount, BigDecimal::add)
+            slices(r).forEach { sl ->
+                if (sl.serviceId != null && sl.amount.signum() != 0) {
+                    out.getOrPut(sl.serviceId) { HashMap() }.merge(sl.currency, sl.amount, BigDecimal::add)
+                }
             }
         }
         return out
