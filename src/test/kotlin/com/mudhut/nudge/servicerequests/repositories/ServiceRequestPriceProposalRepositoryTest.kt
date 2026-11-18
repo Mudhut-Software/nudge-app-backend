@@ -63,13 +63,14 @@ class ServiceRequestPriceProposalRepositoryTest {
         proposal(other, "999.00", ProposalOutcome.OUTSTANDING, at.plusHours(1))
         em.flush(); em.clear()
 
-        val outstanding = sut.findFirstByRequestIdAndOutcome(request.id!!, ProposalOutcome.OUTSTANDING)
-        assertThat(outstanding?.id).isEqualTo(current.id)
-        assertThat(outstanding?.amount).isEqualByComparingTo("150.00")
-        assertThat(outstanding?.note).hasSize(500)
+        val outstanding = sut.findAllByRequestIdAndOutcome(request.id!!, ProposalOutcome.OUTSTANDING).single()
+        assertThat(outstanding.id).isEqualTo(current.id)
+        assertThat(outstanding.amount).isEqualByComparingTo("150.00")
+        assertThat(outstanding.note).hasSize(500)
 
         assertThat(sut.findFirstByRequestIdOrderByProposedAtDescIdDesc(request.id!!)?.id).isEqualTo(current.id)
         assertThat(sameInstantFirst.id).isLessThan(current.id)
-        assertThat(sut.findFirstByRequestIdAndOutcome(request.id!!, ProposalOutcome.ACCEPTED)).isNull()
+        assertThat(sut.findAllByRequestIdAndOutcome(request.id!!, ProposalOutcome.ACCEPTED)).isEmpty()
+        assertThat(sut.findAllByRequestIdAndOutcome(request.id!!, ProposalOutcome.SUPERSEDED)).hasSize(2)
     }
 }

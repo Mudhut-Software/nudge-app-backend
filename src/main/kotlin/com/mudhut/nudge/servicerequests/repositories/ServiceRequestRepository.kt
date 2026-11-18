@@ -4,7 +4,9 @@ import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
+import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.stereotype.Repository
@@ -63,6 +65,25 @@ interface ServiceRequestRepository : JpaRepository<ServiceRequest, Long> {
         """
     )
     fun countUnreadByBusiness(@Param("businessId") businessId: Long): Long
+
+    /**
+     * The request, row-locked (SELECT ... FOR UPDATE) until the transaction ends. Used by every path
+     * that reads then writes the price (propose, accept, reject, cancel) or checks it before a
+     * terminal move (complete, confirm-completion, no-show), so two of them never interleave: a
+     * double-submitted propose cannot leave two OUTSTANDING rows, and a propose cannot overwrite a
+     * price being accepted. Proven by ServiceRequestLockingFinderTest.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM ServiceRequest r WHERE r.id = :id")
+    fun findWithLockById(@Param("id") id: Long): ServiceRequest?
+
+    /** [findAllByBusinessIdAndStatusIn], row-locked: business closure settles proposals on each. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT r FROM ServiceRequest r WHERE r.business.id = :businessId AND r.status IN :statuses")
+    fun findAllWithLockByBusinessIdAndStatusIn(
+        @Param("businessId") businessId: Long,
+        @Param("statuses") statuses: Collection<ServiceRequestStatus>,
+    ): List<ServiceRequest>
 
     /** Every request for a business in one of the given statuses. */
     fun findAllByBusinessIdAndStatusIn(

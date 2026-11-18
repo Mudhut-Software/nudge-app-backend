@@ -7,6 +7,7 @@ import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestAttachment
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemPick
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestPriceProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.events.PriceEventKind
 import com.mudhut.nudge.servicerequests.events.RequestActor
@@ -175,7 +176,7 @@ class ServiceRequestService(
     @Transactional
     fun cancel(email: String, id: Long, reason: String?): ServiceRequestResponse {
         val customer = requireUser(email)
-        val request = requireOwned(id, customer)
+        val request = requireOwnedLocked(id, customer)
         // Captured before the write — the event reports where the request came from.
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CANCELLED)
@@ -217,7 +218,7 @@ class ServiceRequestService(
     @Transactional
     fun confirmCompletion(email: String, id: Long): ServiceRequestResponse {
         val customer = requireUser(email)
-        val request = requireOwned(id, customer)
+        val request = requireOwnedLocked(id, customer)
 
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.COMPLETED)
@@ -243,7 +244,7 @@ class ServiceRequestService(
     @Transactional
     fun reportNoShow(email: String, id: Long): ServiceRequestResponse {
         val customer = requireUser(email)
-        val request = requireOwned(id, customer)
+        val request = requireOwnedLocked(id, customer)
 
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.NO_SHOW)
@@ -276,38 +277,55 @@ class ServiceRequestService(
 
     /** The "did this happen?" prompt waits while the price is open; so do its answers. */
     private fun requirePriceSettled(request: ServiceRequest) =
-        PriceGate.requireSettled(request, outstandingPrice = outstandingPrice(requireNotNull(request.id)) != null)
+        PriceGate.requireSettled(request, outstandingPrice = outstandingPrices(requireNotNull(request.id)).isNotEmpty())
 
-    private fun outstandingPrice(requestId: Long) =
-        priceProposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
+    private fun outstandingPrices(requestId: Long) =
+        priceProposalRepo.findAllByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
+            .filter { it.outcome == ProposalOutcome.OUTSTANDING }
 
     /**
-     * The price proposal being answered, or a 409 naming the move the caller attempted, mirroring
-     * [requireOutstanding] for date proposals.
+     * The proposal the customer is answering, which must be the current OUTSTANDING one (latest by
+     * proposedAt, then id). Otherwise a 409 naming the move the caller attempted, mirroring
+     * [requireOutstanding] for date proposals. Naming the proposal is what stops a customer on a
+     * stale screen from accepting a price the provider has since replaced.
      */
-    private fun requireOutstandingPrice(request: ServiceRequest, target: ServiceRequestStatus) =
-        outstandingPrice(requireNotNull(request.id))
-            ?: throw InvalidStateTransitionException(
-                request.status,
-                target,
-                "There is no price proposal awaiting a reply on this booking",
-            )
+    private fun requireCurrentPrice(request: ServiceRequest, proposalId: Long, target: ServiceRequestStatus) =
+        outstandingPrices(requireNotNull(request.id))
+            .maxWithOrNull(compareBy<ServiceRequestPriceProposal>({ it.proposedAt }, { it.id }))
+            .let { current ->
+                when {
+                    current == null -> throw InvalidStateTransitionException(
+                        request.status, target, "There is no price proposal awaiting a reply on this booking",
+                    )
+                    current.id != proposalId -> throw InvalidStateTransitionException(
+                        request.status, target, "This price has been replaced — refresh to see the current one",
+                    )
+                    else -> current
+                }
+            }
 
     /** Take the provider's price: it becomes the booking's agreed price, final from here on. */
     @Transactional
-    fun acceptPrice(email: String, id: Long): ServiceRequestResponse {
+    fun acceptPrice(email: String, id: Long, proposalId: Long): ServiceRequestResponse {
         val customer = requireUser(email)
-        val request = requireOwned(id, customer)
-        val proposal = requireOutstandingPrice(request, ServiceRequestStatus.CONFIRMED)
+        val request = requireOwnedLocked(id, customer)
+        val proposal = requireCurrentPrice(request, proposalId, ServiceRequestStatus.CONFIRMED)
         // Unreachable while every path off CONFIRMED settles the proposal; kept so a stray
         // OUTSTANDING row can never price a cancelled or completed booking.
         if (request.status != ServiceRequestStatus.CONFIRMED) {
             throw InvalidStateTransitionException(request.status, ServiceRequestStatus.CONFIRMED)
         }
 
+        val now = LocalDateTime.now(ZoneOffset.UTC)
         proposal.outcome = ProposalOutcome.ACCEPTED
-        proposal.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
+        proposal.respondedAt = now
         priceProposalRepo.save(proposal)
+        // Only reachable if a duplicate ever slipped in; the price is final now, so close them.
+        outstandingPrices(id).filter { it !== proposal }.forEach {
+            it.outcome = ProposalOutcome.SUPERSEDED
+            it.respondedAt = now
+            priceProposalRepo.save(it)
+        }
 
         request.agreedPriceAmount = proposal.amount
         request.agreedPriceCurrency = proposal.currency
@@ -319,10 +337,10 @@ class ServiceRequestService(
 
     /** Decline the provider's price, which cancels the booking with the customer's reason. */
     @Transactional
-    fun rejectPrice(email: String, id: Long, reason: String?): ServiceRequestResponse {
+    fun rejectPrice(email: String, id: Long, proposalId: Long, reason: String?): ServiceRequestResponse {
         val customer = requireUser(email)
-        val request = requireOwned(id, customer)
-        val proposal = requireOutstandingPrice(request, ServiceRequestStatus.CANCELLED)
+        val request = requireOwnedLocked(id, customer)
+        val proposal = requireCurrentPrice(request, proposalId, ServiceRequestStatus.CANCELLED)
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CANCELLED)
 
@@ -415,14 +433,13 @@ class ServiceRequestService(
                 it.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
                 proposalRepo.save(it)
             }
-        // Already REJECTED when rejectPrice got here first; this only catches a plain cancel.
-        outstandingPrice(requestId)
-            ?.takeIf { it.outcome == ProposalOutcome.OUTSTANDING }
-            ?.let {
-                it.outcome = ProposalOutcome.REJECTED
-                it.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
-                priceProposalRepo.save(it)
-            }
+        // Every OUTSTANDING row, so a stray duplicate can't survive. The one rejectPrice just
+        // answered is already REJECTED and filtered out, keeping its responseNote.
+        outstandingPrices(requestId).forEach {
+            it.outcome = ProposalOutcome.REJECTED
+            it.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
+            priceProposalRepo.save(it)
+        }
     }
 
     @Transactional
@@ -528,10 +545,15 @@ class ServiceRequestService(
     private fun requireUser(email: String): User =
         userRepo.findByEmail(email).orElseThrow { EntityNotFoundException("User not found") }
 
-    private fun requireOwned(id: Long, customer: User): ServiceRequest {
-        val request = repo.findById(id)
-            .orElseThrow { BusinessNotFoundException("Request not found with id: $id") }
-        if (request.customer?.id != customer.id) {
+    private fun requireOwned(id: Long, customer: User): ServiceRequest =
+        requireCustomer(id, customer, repo.findById(id).orElse(null))
+
+    /** [requireOwned], row-locked until commit (see [ServiceRequestRepository.findWithLockById]). */
+    private fun requireOwnedLocked(id: Long, customer: User): ServiceRequest =
+        requireCustomer(id, customer, repo.findWithLockById(id))
+
+    private fun requireCustomer(id: Long, customer: User, request: ServiceRequest?): ServiceRequest {
+        if (request == null || request.customer?.id != customer.id) {
             throw BusinessNotFoundException("Request not found with id: $id")
         }
         return request

@@ -46,7 +46,7 @@ class ProviderRequestCancellationImplTest {
             req(2L, ServiceRequestStatus.REVISION_REQUESTED),
             req(3L, ServiceRequestStatus.CONFIRMED),
         )
-        whenever(repo.findAllByBusinessIdAndStatusIn(eq(10L), any())).thenReturn(live)
+        whenever(repo.findAllWithLockByBusinessIdAndStatusIn(eq(10L), any())).thenReturn(live)
         whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
 
         val count = sut.cancelAllLiveFor(10L, "The provider closed their business.")
@@ -63,7 +63,7 @@ class ProviderRequestCancellationImplTest {
 
     @Test
     fun `leaves settled requests alone`() {
-        whenever(repo.findAllByBusinessIdAndStatusIn(eq(10L), any())).thenReturn(emptyList())
+        whenever(repo.findAllWithLockByBusinessIdAndStatusIn(eq(10L), any())).thenReturn(emptyList())
 
         val count = sut.cancelAllLiveFor(10L, "The provider closed their business.")
 
@@ -84,14 +84,18 @@ class ProviderRequestCancellationImplTest {
     fun `closing a business settles price proposals and date proposals`() {
         val proposed = req(1L, ServiceRequestStatus.REVISION_REQUESTED)
         val confirmed = req(2L, ServiceRequestStatus.CONFIRMED)
-        whenever(repo.findAllByBusinessIdAndStatusIn(eq(10L), any())).thenReturn(listOf(proposed, confirmed))
+        whenever(repo.findAllWithLockByBusinessIdAndStatusIn(eq(10L), any())).thenReturn(listOf(proposed, confirmed))
         whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
         val date = ServiceRequestProposal(id = 5L, outcome = ProposalOutcome.OUTSTANDING)
         val price = ServiceRequestPriceProposal(
             id = 6L, amount = BigDecimal("100"), currency = "UGX", outcome = ProposalOutcome.OUTSTANDING,
         )
         whenever(proposalRepo.findFirstByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING)).thenReturn(date)
-        whenever(priceProposalRepo.findFirstByRequestIdAndOutcome(2L, ProposalOutcome.OUTSTANDING)).thenReturn(price)
+        val strayPrice = ServiceRequestPriceProposal(
+            id = 7L, amount = BigDecimal("100"), currency = "UGX", outcome = ProposalOutcome.OUTSTANDING,
+        )
+        whenever(priceProposalRepo.findAllByRequestIdAndOutcome(2L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(listOf(price, strayPrice))
 
         sut.cancelAllLiveFor(10L, "The provider closed their business.")
 
@@ -102,5 +106,7 @@ class ProviderRequestCancellationImplTest {
         assertNotNull(price.respondedAt)
         verify(proposalRepo).save(date)
         verify(priceProposalRepo).save(price)
+        // Every OUTSTANDING row, not just the first: a stray duplicate must not survive.
+        assertEquals(ProposalOutcome.REJECTED, strayPrice.outcome)
     }
 }

@@ -69,6 +69,12 @@ class ServiceRequestServiceTest {
         repo, userRepo, businessRepo, serviceRepo, publisher, popularityPublisher, proposalRepo, priceProposalRepo,
     )
 
+    init {
+        // Price-touching paths load the request with a row lock. The locked finder answers with
+        // whatever each test stubbed on findById, so fixtures stay written once.
+        whenever(repo.findWithLockById(any())).thenAnswer { repo.findById(it.arguments[0] as Long).orElse(null) }
+    }
+
     // --- fixtures ---
 
     private fun user(id: Long = 1L, email: String = "alice@example.com") = User(
@@ -1458,7 +1464,7 @@ class ServiceRequestServiceTest {
             id = 7L, amount = BigDecimal(amount), currency = "UGX", note = note,
             proposedAt = LocalDateTime.now(ZoneOffset.UTC).minusHours(1), outcome = ProposalOutcome.OUTSTANDING,
         ).also {
-            whenever(priceProposalRepo.findFirstByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING)).thenReturn(it)
+            whenever(priceProposalRepo.findAllByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING)).thenReturn(listOf(it))
             whenever(priceProposalRepo.findFirstByRequestIdOrderByProposedAtDescIdDesc(1L)).thenReturn(it)
         }
 
@@ -1469,7 +1475,7 @@ class ServiceRequestServiceTest {
         val r = bookedWith(alice, null, estimate = false)
         val proposal = outstandingPrice()
 
-        val response = sut.acceptPrice(alice.email!!, 1L)
+        val response = sut.acceptPrice(alice.email!!, 1L, 7L)
 
         assertEquals(ProposalOutcome.ACCEPTED, proposal.outcome)
         assertWrittenInUtcNotLocalZone(proposal.respondedAt)
@@ -1491,7 +1497,7 @@ class ServiceRequestServiceTest {
         val alice = user()
         val r = bookedWith(alice, null, estimate = false)
 
-        assertThrows(InvalidStateTransitionException::class.java) { sut.acceptPrice(alice.email!!, 1L) }
+        assertThrows(InvalidStateTransitionException::class.java) { sut.acceptPrice(alice.email!!, 1L, 7L) }
         assertNull(r.agreedPriceAmount)
     }
 
@@ -1500,7 +1506,7 @@ class ServiceRequestServiceTest {
         val alice = user()
         val r = bookedWith(alice, null, estimate = false)
 
-        assertThrows(InvalidStateTransitionException::class.java) { sut.rejectPrice(alice.email!!, 1L, "No") }
+        assertThrows(InvalidStateTransitionException::class.java) { sut.rejectPrice(alice.email!!, 1L, 7L, "No") }
         assertEquals(ServiceRequestStatus.CONFIRMED, r.status)
     }
 
@@ -1512,8 +1518,8 @@ class ServiceRequestServiceTest {
         whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
         outstandingPrice()
 
-        assertThrows(BusinessNotFoundException::class.java) { sut.acceptPrice(alice.email!!, 1L) }
-        assertThrows(BusinessNotFoundException::class.java) { sut.rejectPrice(alice.email!!, 1L, null) }
+        assertThrows(BusinessNotFoundException::class.java) { sut.acceptPrice(alice.email!!, 1L, 7L) }
+        assertThrows(BusinessNotFoundException::class.java) { sut.rejectPrice(alice.email!!, 1L, 7L, null) }
     }
 
     @Test
@@ -1523,7 +1529,7 @@ class ServiceRequestServiceTest {
         val r = bookedWith(alice, "3500000.00", estimate = true)
         val proposal = outstandingPrice()
 
-        val response = sut.rejectPrice(alice.email!!, 1L, "  Too expensive  ")
+        val response = sut.rejectPrice(alice.email!!, 1L, 7L, "  Too expensive  ")
 
         assertEquals(ServiceRequestStatus.CANCELLED, response.status)
         assertEquals("Too expensive", r.cancellationReason)
@@ -1588,5 +1594,68 @@ class ServiceRequestServiceTest {
         // The estimate stays the visible total until the new price is accepted.
         assertEquals(0, BigDecimal("3500000.00").compareTo(response.total))
         assertNull(response.agreedPrice)
+    }
+
+    @Test
+    fun `accept naming a superseded proposal is 409 and changes nothing`() {
+        val alice = user()
+        val r = bookedWith(alice, null, estimate = false)
+        val current = outstandingPrice()
+
+        val ex = assertThrows(InvalidStateTransitionException::class.java) { sut.acceptPrice(alice.email!!, 1L, 6L) }
+
+        assertTrue(ex.message!!.contains("replaced"))
+        assertEquals(ProposalOutcome.OUTSTANDING, current.outcome)
+        assertNull(r.agreedPriceAmount)
+        verify(priceProposalRepo, never()).save(any<ServiceRequestPriceProposal>())
+        verify(repo, never()).save(any<ServiceRequest>())
+        verify(publisher, never()).priceChanged(any(), any(), any())
+    }
+
+    @Test
+    fun `reject naming a superseded proposal is 409 and changes nothing`() {
+        val alice = user()
+        val r = bookedWith(alice, null, estimate = false)
+        val current = outstandingPrice()
+
+        assertThrows(InvalidStateTransitionException::class.java) { sut.rejectPrice(alice.email!!, 1L, 6L, "No") }
+
+        assertEquals(ServiceRequestStatus.CONFIRMED, r.status)
+        assertEquals(ProposalOutcome.OUTSTANDING, current.outcome)
+        verify(priceProposalRepo, never()).save(any<ServiceRequestPriceProposal>())
+    }
+
+    @Test
+    fun `cancel settles every outstanding price row`() {
+        val alice = user()
+        bookedWith(alice, null, estimate = false)
+        val rows = listOf(5L, 6L).map {
+            ServiceRequestPriceProposal(id = it, amount = BigDecimal("1"), currency = "UGX", outcome = ProposalOutcome.OUTSTANDING)
+        }
+        whenever(priceProposalRepo.findAllByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING)).thenReturn(rows)
+
+        sut.cancel(alice.email!!, 1L, null)
+
+        rows.forEach { assertEquals(ProposalOutcome.REJECTED, it.outcome) }
+    }
+
+    @Test
+    fun `price answers, completion answers and cancel load the request with a row lock`() {
+        val alice = user()
+        bookedWith(alice, "3500000.00", estimate = true)
+
+        sut.confirmCompletion(alice.email!!, 1L)
+        bookedWith(alice, "3500000.00", estimate = true)
+        sut.reportNoShow(alice.email!!, 1L)
+        bookedWith(alice, "3500000.00", estimate = true)
+        outstandingPrice()
+        sut.acceptPrice(alice.email!!, 1L, 7L)
+        bookedWith(alice, "3500000.00", estimate = true)
+        outstandingPrice()
+        sut.rejectPrice(alice.email!!, 1L, 7L, null)
+        bookedWith(alice, "3500000.00", estimate = true)
+        sut.cancel(alice.email!!, 1L, null)
+
+        verify(repo, org.mockito.kotlin.times(5)).findWithLockById(1L)
     }
 }

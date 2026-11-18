@@ -105,6 +105,20 @@ data class ProposePricePayload(
     val note: String? = null,
 )
 
+/** Names the proposal the customer saw, so a replaced price can never be accepted by mistake. */
+data class RespondToPricePayload(
+    @field:NotNull
+    val proposalId: Long? = null,
+)
+
+data class RejectPricePayload(
+    @field:NotNull
+    val proposalId: Long? = null,
+
+    @field:Size(max = 500)
+    val reason: String? = null,
+)
+
 @JsonInclude(JsonInclude.Include.ALWAYS)
 data class ServiceRequestResponse(
     val id: Long,
@@ -183,6 +197,7 @@ data class MoneyDto(
 }
 
 data class PriceProposalResponse(
+    val id: Long,
     val amount: BigDecimal,
     val currency: String,
     val note: String?,
@@ -193,6 +208,7 @@ data class PriceProposalResponse(
 ) {
     companion object {
         fun from(p: ServiceRequestPriceProposal) = PriceProposalResponse(
+            id = requireNotNull(p.id),
             amount = requireNotNull(p.amount),
             currency = requireNotNull(p.currency),
             note = p.note,

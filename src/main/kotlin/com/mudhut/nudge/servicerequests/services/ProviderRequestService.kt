@@ -223,7 +223,9 @@ class ProviderRequestService(
         note: String?,
     ): ServiceRequestResponse {
         businessService.requireRole(businessId, email, BusinessRole.MANAGER)
-        val request = requireSameBusiness(businessId, requestId)
+        // Locked: serialises this with a concurrent propose (no second OUTSTANDING row) and with
+        // the customer's accept (no proposal replacing a price mid-accept).
+        val request = requireSameBusinessLocked(businessId, requestId)
 
         // `require` (400), not `check` (403) or a transition error (409): these are the rules
         // of the price, not of the request's lifecycle or the caller's rights.
@@ -242,8 +244,9 @@ class ProviderRequestService(
         require((cleanNote?.length ?: 0) <= MAX_PRICE_NOTE) { "The note must be at most $MAX_PRICE_NOTE characters" }
 
         val now = LocalDateTime.now(ZoneOffset.UTC)
-        priceProposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
-            ?.let {
+        // Every OUTSTANDING row, not just the first, so a stray duplicate can't wedge the gate.
+        priceProposalRepo.findAllByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
+            .forEach {
                 it.outcome = ProposalOutcome.SUPERSEDED
                 it.respondedAt = now
                 priceProposalRepo.save(it)
@@ -265,7 +268,8 @@ class ProviderRequestService(
     @Transactional
     fun complete(email: String, businessId: Long, requestId: Long): ServiceRequestResponse {
         businessService.requireRole(businessId, email, BusinessRole.MANAGER)
-        val request = requireSameBusiness(businessId, requestId)
+        // Locked so a price proposed concurrently can't slip past the gate below.
+        val request = requireSameBusinessLocked(businessId, requestId)
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.COMPLETED)
 
@@ -277,7 +281,8 @@ class ProviderRequestService(
         // No completion (and so no invoice) while a price awaits an answer or was never set.
         PriceGate.requireSettled(
             request,
-            outstandingPrice = priceProposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING) != null,
+            outstandingPrice = priceProposalRepo.findAllByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
+                .isNotEmpty(),
         )
 
         request.status = ServiceRequestStatus.COMPLETED
@@ -288,10 +293,15 @@ class ProviderRequestService(
         return toResponse(saved)
     }
 
-    private fun requireSameBusiness(businessId: Long, requestId: Long): ServiceRequest {
-        val request = repo.findById(requestId)
-            .orElseThrow { BusinessNotFoundException("Request not found with id: $requestId") }
-        if (request.business?.id != businessId) {
+    private fun requireSameBusiness(businessId: Long, requestId: Long): ServiceRequest =
+        requireInBusiness(businessId, requestId, repo.findById(requestId).orElse(null))
+
+    /** [requireSameBusiness], row-locked until commit (see [ServiceRequestRepository.findWithLockById]). */
+    private fun requireSameBusinessLocked(businessId: Long, requestId: Long): ServiceRequest =
+        requireInBusiness(businessId, requestId, repo.findWithLockById(requestId))
+
+    private fun requireInBusiness(businessId: Long, requestId: Long, request: ServiceRequest?): ServiceRequest {
+        if (request == null || request.business?.id != businessId) {
             throw BusinessNotFoundException("Request not found with id: $requestId")
         }
         return request

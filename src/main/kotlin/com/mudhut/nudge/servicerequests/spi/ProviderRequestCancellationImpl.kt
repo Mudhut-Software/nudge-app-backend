@@ -30,7 +30,8 @@ class ProviderRequestCancellationImpl(
 
     @Transactional
     override fun cancelAllLiveFor(businessId: Long, reason: String): Int {
-        val live = repo.findAllByBusinessIdAndStatusIn(businessId, LIVE)
+        // Locked: settling proposals here must not interleave with a propose or accept in flight.
+        val live = repo.findAllWithLockByBusinessIdAndStatusIn(businessId, LIVE)
 
         live.forEach { request ->
             val from = request.status
@@ -64,7 +65,8 @@ class ProviderRequestCancellationImpl(
             it.respondedAt = now
             proposalRepo.save(it)
         }
-        priceProposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)?.let {
+        // Every OUTSTANDING price row, so a stray duplicate can't survive the closure.
+        priceProposalRepo.findAllByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING).forEach {
             it.outcome = ProposalOutcome.REJECTED
             it.respondedAt = now
             priceProposalRepo.save(it)

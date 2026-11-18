@@ -287,32 +287,55 @@ class ServiceRequestControllerTest {
 
     @Test
     @WithMockUser(username = "alice@example.com")
-    fun `POST price accept is mapped`() {
-        whenever(service.acceptPrice(eq("alice@example.com"), eq(1L)))
+    fun `POST price accept names the proposal being accepted`() {
+        whenever(service.acceptPrice(eq("alice@example.com"), eq(1L), eq(7L)))
             .thenReturn(sampleResponse(status = ServiceRequestStatus.CONFIRMED))
-        mockMvc.perform(post("/api/v1/requests/1/price/accept"))
+        mockMvc.perform(
+            post("/api/v1/requests/1/price/accept")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"proposalId":7}""")
+        )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.status").value("CONFIRMED"))
     }
 
     @Test
     @WithMockUser(username = "alice@example.com")
-    fun `POST price accept with nothing outstanding is 409`() {
-        whenever(service.acceptPrice(eq("alice@example.com"), eq(1L)))
-            .thenThrow(InvalidStateTransitionException(ServiceRequestStatus.CONFIRMED, ServiceRequestStatus.CONFIRMED))
-        mockMvc.perform(post("/api/v1/requests/1/price/accept"))
-            .andExpect(status().isConflict)
+    fun `POST price accept without a proposalId is 400`() {
+        mockMvc.perform(post("/api/v1/requests/1/price/accept").contentType(MediaType.APPLICATION_JSON).content("{}"))
+            .andExpect(status().isBadRequest)
+        mockMvc.perform(post("/api/v1/requests/1/price/accept").contentType(MediaType.APPLICATION_JSON))
+            .andExpect(status().isBadRequest)
     }
 
     @Test
     @WithMockUser(username = "alice@example.com")
-    fun `POST price reject passes the reason through`() {
-        whenever(service.rejectPrice(eq("alice@example.com"), eq(1L), eq("Too expensive")))
+    fun `POST price accept of a replaced or missing proposal is 409`() {
+        whenever(service.acceptPrice(eq("alice@example.com"), eq(1L), eq(6L)))
+            .thenThrow(
+                InvalidStateTransitionException(
+                    ServiceRequestStatus.CONFIRMED, ServiceRequestStatus.CONFIRMED,
+                    "This price has been replaced — refresh to see the current one",
+                ),
+            )
+        mockMvc.perform(
+            post("/api/v1/requests/1/price/accept")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"proposalId":6}""")
+        )
+            .andExpect(status().isConflict)
+            .andExpect(jsonPath("$.message").value("This price has been replaced — refresh to see the current one"))
+    }
+
+    @Test
+    @WithMockUser(username = "alice@example.com")
+    fun `POST price reject passes the proposal and reason through`() {
+        whenever(service.rejectPrice(eq("alice@example.com"), eq(1L), eq(7L), eq("Too expensive")))
             .thenReturn(sampleResponse(status = ServiceRequestStatus.CANCELLED))
         mockMvc.perform(
             post("/api/v1/requests/1/price/reject")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"reason":"Too expensive"}""")
+                .content("""{"proposalId":7,"reason":"Too expensive"}""")
         )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.status").value("CANCELLED"))
@@ -320,25 +343,30 @@ class ServiceRequestControllerTest {
 
     @Test
     @WithMockUser(username = "alice@example.com")
-    fun `POST price reject works with no body and rejects a long reason`() {
-        whenever(service.rejectPrice(eq("alice@example.com"), eq(1L), eq(null)))
+    fun `POST price reject takes no reason, and refuses a missing proposalId or a long reason`() {
+        whenever(service.rejectPrice(eq("alice@example.com"), eq(1L), eq(7L), eq(null)))
             .thenReturn(sampleResponse(status = ServiceRequestStatus.CANCELLED))
-        mockMvc.perform(post("/api/v1/requests/1/price/reject").contentType(MediaType.APPLICATION_JSON))
-            .andExpect(status().isOk)
+        mockMvc.perform(
+            post("/api/v1/requests/1/price/reject").contentType(MediaType.APPLICATION_JSON).content("""{"proposalId":7}""")
+        ).andExpect(status().isOk)
+        mockMvc.perform(
+            post("/api/v1/requests/1/price/reject").contentType(MediaType.APPLICATION_JSON).content("""{"reason":"No"}""")
+        ).andExpect(status().isBadRequest)
         mockMvc.perform(
             post("/api/v1/requests/1/price/reject")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"reason":"${"x".repeat(501)}"}""")
+                .content("""{"proposalId":7,"reason":"${"x".repeat(501)}"}""")
         ).andExpect(status().isBadRequest)
     }
 
     @Test
     @WithMockUser(username = "alice@example.com")
-    fun `POST price reject with nothing outstanding is 409`() {
-        whenever(service.rejectPrice(eq("alice@example.com"), eq(1L), eq(null)))
+    fun `POST price reject of a replaced or missing proposal is 409`() {
+        whenever(service.rejectPrice(eq("alice@example.com"), eq(1L), eq(6L), eq(null)))
             .thenThrow(InvalidStateTransitionException(ServiceRequestStatus.CONFIRMED, ServiceRequestStatus.CANCELLED))
-        mockMvc.perform(post("/api/v1/requests/1/price/reject").contentType(MediaType.APPLICATION_JSON))
-            .andExpect(status().isConflict)
+        mockMvc.perform(
+            post("/api/v1/requests/1/price/reject").contentType(MediaType.APPLICATION_JSON).content("""{"proposalId":6}""")
+        ).andExpect(status().isConflict)
     }
 
     @Test

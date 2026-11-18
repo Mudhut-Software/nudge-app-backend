@@ -2,6 +2,8 @@ package com.mudhut.nudge.servicerequests.controllers
 
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.models.CancelRequestPayload
+import com.mudhut.nudge.servicerequests.models.RejectPricePayload
+import com.mudhut.nudge.servicerequests.models.RespondToPricePayload
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
 import com.mudhut.nudge.servicerequests.models.UpdateRequestPayload
@@ -105,19 +107,30 @@ class ServiceRequestController(
         authentication: Authentication,
     ): ServiceRequestResponse = service.rejectProposal(authentication.name, id, payload?.reason)
 
+    /** The body names the proposal the customer saw; a replaced one answers 409. */
     @PostMapping("/{id}/price/accept")
     fun acceptPrice(
         @PathVariable id: Long,
+        @Valid @RequestBody payload: RespondToPricePayload,
         authentication: Authentication,
-    ): ServiceRequestResponse = service.acceptPrice(authentication.name, id)
+    ): ServiceRequestResponse = service.acceptPrice(
+        authentication.name,
+        id,
+        requireNotNull(payload.proposalId) { "proposalId is required" },
+    )
 
     /** Declining the price cancels the booking; the reason is recorded as its cancellation reason. */
     @PostMapping("/{id}/price/reject")
     fun rejectPrice(
         @PathVariable id: Long,
-        @Valid @RequestBody(required = false) payload: CancelRequestPayload?,
+        @Valid @RequestBody payload: RejectPricePayload,
         authentication: Authentication,
-    ): ServiceRequestResponse = service.rejectPrice(authentication.name, id, payload?.reason)
+    ): ServiceRequestResponse = service.rejectPrice(
+        authentication.name,
+        id,
+        requireNotNull(payload.proposalId) { "proposalId is required" },
+        payload.reason,
+    )
 
     @DeleteMapping("/{id}")
     fun delete(

@@ -59,6 +59,12 @@ class ProviderRequestServiceTest {
         repo, businessService, popularityPublisher, eventPublisher, proposalRepo, quotaService, priceProposalRepo,
     )
 
+    init {
+        // Price-changing paths load the request with a row lock. The locked finder answers with
+        // whatever each test stubbed on findById, so fixtures stay written once.
+        whenever(repo.findWithLockById(any())).thenAnswer { repo.findById(it.arguments[0] as Long).orElse(null) }
+    }
+
     private fun biz(id: Long = 10L) = Business(
         id = id,
         name = "SparkleClean",
@@ -550,6 +556,7 @@ class ProviderRequestServiceTest {
         val saved = mutableListOf<ServiceRequestPriceProposal>()
         whenever(priceProposalRepo.save(any<ServiceRequestPriceProposal>())).thenAnswer {
             val p = it.arguments[0] as ServiceRequestPriceProposal
+            if (p.id == null) p.id = 1000L + saved.size // the database assigns one on insert
             if (p !in saved) saved.add(p)
             p
         }
@@ -601,8 +608,8 @@ class ProviderRequestServiceTest {
             id = 1L, amount = BigDecimal("100"), currency = "UGX",
             proposedAt = LocalDateTime.now(ZoneOffset.UTC).minusHours(1), outcome = ProposalOutcome.OUTSTANDING,
         )
-        whenever(priceProposalRepo.findFirstByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
-            .thenReturn(first)
+        whenever(priceProposalRepo.findAllByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(listOf(first))
 
         val response = sut.proposePrice("owner@example.com", 10L, 100L, BigDecimal("150"), "UGX", null)
 
@@ -657,8 +664,8 @@ class ProviderRequestServiceTest {
     @Test
     fun `complete is refused while a price is outstanding`() {
         val r = bookedWith("3500000.00", estimate = true)
-        whenever(priceProposalRepo.findFirstByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
-            .thenReturn(ServiceRequestPriceProposal(id = 1L, amount = BigDecimal("1"), currency = "UGX"))
+        whenever(priceProposalRepo.findAllByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(listOf(ServiceRequestPriceProposal(id = 1L, amount = BigDecimal("1"), currency = "UGX")))
 
         assertThrows(PriceNotSettledException::class.java) {
             sut.complete("owner@example.com", 10L, 100L)
@@ -698,5 +705,36 @@ class ProviderRequestServiceTest {
         val response = sut.complete("owner@example.com", 10L, 100L)
 
         assertEquals(ServiceRequestStatus.COMPLETED, response.status)
+    }
+
+    @Test
+    fun `supersede marks every outstanding row, so a stray duplicate cannot wedge the booking`() {
+        bookedWith(null, estimate = false)
+        val saved = priceRepoRemembersSaves()
+        val stray = listOf(1L, 2L).map {
+            ServiceRequestPriceProposal(
+                id = it, amount = BigDecimal("100"), currency = "UGX",
+                proposedAt = LocalDateTime.now(ZoneOffset.UTC).minusHours(1), outcome = ProposalOutcome.OUTSTANDING,
+            )
+        }
+        whenever(priceProposalRepo.findAllByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING)).thenReturn(stray)
+
+        sut.proposePrice("owner@example.com", 10L, 100L, BigDecimal("150"), "UGX", null)
+
+        stray.forEach { assertEquals(ProposalOutcome.SUPERSEDED, it.outcome) }
+        assertEquals(1, saved.count { it.outcome == ProposalOutcome.OUTSTANDING })
+    }
+
+    @Test
+    fun `propose price and complete load the request with a row lock`() {
+        bookedWith("3500000.00", estimate = true)
+        priceRepoRemembersSaves()
+
+        sut.proposePrice("owner@example.com", 10L, 100L, BigDecimal("150"), "UGX", null)
+        verify(repo).findWithLockById(100L)
+
+        whenever(priceProposalRepo.findAllByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING)).thenReturn(emptyList())
+        sut.complete("owner@example.com", 10L, 100L)
+        verify(repo, org.mockito.kotlin.times(2)).findWithLockById(100L)
     }
 }
