@@ -412,7 +412,8 @@ class DevDataSeeder(
         )
         rustic.item("Full Wedding Planning", "Month-by-month planning and day-of coordination. Price agreed after a consultation.")
         val hayBale = rustic.choiceItem("Hay-bale lounge", "Relaxed seating corner of stacked hay bales and throws.", BigDecimal("300000"))
-        val canopy = rustic.choiceItem("Fairy-light canopy", "Overhead canopy of warm fairy lights.", BigDecimal("450000"))
+        // Also bookable alone at 450,000; in Optional extras it has no override, so it shows +450,000.
+        val canopy = rustic.item("Fairy-light canopy", "Overhead canopy of warm fairy lights.", price = BigDecimal("450000"))
         rustic.group(
             wedding, "Style", GroupSelection.SINGLE, required = true,
             rustic.choiceItem("Classic rustic", "Timber, linen and wildflowers.").choice(),
