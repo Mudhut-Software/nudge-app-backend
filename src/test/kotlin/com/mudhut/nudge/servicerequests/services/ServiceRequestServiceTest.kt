@@ -15,7 +15,6 @@ import com.mudhut.nudge.servicerequests.models.RequestItemInput
 import com.mudhut.nudge.servicerequests.models.UpdateRequestPayload
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
@@ -93,10 +92,8 @@ class ServiceRequestServiceTest {
             description = "Full home",
             coverImageUrl = "https://cdn/svc.jpg",
             coverImagePublicId = "nudge/images/svc",
-            priceMode = PriceMode.FIXED,
             priceAmount = BigDecimal("250000.00"),
             priceCurrency = "UGX",
-            priceUnit = null,
             status = status,
         )
 

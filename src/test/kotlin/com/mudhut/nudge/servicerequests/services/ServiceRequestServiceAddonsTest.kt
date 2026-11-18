@@ -11,7 +11,6 @@ import com.mudhut.nudge.servicerequests.models.RequestItemInput
 import com.mudhut.nudge.servicerequests.models.ServiceRequestItemAddonInput
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
@@ -52,7 +51,6 @@ class ServiceRequestServiceAddonsTest {
         title = "Catering",
         coverImageUrl = "u",
         coverImagePublicId = "p",
-        priceMode = PriceMode.FIXED,
         priceAmount = BigDecimal("100"),
         priceCurrency = "UGX",
         status = ServiceOfferedStatus.ACTIVE,
@@ -63,7 +61,6 @@ class ServiceRequestServiceAddonsTest {
         title = "Errand",
         coverImageUrl = "u",
         coverImagePublicId = "p",
-        priceMode = PriceMode.QUOTE,
         status = ServiceOfferedStatus.ACTIVE,
     )
     private val addon = ServiceAddon(
@@ -155,21 +152,6 @@ class ServiceRequestServiceAddonsTest {
         assertThatThrownBy { sut.create("c@e", payload) }
             .isInstanceOf(IllegalArgumentException::class.java)
             .hasMessageContaining("does not belong")
-    }
-
-    @Test
-    fun `create with addonInputs on a QUOTE service throws`() {
-        val payload = CreateRequestPayload(
-            businessId = 2L,
-            items = listOf(RequestItemInput(
-                serviceId = 11L, // QUOTE
-                addonInputs = listOf(ServiceRequestItemAddonInput(addonId = 99L, quantity = 1)),
-            )),
-        )
-
-        assertThatThrownBy { sut.create("c@e", payload) }
-            .isInstanceOf(IllegalArgumentException::class.java)
-            .hasMessageContaining("Addons are not allowed")
     }
 
     @Test

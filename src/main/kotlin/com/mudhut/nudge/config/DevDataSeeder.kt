@@ -12,7 +12,6 @@ import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
 import java.time.LocalDate
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
@@ -199,10 +198,10 @@ class DevDataSeeder(
                 email = "hello@sparkleclean.local",
                 phone = "+256700000010",
                 services = listOf(
-                    ServiceSpec("Deep House Cleaning", "Top-to-bottom clean for a 3-bed home — 2 cleaners, supplies included.", PriceMode.FIXED, BigDecimal("250000"), null),
-                    ServiceSpec("Carpet Cleaning", "Steam-cleaned carpets and rugs.", PriceMode.FIXED, BigDecimal("80000"), null),
-                    ServiceSpec("Laundry Service", "Wash, dry, fold — picked up and dropped off.", PriceMode.FIXED, BigDecimal("60000"), null),
-                    ServiceSpec("Office Move-out Clean", "Full deep clean for office spaces up to 200m².", PriceMode.FIXED, BigDecimal("200000"), null),
+                    ServiceSpec("Deep House Cleaning", "Top-to-bottom clean for a 3-bed home — 2 cleaners, supplies included.", BigDecimal("250000"), null),
+                    ServiceSpec("Carpet Cleaning", "Steam-cleaned carpets and rugs.", BigDecimal("80000"), null),
+                    ServiceSpec("Laundry Service", "Wash, dry, fold — picked up and dropped off.", BigDecimal("60000"), null),
+                    ServiceSpec("Office Move-out Clean", "Full deep clean for office spaces up to 200m².", BigDecimal("200000"), null),
                 ),
                 bundles = listOf(
                     BundleSpec("Sparkle Home Bundle", BigDecimal("350000"), listOf("Deep House Cleaning", "Carpet Cleaning", "Laundry Service")),
@@ -221,9 +220,9 @@ class DevDataSeeder(
                 email = "events@kampalacatering.local",
                 phone = "+256700000020",
                 services = listOf(
-                    ServiceSpec("Corporate Lunch", "Hot buffet lunch delivered to your office.", PriceMode.PER_UNIT, BigDecimal("15000"), "person"),
-                    ServiceSpec("Birthday Party Buffet", "Themed buffet for parties of 20 guests.", PriceMode.FIXED, BigDecimal("180000"), null),
-                    ServiceSpec("Wedding Catering", "Bespoke wedding menu — get a custom quote.", PriceMode.QUOTE, null, null),
+                    ServiceSpec("Corporate Lunch", "Hot buffet lunch delivered to your office.", BigDecimal("15000"), "person"),
+                    ServiceSpec("Birthday Party Buffet", "Themed buffet for parties of 20 guests.", BigDecimal("180000"), null),
+                    ServiceSpec("Wedding Catering", "Bespoke wedding menu — get a custom quote.", null, null),
                 ),
                 bundles = listOf(
                     BundleSpec("Birthday All-In Package", BigDecimal("320000"), listOf("Birthday Party Buffet", "Corporate Lunch")),
@@ -242,9 +241,9 @@ class DevDataSeeder(
                 email = "hello@acaciaglow.local",
                 phone = "+256700000030",
                 services = listOf(
-                    ServiceSpec("Full Body Massage", "60-minute Swedish or deep tissue massage.", PriceMode.FIXED, BigDecimal("120000"), null),
-                    ServiceSpec("Manicure & Pedicure", "Classic mani-pedi with gel options.", PriceMode.FIXED, BigDecimal("60000"), null),
-                    ServiceSpec("Hair Styling", "Wash, blow-dry, and styling.", PriceMode.FIXED, BigDecimal("80000"), null),
+                    ServiceSpec("Full Body Massage", "60-minute Swedish or deep tissue massage.", BigDecimal("120000"), null),
+                    ServiceSpec("Manicure & Pedicure", "Classic mani-pedi with gel options.", BigDecimal("60000"), null),
+                    ServiceSpec("Hair Styling", "Wash, blow-dry, and styling.", BigDecimal("80000"), null),
                 ),
                 bundles = listOf(
                     BundleSpec("Bridal Glow Day", BigDecimal("220000"), listOf("Full Body Massage", "Manicure & Pedicure", "Hair Styling")),
@@ -263,9 +262,9 @@ class DevDataSeeder(
                 email = "book@highlandphoto.local",
                 phone = "+256700000040",
                 services = listOf(
-                    ServiceSpec("Portrait Session", "90-minute studio portrait session with 20 edits.", PriceMode.FIXED, BigDecimal("200000"), null),
-                    ServiceSpec("Event Photography", "Full-day event coverage with edited gallery.", PriceMode.FIXED, BigDecimal("500000"), null),
-                    ServiceSpec("Drone Aerial Video", "Cinematic drone reel for outdoor venues.", PriceMode.FIXED, BigDecimal("350000"), null),
+                    ServiceSpec("Portrait Session", "90-minute studio portrait session with 20 edits.", BigDecimal("200000"), null),
+                    ServiceSpec("Event Photography", "Full-day event coverage with edited gallery.", BigDecimal("500000"), null),
+                    ServiceSpec("Drone Aerial Video", "Cinematic drone reel for outdoor venues.", BigDecimal("350000"), null),
                 ),
                 bundles = listOf(
                     BundleSpec("Wedding Coverage Pack", BigDecimal("900000"), listOf("Event Photography", "Drone Aerial Video", "Portrait Session")),
@@ -284,9 +283,9 @@ class DevDataSeeder(
                 email = "woof@pawpals.local",
                 phone = "+256700000050",
                 services = listOf(
-                    ServiceSpec("Dog Walking", "30-minute neighbourhood walk for one dog.", PriceMode.PER_UNIT, BigDecimal("25000"), "walk"),
-                    ServiceSpec("Pet Grooming", "Bath, brush, and nail trim for dogs and cats.", PriceMode.FIXED, BigDecimal("70000"), null),
-                    ServiceSpec("Home Vet Check", "Routine wellness check at your home.", PriceMode.FIXED, BigDecimal("90000"), null),
+                    ServiceSpec("Dog Walking", "30-minute neighbourhood walk for one dog.", BigDecimal("25000"), "walk"),
+                    ServiceSpec("Pet Grooming", "Bath, brush, and nail trim for dogs and cats.", BigDecimal("70000"), null),
+                    ServiceSpec("Home Vet Check", "Routine wellness check at your home.", BigDecimal("90000"), null),
                 ),
                 bundles = listOf(
                     BundleSpec("Premium Pet Care Bundle", BigDecimal("160000"), listOf("Pet Grooming", "Home Vet Check", "Dog Walking")),
@@ -338,10 +337,10 @@ class DevDataSeeder(
                         description = svc.description,
                         coverImageUrl = coverUrl,
                         coverImagePublicId = coverPublicId,
-                        priceMode = svc.priceMode,
                         priceAmount = svc.priceAmount,
-                        priceCurrency = if (svc.priceMode == PriceMode.QUOTE) null else DEMO_CURRENCY,
-                        priceUnit = svc.priceUnit,
+                        priceCurrency = if (svc.priceAmount == null) null else DEMO_CURRENCY,
+                        quantityEnabled = svc.quantityUnit != null,
+                        quantityUnit = svc.quantityUnit,
                         status = ServiceOfferedStatus.ACTIVE,
                     )
                 )
@@ -358,10 +357,8 @@ class DevDataSeeder(
                     description = "Bundle offer — included items below, plus optional add-ons.",
                     coverImageUrl = coverUrl,
                     coverImagePublicId = coverPublicId,
-                    priceMode = PriceMode.FIXED,
                     priceAmount = bundle.priceAmount,
                     priceCurrency = DEMO_CURRENCY,
-                    priceUnit = null,
                     status = ServiceOfferedStatus.ACTIVE,
                     tag = ServiceOfferedTag.HOLIDAY_OFFER,
                     validFrom = today.minusDays(1),
@@ -408,9 +405,8 @@ private data class BusinessSpec(
 private data class ServiceSpec(
     val title: String,
     val description: String,
-    val priceMode: PriceMode,
     val priceAmount: BigDecimal?,
-    val priceUnit: String?,
+    val quantityUnit: String?,
 )
 
 private data class BundleSpec(

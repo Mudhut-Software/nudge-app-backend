@@ -5,7 +5,6 @@ import com.mudhut.nudge.config.JsonAccessDeniedHandler
 import com.mudhut.nudge.config.JsonAuthenticationEntryPoint
 import com.mudhut.nudge.config.PassThroughJwtFilterConfig
 import com.mudhut.nudge.config.SecurityConfig
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
 import com.mudhut.nudge.servicesoffered.models.MediaInput
@@ -61,10 +60,15 @@ class ServiceOfferedControllerTest {
         title = "Sofa cleaning",
         description = null,
         coverImage = MediaResponse(url = "u", publicId = "nudge/images/u"),
-        priceMode = PriceMode.FIXED,
         priceAmount = BigDecimal("50000.00"),
         priceCurrency = "UGX",
-        priceUnit = null,
+        priceIsEstimate = false,
+        estimateReason = null,
+        quantityEnabled = false,
+        quantityUnit = null,
+        quantityMin = 1,
+        quantityMax = null,
+        soldOnItsOwn = true,
         status = ServiceOfferedStatus.ACTIVE,
         tag = null,
         validFrom = null,
@@ -82,10 +86,8 @@ class ServiceOfferedControllerTest {
             title = "Sofa cleaning",
             description = null,
             coverImage = MediaInput("u", "nudge/images/u"),
-            priceMode = PriceMode.FIXED,
             priceAmount = BigDecimal("50000.00"),
             priceCurrency = "UGX",
-            priceUnit = null,
             galleryImages = emptyList()
         )
         whenever(
@@ -99,7 +101,34 @@ class ServiceOfferedControllerTest {
         )
             .andExpect(status().isCreated)
             .andExpect(jsonPath("$.id").value(1))
-            .andExpect(jsonPath("$.priceMode").value("FIXED"))
+            .andExpect(jsonPath("$.priceAmount").value(50000.00))
+    }
+
+    @Test
+    @WithMockUser(username = "owner@test.com")
+    fun `POST services without coverImage returns 201`() {
+        whenever(
+            offeringService.createService(eq(10L), eq("owner@test.com"), any())
+        ).thenReturn(sampleResponse().copy(coverImage = null))
+
+        mockMvc.perform(
+            post("/api/v1/businesses/10/services")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"title": "Wedding cake"}""")
+        )
+            .andExpect(status().isCreated)
+            .andExpect(jsonPath("$.coverImage").doesNotExist())
+    }
+
+    @Test
+    @WithMockUser(username = "owner@test.com")
+    fun `GET list passes q to the service`() {
+        whenever(
+            offeringService.listServices(eq(10L), eq("owner@test.com"), any<Pageable>(), isNull(), eq("wed"))
+        ).thenReturn(PageImpl(emptyList()))
+
+        mockMvc.perform(get("/api/v1/businesses/10/services?q=wed"))
+            .andExpect(status().isOk)
     }
 
     @Test
@@ -107,8 +136,7 @@ class ServiceOfferedControllerTest {
     fun `POST returns 400 on missing title`() {
         val payload = """
             {
-              "coverImage": {"url":"u","publicId":"nudge/images/u"},
-              "priceMode": "QUOTE"
+              "coverImage": {"url":"u","publicId":"nudge/images/u"}
             }
         """.trimIndent()
 
@@ -127,10 +155,6 @@ class ServiceOfferedControllerTest {
             title = "Sofa cleaning",
             description = null,
             coverImage = MediaInput("u", "wrong/prefix/u"),
-            priceMode = PriceMode.QUOTE,
-            priceAmount = null,
-            priceCurrency = null,
-            priceUnit = null,
             galleryImages = emptyList()
         )
         mockMvc.perform(
@@ -145,7 +169,7 @@ class ServiceOfferedControllerTest {
     @WithMockUser(username = "owner@test.com")
     fun `GET list returns paginated services`() {
         whenever(
-            offeringService.listServices(eq(10L), eq("owner@test.com"), any<Pageable>(), isNull())
+            offeringService.listServices(eq(10L), eq("owner@test.com"), any<Pageable>(), isNull(), isNull())
         ).thenReturn(PageImpl(listOf(sampleResponse())))
 
         mockMvc.perform(get("/api/v1/businesses/10/services"))
@@ -162,7 +186,8 @@ class ServiceOfferedControllerTest {
                 eq(10L),
                 eq("owner@test.com"),
                 any<Pageable>(),
-                eq(ServiceOfferedStatus.ACTIVE)
+                eq(ServiceOfferedStatus.ACTIVE),
+                isNull()
             )
         ).thenReturn(PageImpl(emptyList()))
 

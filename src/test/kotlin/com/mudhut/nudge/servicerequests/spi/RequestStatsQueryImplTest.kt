@@ -15,7 +15,6 @@ import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemAddon
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.COMPLETED
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.users.entities.User
@@ -78,7 +77,7 @@ class RequestStatsQueryImplTest {
         ServiceOffered(
             business = b, title = title,
             coverImageUrl = "https://example.com/c.jpg", coverImagePublicId = unique("cover"),
-            priceMode = PriceMode.FIXED, priceAmount = BigDecimal("100.00"), priceCurrency = "UGX",
+            priceAmount = BigDecimal("100.00"), priceCurrency = "UGX",
         ),
     )
 

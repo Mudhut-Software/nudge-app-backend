@@ -43,11 +43,12 @@ class ServiceOfferedController(
     fun list(
         @PathVariable businessId: Long,
         @RequestParam(required = false) status: ServiceOfferedStatus?,
+        @RequestParam(required = false) q: String?,
         @PageableDefault(size = 20, sort = ["createdAt"], direction = Sort.Direction.DESC)
         pageable: Pageable,
         authentication: Authentication
     ): Page<ServiceOfferedResponse> {
-        return servicesOfferedService.listServices(businessId, authentication.name, pageable, status)
+        return servicesOfferedService.listServices(businessId, authentication.name, pageable, status, q)
     }
 
     @GetMapping("/services/{id}")

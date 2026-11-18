@@ -1,6 +1,5 @@
 package com.mudhut.nudge.discovery.models
 
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
 import com.mudhut.nudge.servicesoffered.models.PublicServiceAddon
 import java.math.BigDecimal
@@ -10,11 +9,15 @@ data class PublicServiceSummary(
     val id: Long,
     val title: String,
     val description: String?,
-    val priceMode: PriceMode,
     val priceAmount: BigDecimal?,
     val priceCurrency: String?,
-    val priceUnit: String?,
-    val coverImageUrl: String,
+    val priceIsEstimate: Boolean = false,
+    val estimateReason: String? = null,
+    val quantityEnabled: Boolean = false,
+    val quantityUnit: String? = null,
+    val quantityMin: Int = 1,
+    val quantityMax: Int? = null,
+    val coverImageUrl: String?,
     val galleryImageUrls: List<String>,
     val tag: ServiceOfferedTag? = null,
     val validFrom: LocalDate? = null,

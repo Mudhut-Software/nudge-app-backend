@@ -4,7 +4,6 @@ import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
 import com.mudhut.nudge.media.PendingMediaDeletion
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.events.ServiceAddonDeletedEvent
@@ -48,7 +47,6 @@ class ServiceAddonServiceTest {
         title = "Catering",
         coverImageUrl = "u",
         coverImagePublicId = "p",
-        priceMode = PriceMode.FIXED,
         priceAmount = BigDecimal("100.00"),
         priceCurrency = "UGX",
     )

@@ -19,7 +19,6 @@ import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
 import com.mudhut.nudge.servicerequests.models.UpdateRequestPayload
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceAddonRepository
@@ -480,12 +479,6 @@ class ServiceRequestService(
             val serviceId = input.serviceId
                 ?: throw IllegalArgumentException("serviceId is required")
             val svc = byServiceId[serviceId] ?: error("Service $serviceId not found")
-
-            if (input.addonInputs.isNotEmpty()) {
-                require(svc.priceMode != PriceMode.QUOTE) {
-                    "Addons are not allowed on QUOTE-mode services"
-                }
-            }
 
             val item = ServiceRequestItem(
                 request = request,

@@ -3,7 +3,6 @@ package com.mudhut.nudge.servicesoffered.services
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
 import com.mudhut.nudge.media.PendingMediaDeletion
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedImage
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
@@ -35,7 +34,16 @@ class ServicesOfferedService(
         request: CreateServiceOfferedRequest
     ): ServiceOfferedResponse {
         businessService.requireRole(businessId, userEmail, BusinessRole.MANAGER)
-        validatePricing(request.priceMode, request.priceAmount, request.priceCurrency, request.priceUnit)
+        val item = validateItem(
+            amount = request.priceAmount,
+            currency = request.priceCurrency,
+            isEstimate = request.priceIsEstimate,
+            estimateReason = request.estimateReason,
+            quantityEnabled = request.quantityEnabled,
+            quantityUnit = request.quantityUnit,
+            quantityMin = request.quantityMin,
+            quantityMax = request.quantityMax,
+        )
         validateWindow(request.validFrom, request.validUntil)
         val business = businessService.findBusinessEntity(businessId)
 
@@ -43,12 +51,17 @@ class ServicesOfferedService(
             business = business,
             title = request.title,
             description = request.description,
-            coverImageUrl = request.coverImage.url,
-            coverImagePublicId = request.coverImage.publicId,
-            priceMode = request.priceMode,
-            priceAmount = request.priceAmount,
-            priceCurrency = request.priceCurrency,
-            priceUnit = request.priceUnit,
+            coverImageUrl = request.coverImage?.url,
+            coverImagePublicId = request.coverImage?.publicId,
+            priceAmount = item.amount,
+            priceCurrency = item.currency,
+            priceIsEstimate = item.isEstimate,
+            estimateReason = item.estimateReason,
+            quantityEnabled = item.quantityEnabled,
+            quantityUnit = item.quantityUnit,
+            quantityMin = item.quantityMin,
+            quantityMax = item.quantityMax,
+            soldOnItsOwn = request.soldOnItsOwn,
             tag = request.tag,
             validFrom = request.validFrom,
             validUntil = request.validUntil
@@ -79,17 +92,29 @@ class ServicesOfferedService(
             .orElseThrow { BusinessNotFoundException("Service not found with id: $serviceId") }
         businessService.requireRole(entity.business!!.id!!, userEmail, BusinessRole.MANAGER)
 
-        // Compute resulting pricing tuple. When priceMode is in the patch, treat the patch's
-        // amount/currency/unit as authoritative even if null (you may be transitioning to QUOTE
-        // and explicitly clearing the others). When priceMode is unchanged, fall back to stored.
-        val newMode = request.priceMode ?: entity.priceMode!!
-        val newAmount = if (request.priceMode != null) request.priceAmount else (request.priceAmount ?: entity.priceAmount)
-        val newCurrency = if (request.priceMode != null) request.priceCurrency else (request.priceCurrency ?: entity.priceCurrency)
-        val newUnit = if (request.priceMode != null) request.priceUnit else (request.priceUnit ?: entity.priceUnit)
-        validatePricing(newMode, newAmount, newCurrency, newUnit)
+        // Resulting item state: a null patch field means "unchanged"; clearPrice is the only
+        // way to remove a price.
+        val clearPrice = request.clearPrice == true
+        val item = validateItem(
+            amount = if (clearPrice) null else (request.priceAmount ?: entity.priceAmount),
+            currency = if (clearPrice) null else (request.priceCurrency ?: entity.priceCurrency),
+            isEstimate = if (clearPrice) false else (request.priceIsEstimate ?: entity.priceIsEstimate),
+            estimateReason = if (clearPrice) null else (request.estimateReason ?: entity.estimateReason),
+            quantityEnabled = request.quantityEnabled ?: entity.quantityEnabled,
+            quantityUnit = request.quantityUnit ?: entity.quantityUnit,
+            quantityMin = request.quantityMin ?: entity.quantityMin,
+            quantityMax = request.quantityMax ?: entity.quantityMax,
+        )
 
         request.title?.let { entity.title = it }
         request.description?.let { entity.description = it }
+        if (request.clearCover == true && request.coverImage == null) {
+            entity.coverImagePublicId?.let {
+                pendingMediaDeletionRepository.save(PendingMediaDeletion(publicId = it))
+            }
+            entity.coverImageUrl = null
+            entity.coverImagePublicId = null
+        }
         request.coverImage?.let { incoming ->
             val previousPublicId = entity.coverImagePublicId
             if (previousPublicId != null && previousPublicId != incoming.publicId) {
@@ -98,10 +123,15 @@ class ServicesOfferedService(
             entity.coverImageUrl = incoming.url
             entity.coverImagePublicId = incoming.publicId
         }
-        entity.priceMode = newMode
-        entity.priceAmount = newAmount
-        entity.priceCurrency = newCurrency
-        entity.priceUnit = newUnit
+        entity.priceAmount = item.amount
+        entity.priceCurrency = item.currency
+        entity.priceIsEstimate = item.isEstimate
+        entity.estimateReason = item.estimateReason
+        entity.quantityEnabled = item.quantityEnabled
+        entity.quantityUnit = item.quantityUnit
+        entity.quantityMin = item.quantityMin
+        entity.quantityMax = item.quantityMax
+        request.soldOnItsOwn?.let { entity.soldOnItsOwn = it }
         request.status?.let { entity.status = it }
         request.tag?.let { entity.tag = it }
         request.validFrom?.let { entity.validFrom = it }
@@ -167,13 +197,22 @@ class ServicesOfferedService(
         businessId: Long,
         userEmail: String,
         pageable: Pageable,
-        statusFilter: ServiceOfferedStatus?
+        statusFilter: ServiceOfferedStatus?,
+        q: String?
     ): Page<ServiceOfferedResponse> {
         businessService.requireRole(businessId, userEmail, BusinessRole.STAFF)
-        val page = if (statusFilter == null) {
-            serviceOfferedRepository.findAllByBusinessId(businessId, pageable)
-        } else {
-            serviceOfferedRepository.findAllByBusinessIdAndStatus(businessId, statusFilter, pageable)
+        val term = q?.trim()?.takeIf { it.isNotEmpty() }
+        val page = when {
+            term == null && statusFilter == null ->
+                serviceOfferedRepository.findAllByBusinessId(businessId, pageable)
+            term == null ->
+                serviceOfferedRepository.findAllByBusinessIdAndStatus(businessId, statusFilter!!, pageable)
+            statusFilter == null ->
+                serviceOfferedRepository.findAllByBusinessIdAndTitleContainingIgnoreCase(businessId, term, pageable)
+            else ->
+                serviceOfferedRepository.findAllByBusinessIdAndStatusAndTitleContainingIgnoreCase(
+                    businessId, statusFilter, term, pageable
+                )
         }
         return page.map { toResponse(it) }
     }
@@ -200,37 +239,56 @@ class ServicesOfferedService(
 
     private val currencyRegex = Regex("^[A-Z]{3}$")
 
-    private fun validatePricing(
-        mode: PriceMode,
+    private data class ValidatedItem(
+        val amount: BigDecimal?,
+        val currency: String?,
+        val isEstimate: Boolean,
+        val estimateReason: String?,
+        val quantityEnabled: Boolean,
+        val quantityUnit: String?,
+        val quantityMin: Int,
+        val quantityMax: Int?,
+    )
+
+    private fun validateItem(
         amount: BigDecimal?,
         currency: String?,
-        unit: String?
-    ) {
-        when (mode) {
-            PriceMode.FIXED -> {
-                require(amount != null) { "priceAmount is required for FIXED pricing" }
-                require(currency != null) { "priceCurrency is required for FIXED pricing" }
-                require(unit == null) { "priceUnit must be null for FIXED pricing" }
-            }
-            PriceMode.PER_UNIT -> {
-                require(amount != null) { "priceAmount is required for PER_UNIT pricing" }
-                require(currency != null) { "priceCurrency is required for PER_UNIT pricing" }
-                require(!unit.isNullOrBlank()) { "priceUnit is required for PER_UNIT pricing" }
-            }
-            PriceMode.QUOTE -> {
-                require(amount == null) { "priceAmount must be null for QUOTE pricing" }
-                require(currency == null) { "priceCurrency must be null for QUOTE pricing" }
-                require(unit == null) { "priceUnit must be null for QUOTE pricing" }
-            }
-        }
+        isEstimate: Boolean,
+        estimateReason: String?,
+        quantityEnabled: Boolean,
+        quantityUnit: String?,
+        quantityMin: Int,
+        quantityMax: Int?,
+    ): ValidatedItem {
         if (amount != null) {
-            require(amount > BigDecimal.ZERO) { "priceAmount must be greater than zero" }
+            require(currency != null && currencyRegex.matches(currency)) {
+                "priceCurrency must be a 3-letter uppercase ISO-4217 code when a price is set"
+            }
+            require(amount >= BigDecimal.ZERO) { "priceAmount must not be negative" }
+        } else {
+            require(currency == null) { "priceCurrency requires a priceAmount" }
         }
-        if (currency != null) {
-            require(currencyRegex.matches(currency)) {
-                "priceCurrency must be a 3-letter uppercase ISO-4217 code"
+        val reason = estimateReason?.trim()?.takeIf { it.isNotEmpty() }
+        if (isEstimate) {
+            require(amount != null) { "An estimate requires a price" }
+            require(reason != null) { "An estimate requires an estimateReason" }
+        }
+        if (quantityEnabled) {
+            require(quantityMin >= 1) { "quantityMin must be at least 1" }
+            require(quantityMax == null || quantityMax >= quantityMin) {
+                "quantityMax must be at least quantityMin"
             }
         }
+        return ValidatedItem(
+            amount = amount,
+            currency = if (amount != null) currency else null,
+            isEstimate = isEstimate,
+            estimateReason = if (isEstimate) reason else null,
+            quantityEnabled = quantityEnabled,
+            quantityUnit = if (quantityEnabled) quantityUnit?.trim()?.takeIf { it.isNotEmpty() } else null,
+            quantityMin = if (quantityEnabled) quantityMin else 1,
+            quantityMax = if (quantityEnabled) quantityMax else null,
+        )
     }
 
     private fun toResponse(entity: ServiceOffered): ServiceOfferedResponse {
@@ -239,14 +297,18 @@ class ServicesOfferedService(
             businessId = entity.business!!.id!!,
             title = entity.title!!,
             description = entity.description,
-            coverImage = MediaResponse(
-                url = entity.coverImageUrl!!,
-                publicId = entity.coverImagePublicId!!
-            ),
-            priceMode = entity.priceMode!!,
+            coverImage = entity.coverImageUrl?.let { url ->
+                MediaResponse(url = url, publicId = entity.coverImagePublicId!!)
+            },
             priceAmount = entity.priceAmount,
             priceCurrency = entity.priceCurrency,
-            priceUnit = entity.priceUnit,
+            priceIsEstimate = entity.priceIsEstimate,
+            estimateReason = entity.estimateReason,
+            quantityEnabled = entity.quantityEnabled,
+            quantityUnit = entity.quantityUnit,
+            quantityMin = entity.quantityMin,
+            quantityMax = entity.quantityMax,
+            soldOnItsOwn = entity.soldOnItsOwn,
             status = entity.status,
             tag = entity.tag,
             validFrom = entity.validFrom,

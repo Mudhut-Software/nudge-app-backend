@@ -1,6 +1,5 @@
 package com.mudhut.nudge.servicesoffered.models
 
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
 import jakarta.validation.Valid
@@ -18,14 +17,31 @@ data class UpdateServiceOfferedRequest(
     @field:Valid
     val coverImage: MediaInput? = null,
 
-    val priceMode: PriceMode? = null,
-
     val priceAmount: BigDecimal? = null,
 
     val priceCurrency: String? = null,
 
+    // Null means "unchanged"; true removes the cover (and queues its deletion).
+    val clearCover: Boolean? = null,
+
+    // Null means "unchanged"; true nulls amount, currency and the estimate flag/reason.
+    val clearPrice: Boolean? = null,
+
+    val priceIsEstimate: Boolean? = null,
+
+    @field:Size(max = 200)
+    val estimateReason: String? = null,
+
+    val quantityEnabled: Boolean? = null,
+
     @field:Size(max = 32)
-    val priceUnit: String? = null,
+    val quantityUnit: String? = null,
+
+    val quantityMin: Int? = null,
+
+    val quantityMax: Int? = null,
+
+    val soldOnItsOwn: Boolean? = null,
 
     val status: ServiceOfferedStatus? = null,
 

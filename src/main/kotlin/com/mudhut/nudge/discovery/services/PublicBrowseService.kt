@@ -130,11 +130,15 @@ class PublicBrowseService(
         id = s.id!!,
         title = s.title!!,
         description = s.description,
-        priceMode = s.priceMode!!,
         priceAmount = s.priceAmount,
         priceCurrency = s.priceCurrency,
-        priceUnit = s.priceUnit,
-        coverImageUrl = s.coverImageUrl!!,
+        priceIsEstimate = s.priceIsEstimate,
+        estimateReason = s.estimateReason,
+        quantityEnabled = s.quantityEnabled,
+        quantityUnit = s.quantityUnit,
+        quantityMin = s.quantityMin,
+        quantityMax = s.quantityMax,
+        coverImageUrl = s.coverImageUrl,
         galleryImageUrls = s.galleryImages
             .sortedBy { it.position }
             .mapNotNull { it.url },

@@ -8,7 +8,6 @@ import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.discovery.repositories.DiscoveryBusinessRepository
 import com.mudhut.nudge.discovery.repositories.BusinessWithDistance
 import com.mudhut.nudge.discovery.repositories.ReviewRepository
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
@@ -81,10 +80,8 @@ class PublicBrowseServiceTest {
         description = null,
         coverImageUrl = coverUrl,
         coverImagePublicId = "pid-$id",
-        priceMode = PriceMode.FIXED,
         priceAmount = BigDecimal("100.00"),
         priceCurrency = "UGX",
-        priceUnit = null,
         status = status,
     )
 
