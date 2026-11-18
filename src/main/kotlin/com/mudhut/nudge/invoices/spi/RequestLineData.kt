@@ -2,7 +2,7 @@ package com.mudhut.nudge.invoices.spi
 
 import java.math.BigDecimal
 
-/** One derived invoice line from a service request (item or addon). */
+/** One derived invoice line from a service request (item, pick, or the agreed price). */
 data class RequestLineItem(
     val description: String,
     val unitAmount: BigDecimal,

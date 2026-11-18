@@ -22,6 +22,27 @@ internal object RequestItemMapping {
     fun items(items: List<ServiceRequestItem>, live: Boolean): List<ServiceRequestItemResponse> =
         items.sortedBy { it.position }.map { item(it, live) }
 
+    /** Pricing input read from a sent request's snapshots only; never the live catalogue. */
+    fun pricingInput(items: List<ServiceRequestItem>): List<PricingInputItem> =
+        items.sortedBy { it.position }.map { item ->
+            PricingInputItem(
+                serviceId = item.service?.id,
+                title = item.snapshotTitle ?: item.service?.title ?: "Item",
+                price = item.snapshotPriceAmount,
+                currency = item.snapshotPriceCurrency,
+                isEstimate = item.snapshotPriceIsEstimate,
+                quantity = item.quantity,
+                picks = item.picks.sortedBy { it.position }.map {
+                    PricingInputPick(
+                        groupName = it.snapshotGroupName ?: "Choice",
+                        title = it.snapshotTitle ?: "Choice",
+                        price = it.snapshotPrice,
+                        quantity = it.quantity,
+                    )
+                },
+            )
+        }
+
     fun pricing(items: List<ServiceRequestItemResponse>): Pair<PricingState, BigDecimal?> {
         val input = items.map { i ->
             PricingInputItem(

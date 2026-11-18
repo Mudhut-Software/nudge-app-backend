@@ -4,11 +4,9 @@ import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.Repository
 import org.springframework.data.repository.query.Param
-import java.math.BigDecimal
 import java.time.LocalDateTime
 
 interface MonthCountRow { val y: Int; val m: Int; val count: Long }
-interface MonthMoneyRow { val y: Int; val m: Int; val currency: String; val amount: BigDecimal }
 interface FirstCompletionRow { val customerId: Long; val firstCompletedAt: LocalDateTime }
 interface CohortProjection {
     val status: com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
@@ -16,14 +14,13 @@ interface CohortProjection {
     val respondedAt: LocalDateTime?
 }
 interface ServiceCountRow { val serviceId: Long; val title: String?; val count: Long }
-interface ServiceMoneyRow { val serviceId: Long; val currency: String; val amount: BigDecimal }
 
 /**
  * Read-only aggregates for the analytics SPI. A separate repository so the
  * reporting queries don't bloat `ServiceRequestRepository`.
  *
- * Item and pick money are summed in separate queries: joining both in one
- * would repeat each item's price once per pick. (Task 6 moves this onto RequestPricing.)
+ * Money is not summed in SQL: [completedWithItems] fetches the requests and the
+ * stats SPI prices them through `RequestPricing`, the single home for pricing rules.
  */
 interface RequestAnalyticsRepository : Repository<ServiceRequest, Long> {
 
@@ -56,37 +53,29 @@ interface RequestAnalyticsRepository : Repository<ServiceRequest, Long> {
         @Param("to") to: LocalDateTime,
     ): List<MonthCountRow>
 
+    /**
+     * Completed requests in the window with their items loaded, for pricing in Kotlin. Picks come
+     * from [picksFor]: items and picks are both bags, and Hibernate refuses to fetch two at once.
+     */
     @Query("""
-        SELECT year(r.completedAt) AS y, month(r.completedAt) AS m,
-               i.snapshotPriceCurrency AS currency, SUM(i.snapshotPriceAmount * i.quantity) AS amount
-        FROM ServiceRequestItem i JOIN i.request r
+        SELECT DISTINCT r FROM ServiceRequest r
+        JOIN FETCH r.items
         WHERE r.business.id = :businessId
           AND r.status = com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.COMPLETED
           AND r.completedAt >= :from AND r.completedAt < :to
-          AND i.snapshotPriceAmount IS NOT NULL AND i.snapshotPriceCurrency IS NOT NULL
-        GROUP BY year(r.completedAt), month(r.completedAt), i.snapshotPriceCurrency
     """)
-    fun itemWorkByMonth(
+    fun completedWithItems(
         @Param("businessId") businessId: Long,
         @Param("from") from: LocalDateTime,
         @Param("to") to: LocalDateTime,
-    ): List<MonthMoneyRow>
+    ): List<ServiceRequest>
 
+    /** Loads picks onto the already-managed items of [requests] (same persistence context). */
     @Query("""
-        SELECT year(r.completedAt) AS y, month(r.completedAt) AS m,
-               i.snapshotPriceCurrency AS currency, SUM(p.snapshotPrice * p.quantity) AS amount
-        FROM ServiceRequestItemPick p JOIN p.item i JOIN i.request r
-        WHERE r.business.id = :businessId
-          AND r.status = com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.COMPLETED
-          AND r.completedAt >= :from AND r.completedAt < :to
-          AND p.snapshotPrice IS NOT NULL AND i.snapshotPriceCurrency IS NOT NULL
-        GROUP BY year(r.completedAt), month(r.completedAt), i.snapshotPriceCurrency
+        SELECT DISTINCT i FROM ServiceRequestItem i LEFT JOIN FETCH i.picks
+        WHERE i.request IN :requests
     """)
-    fun pickWorkByMonth(
-        @Param("businessId") businessId: Long,
-        @Param("from") from: LocalDateTime,
-        @Param("to") to: LocalDateTime,
-    ): List<MonthMoneyRow>
+    fun picksFor(@Param("requests") requests: Collection<ServiceRequest>): List<com.mudhut.nudge.servicerequests.entities.ServiceRequestItem>
 
     @Query("""
         SELECT DISTINCT r.customer.id FROM ServiceRequest r
@@ -153,36 +142,6 @@ interface RequestAnalyticsRepository : Repository<ServiceRequest, Long> {
         @Param("from") from: LocalDateTime,
         @Param("to") to: LocalDateTime,
     ): List<ServiceCountRow>
-
-    @Query("""
-        SELECT s.id AS serviceId, i.snapshotPriceCurrency AS currency, SUM(i.snapshotPriceAmount * i.quantity) AS amount
-        FROM ServiceRequestItem i JOIN i.request r JOIN i.service s
-        WHERE r.business.id = :businessId
-          AND r.status = com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.COMPLETED
-          AND r.completedAt >= :from AND r.completedAt < :to
-          AND i.snapshotPriceAmount IS NOT NULL AND i.snapshotPriceCurrency IS NOT NULL
-        GROUP BY s.id, i.snapshotPriceCurrency
-    """)
-    fun itemWorkByService(
-        @Param("businessId") businessId: Long,
-        @Param("from") from: LocalDateTime,
-        @Param("to") to: LocalDateTime,
-    ): List<ServiceMoneyRow>
-
-    @Query("""
-        SELECT s.id AS serviceId, i.snapshotPriceCurrency AS currency, SUM(p.snapshotPrice * p.quantity) AS amount
-        FROM ServiceRequestItemPick p JOIN p.item i JOIN i.request r JOIN i.service s
-        WHERE r.business.id = :businessId
-          AND r.status = com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.COMPLETED
-          AND r.completedAt >= :from AND r.completedAt < :to
-          AND p.snapshotPrice IS NOT NULL AND i.snapshotPriceCurrency IS NOT NULL
-        GROUP BY s.id, i.snapshotPriceCurrency
-    """)
-    fun pickWorkByService(
-        @Param("businessId") businessId: Long,
-        @Param("from") from: LocalDateTime,
-        @Param("to") to: LocalDateTime,
-    ): List<ServiceMoneyRow>
 
     @Query("""
         SELECT DISTINCT s.id FROM ServiceRequestItem i JOIN i.request r JOIN i.service s

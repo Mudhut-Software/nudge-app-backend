@@ -93,6 +93,17 @@ class ServiceRequest(
     @Column(name = "viewed_at")
     var viewedAt: LocalDateTime? = null,
 
+    /** The figure the customer accepted for a mixed request; replaces itemised lines on the invoice. */
+    @Column(name = "agreed_price_amount", precision = 19, scale = 2)
+    var agreedPriceAmount: java.math.BigDecimal? = null,
+
+    @Column(name = "agreed_price_currency", length = 3)
+    var agreedPriceCurrency: String? = null,
+
+    /** The provider's note on the accepted figure; shown on the "Agreed price" line. */
+    @Column(name = "agreed_price_note", length = 500)
+    var agreedPriceNote: String? = null,
+
     @OneToMany(
         mappedBy = "request",
         cascade = [CascadeType.ALL],

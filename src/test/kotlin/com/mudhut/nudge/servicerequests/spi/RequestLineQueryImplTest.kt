@@ -90,4 +90,19 @@ class RequestLineQueryImplTest {
         val data = impl.forRequest(1L, 7L)!!
         assertEquals("USD", data.currency)
     }
+
+    @Test
+    fun `agreed price yields one "Agreed price" line in the agreed currency`() {
+        val req = completed(8L)
+        req.items[0].snapshotPriceAmount = null
+        req.agreedPriceAmount = BigDecimal("300.00")
+        req.agreedPriceCurrency = "KES"
+        req.agreedPriceNote = "Includes travel"
+        `when`(repo.findByIdAndBusinessId(8L, 1L)).thenReturn(Optional.of(req))
+        val data = impl.forRequest(1L, 8L)!!
+        assertEquals("KES", data.currency)
+        assertEquals(listOf("Agreed price: Includes travel"), data.lines.map { it.description })
+        assertEquals(BigDecimal("300.00"), data.lines.single().unitAmount)
+        assertEquals(1, data.lines.single().quantity)
+    }
 }

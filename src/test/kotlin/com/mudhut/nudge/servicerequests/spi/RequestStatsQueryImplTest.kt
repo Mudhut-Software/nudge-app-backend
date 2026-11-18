@@ -87,6 +87,8 @@ class RequestStatsQueryImplTest {
         val price: BigDecimal?,
         val picks: List<Pair<BigDecimal, Int>> = emptyList(),
         val currency: String? = "UGX",
+        val estimate: Boolean = false,
+        val quantity: Int = 1,
     )
 
     private fun request(
@@ -97,16 +99,20 @@ class RequestStatsQueryImplTest {
         submittedAt: LocalDateTime? = null,
         respondedAt: LocalDateTime? = null,
         business: Business = biz,
+        agreed: BigDecimal? = null,
+        agreedCurrency: String? = null,
     ): ServiceRequest {
         val r = ServiceRequest(
             customer = customer, business = business, status = status,
             completedAt = completedAt, submittedAt = submittedAt, respondedAt = respondedAt,
+            agreedPriceAmount = agreed, agreedPriceCurrency = agreedCurrency,
         )
         lines.forEachIndexed { idx, line ->
             val item = ServiceRequestItem(
                 request = r, service = line.service, position = idx,
                 snapshotTitle = line.service.title, snapshotPriceAmount = line.price,
-                snapshotPriceCurrency = line.currency,
+                snapshotPriceCurrency = line.currency, snapshotPriceIsEstimate = line.estimate,
+                quantity = line.quantity,
             )
             line.picks.forEachIndexed { j, (price, qty) ->
                 item.picks.add(
@@ -152,6 +158,33 @@ class RequestStatsQueryImplTest {
     }
 
     @Test
+    fun `work multiplies item price by quantity and adds picks`() {
+        completed(
+            user("customer"), LocalDateTime.of(2026, 10, 5, 10, 0),
+            Line(haircut, BigDecimal("100.00"), quantity = 2, picks = listOf(BigDecimal("10.00") to 3)),
+        )
+        val work = stats.completions(biz.id!!, FROM, TO).work.single()
+        assertEquals(0, BigDecimal("230.00").compareTo(work.amount))
+    }
+
+    @Test
+    fun `agreed price counts once and is attributed to the unpriced item`() {
+        val at = LocalDateTime.of(2026, 10, 5, 10, 0)
+        request(
+            user("customer"), COMPLETED,
+            listOf(Line(haircut, BigDecimal("100.00")), Line(shave, null)),
+            completedAt = at, submittedAt = at.minusDays(1),
+            agreed = BigDecimal("300.00"), agreedCurrency = "KES",
+        )
+        val s = stats.completions(biz.id!!, FROM, TO)
+        assertEquals(listOf(MonthlyMoney(OCT, "KES", BigDecimal("300.00"))), s.work.map { MonthlyMoney(it.month, it.currency, it.amount.setScale(2)) })
+
+        val rows = stats.serviceBreakdown(biz.id!!, LocalDateTime.of(2026, 10, 1, 0, 0), TO).associateBy { it.title }
+        assertEquals(0, BigDecimal("300.00").compareTo(rows.getValue("Shave").work.single().amount))
+        assertEquals(0, BigDecimal.ZERO.compareTo(rows.getValue("Haircut").work.sumOf { it.amount }))
+    }
+
+    @Test
     fun `a quote-priced item marks the job unpriced and is left out of work`() {
         val c = user("customer")
         completed(
@@ -168,14 +201,14 @@ class RequestStatsQueryImplTest {
     }
 
     @Test
-    fun `a priced item with a null currency is excluded without crashing`() {
+    fun `a priced item with a null currency counts in the default currency`() {
         val c = user("customer")
         completed(c, LocalDateTime.of(2026, 10, 5, 10, 0), Line(haircut, BigDecimal("100.00"), currency = null))
 
         val s = stats.completions(biz.id!!, FROM, TO)
 
         assertEquals(listOf(MonthlyCount(OCT, 1)), s.jobs)
-        assertEquals(emptyList<MonthlyMoney>(), s.work)
+        assertEquals(listOf(Money("USD", BigDecimal("100.00"))), s.work.map { Money(it.currency, it.amount) })
     }
 
     @Test

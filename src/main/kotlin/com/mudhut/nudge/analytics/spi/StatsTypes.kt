@@ -13,9 +13,9 @@ data class Money(val currency: String, val amount: BigDecimal)
 /** Completed jobs bucketed by `completedAt` month. */
 data class CompletionStats(
     val jobs: List<MonthlyCount>,
-    /** Jobs with at least one item whose price is null (QUOTE pricing). */
+    /** Jobs with at least one item whose price is null (price to be confirmed at submit). */
     val unpricedJobs: List<MonthlyCount>,
-    /** Item prices plus addon delta × quantity, per item currency. */
+    /** Item price × quantity plus picks, or the agreed price when one was accepted; per request currency. */
     val work: List<MonthlyMoney>,
 )
 
