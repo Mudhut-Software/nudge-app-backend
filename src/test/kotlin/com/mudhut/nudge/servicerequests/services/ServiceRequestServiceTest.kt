@@ -6,16 +6,25 @@ import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
+import com.mudhut.nudge.servicerequests.entities.PricingState
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemPick
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestPriceProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.PriceEventKind
 import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentInput
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
+import com.mudhut.nudge.servicerequests.models.PickInput
 import com.mudhut.nudge.servicerequests.models.RequestItemInput
 import com.mudhut.nudge.servicerequests.models.UpdateRequestPayload
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestPriceProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
+import com.mudhut.nudge.servicesoffered.entities.GroupChoice
+import com.mudhut.nudge.servicesoffered.entities.GroupSelection
+import com.mudhut.nudge.servicesoffered.entities.OptionGroup
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
@@ -24,6 +33,7 @@ import com.mudhut.nudge.users.entities.UserRole
 import com.mudhut.nudge.users.repositories.UserRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import com.mudhut.nudge.utils.exceptions.InvalidStateTransitionException
+import com.mudhut.nudge.utils.exceptions.PriceNotSettledException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -50,14 +60,20 @@ class ServiceRequestServiceTest {
     private val userRepo: UserRepository = mock()
     private val businessRepo: BusinessRepository = mock()
     private val serviceRepo: ServiceOfferedRepository = mock()
-    private val addonRepo: com.mudhut.nudge.servicesoffered.repositories.ServiceAddonRepository = mock()
     private val publisher: ServiceRequestEventPublisher = mock()
     private val popularityPublisher: RequestPopularityPublisher = mock()
     private val proposalRepo: ServiceRequestProposalRepository = mock()
+    private val priceProposalRepo: ServiceRequestPriceProposalRepository = mock()
 
     private val sut = ServiceRequestService(
-        repo, userRepo, businessRepo, serviceRepo, addonRepo, publisher, popularityPublisher, proposalRepo,
+        repo, userRepo, businessRepo, serviceRepo, publisher, popularityPublisher, proposalRepo, priceProposalRepo,
     )
+
+    init {
+        // Price-touching paths load the request with a row lock. The locked finder answers with
+        // whatever each test stubbed on findById, so fixtures stay written once.
+        whenever(repo.findWithLockById(any())).thenAnswer { repo.findById(it.arguments[0] as Long).orElse(null) }
+    }
 
     // --- fixtures ---
 
@@ -93,10 +109,8 @@ class ServiceRequestServiceTest {
             description = "Full home",
             coverImageUrl = "https://cdn/svc.jpg",
             coverImagePublicId = "nudge/images/svc",
-            priceMode = PriceMode.FIXED,
             priceAmount = BigDecimal("250000.00"),
             priceCurrency = "UGX",
-            priceUnit = null,
             status = status,
         )
 
@@ -1146,5 +1160,563 @@ class ServiceRequestServiceTest {
         assertThrows(BusinessNotFoundException::class.java) {
             sut.confirmCompletion(alice.email!!, 1L)
         }
+    }
+
+    // --- quantity and picks ---
+
+    /** A catering package: quantity per guest, a required palette and a "choose exactly 3" juice group. */
+    private inner class Package(biz: Business) {
+        val catering = ServiceOffered(
+            id = 300L, business = biz, title = "Catering", coverImageUrl = "https://cdn/cat.jpg",
+            priceAmount = BigDecimal("20000.00"), priceCurrency = "UGX",
+            priceIsEstimate = true, estimateReason = "Final count may change",
+            quantityEnabled = true, quantityUnit = "guest", quantityMin = 10, quantityMax = 200,
+        )
+        val palette = OptionGroup(id = 31L, item = catering, name = "Palette", selection = GroupSelection.SINGLE, required = true, position = 0)
+        val juices = OptionGroup(
+            id = 32L, item = catering, name = "Juices", selection = GroupSelection.MULTIPLE,
+            required = true, minPicks = 3, maxPicks = 3, position = 1,
+        )
+        val warmItem = ServiceOffered(id = 301L, business = biz, title = "Warm", priceAmount = null)
+        val coolItem = ServiceOffered(id = 302L, business = biz, title = "Cool", priceAmount = null)
+        val mangoItem = ServiceOffered(id = 303L, business = biz, title = "Mango", priceAmount = BigDecimal("3000.00"), priceCurrency = "UGX")
+        val passionItem = ServiceOffered(id = 304L, business = biz, title = "Passion", priceAmount = BigDecimal("2500.00"), priceCurrency = "UGX")
+        val warm = GroupChoice(id = 401L, group = palette, item = warmItem, position = 0)
+        val cool = GroupChoice(id = 402L, group = palette, item = coolItem, position = 1)
+        val mango = GroupChoice(id = 403L, group = juices, item = mangoItem, quantityEnabled = true, maxQuantity = 3, position = 0)
+        // Group price overrides the linked item's own price.
+        val passion = GroupChoice(
+            id = 404L, group = juices, item = passionItem, priceOverride = BigDecimal("2000.00"),
+            quantityEnabled = true, maxQuantity = 3, position = 1,
+        )
+
+        init {
+            palette.choices.addAll(listOf(warm, cool))
+            juices.choices.addAll(listOf(mango, passion))
+            catering.groups.addAll(listOf(palette, juices))
+        }
+
+        val validPicks = listOf(PickInput(warm.id!!), PickInput(mango.id!!, 2), PickInput(passion.id!!, 1))
+    }
+
+    private fun draftWith(alice: User, biz: Business, pkg: Package, picks: Boolean = true): ServiceRequest {
+        val req = ServiceRequest(
+            id = 1L, customer = alice, business = biz, status = ServiceRequestStatus.DRAFT,
+            requestedDate = LocalDateTime.now().plusDays(3), serviceLocation = "Kampala",
+        )
+        val item = ServiceRequestItem(request = req, service = pkg.catering, position = 0, quantity = 40)
+        if (picks) {
+            listOf(Triple(pkg.warm, 1, 0), Triple(pkg.mango, 2, 1), Triple(pkg.passion, 1, 2)).forEach { (c, q, pos) ->
+                item.picks.add(ServiceRequestItemPick(item = item, choice = c, groupId = c.group!!.id, quantity = q, position = pos))
+            }
+        }
+        req.items.add(item)
+        return req
+    }
+
+    @Test
+    fun `draft stores item quantity and picks`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(businessRepo.findById(biz.id!!)).thenReturn(Optional.of(biz))
+        whenever(serviceRepo.findAllById(listOf(300L))).thenReturn(listOf(pkg.catering))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.create(
+            alice.email!!,
+            CreateRequestPayload(
+                businessId = biz.id,
+                items = listOf(RequestItemInput(serviceId = 300L, quantity = 40, picks = pkg.validPicks)),
+            ),
+        )
+
+        val saved = argumentCaptor<ServiceRequest>().also { verify(repo).save(it.capture()) }.firstValue
+        val item = saved.items.single()
+        assertEquals(40, item.quantity)
+        assertEquals(listOf(401L, 403L, 404L), item.picks.map { it.choice?.id })
+        assertEquals(listOf(1, 2, 1), item.picks.map { it.quantity })
+        assertEquals(listOf(31L, 32L, 32L), item.picks.map { it.groupId })
+
+        val dto = response.items.single()
+        assertEquals(40, dto.quantity)
+        assertEquals("guest", dto.quantityUnit)
+        assertTrue(dto.priceIsEstimate)
+        assertEquals("Final count may change", dto.estimateReason)
+        assertEquals(listOf("Warm", "Mango", "Passion"), dto.picks.map { it.title })
+        assertEquals(listOf("Palette", "Juices", "Juices"), dto.picks.map { it.groupName })
+        assertEquals(listOf(null, BigDecimal("3000.00"), BigDecimal("2000.00")), dto.picks.map { it.price })
+        assertEquals(PricingState.ESTIMATED, response.pricing)
+        // 20000 x 40 + 3000 x 2 + 2000 x 1
+        assertEquals(0, BigDecimal("808000.00").compareTo(response.total))
+    }
+
+    @Test
+    fun `draft refuses an incomplete selection, naming the group`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(businessRepo.findById(biz.id!!)).thenReturn(Optional.of(biz))
+        whenever(serviceRepo.findAllById(listOf(300L))).thenReturn(listOf(pkg.catering))
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            sut.create(
+                alice.email!!,
+                CreateRequestPayload(
+                    businessId = biz.id,
+                    items = listOf(RequestItemInput(serviceId = 300L, quantity = 40, picks = listOf(PickInput(pkg.warm.id!!)))),
+                ),
+            )
+        }
+        assertEquals("Juices: choose exactly 3", ex.message)
+    }
+
+    @Test
+    fun `patching items keeps surviving picks in place instead of re-creating them`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        val req = draftWith(alice, biz, pkg)
+        val item = req.items.single()
+        val warmPick = item.picks[0]
+        val mangoPick = item.picks[1]
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+        whenever(serviceRepo.findAllById(listOf(300L))).thenReturn(listOf(pkg.catering))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        sut.patch(
+            alice.email!!, 1L,
+            UpdateRequestPayload(
+                items = listOf(
+                    RequestItemInput(
+                        serviceId = 300L, quantity = 50,
+                        picks = listOf(PickInput(pkg.cool.id!!), PickInput(pkg.mango.id!!, 3)),
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(req.items.single() === item, "the item row is kept")
+        assertEquals(50, item.quantity)
+        assertEquals(listOf(402L, 403L), item.picks.map { it.choice?.id })
+        assertTrue(item.picks.none { it === warmPick }, "dropped pick is removed")
+        assertTrue(item.picks[1] === mangoPick, "kept pick is updated in place")
+        assertEquals(3, mangoPick.quantity)
+        assertEquals(1, mangoPick.position)
+    }
+
+    @Test
+    fun `submit snapshots item estimate and each pick's group, title and effective price`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        val req = draftWith(alice, biz, pkg)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.submit(alice.email!!, 1L)
+
+        val item = req.items.single()
+        assertTrue(item.snapshotPriceIsEstimate)
+        assertEquals("Final count may change", item.snapshotEstimateReason)
+        assertEquals("guest", item.snapshotQuantityUnit)
+        assertEquals(40, item.quantity)
+        assertEquals(listOf("Palette", "Juices", "Juices"), item.picks.map { it.snapshotGroupName })
+        assertEquals(listOf("Warm", "Mango", "Passion"), item.picks.map { it.snapshotTitle })
+        assertEquals(listOf(null, BigDecimal("3000.00"), BigDecimal("2000.00")), item.picks.map { it.snapshotPrice })
+        assertEquals(ServiceRequestStatus.PENDING, response.status)
+        assertEquals(PricingState.ESTIMATED, response.pricing)
+    }
+
+    @Test
+    fun `submit refuses when a required group's pick was paused, naming the group`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        val req = draftWith(alice, biz, pkg)
+        pkg.warmItem.status = ServiceOfferedStatus.INACTIVE
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+
+        val ex = assertThrows(IllegalArgumentException::class.java) { sut.submit(alice.email!!, 1L) }
+
+        assertEquals("Palette: this choice is no longer available", ex.message)
+        assertEquals(ServiceRequestStatus.DRAFT, req.status)
+        verify(repo, never()).save(any<ServiceRequest>())
+    }
+
+    @Test
+    fun `submit refuses when a picked choice was deleted, naming its group`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        val req = draftWith(alice, biz, pkg)
+        // GroupChoicesDeletionListener nulled the pointer; the choice is gone from the group.
+        req.items.single().picks[0].choice = null
+        pkg.palette.choices.remove(pkg.warm)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+
+        val ex = assertThrows(IllegalArgumentException::class.java) { sut.submit(alice.email!!, 1L) }
+
+        assertEquals("Palette: this choice is no longer available", ex.message)
+    }
+
+    // --- sold on its own ---
+
+    @Test
+    fun `draft refuses an item that is not sold on its own, naming it`() {
+        val alice = user()
+        val biz = business()
+        val svc = service(id = 100L, biz = biz).apply { soldOnItsOwn = false }
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(businessRepo.findById(biz.id!!)).thenReturn(Optional.of(biz))
+        whenever(serviceRepo.findAllById(listOf(100L))).thenReturn(listOf(svc))
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            sut.create(
+                alice.email!!,
+                CreateRequestPayload(businessId = biz.id, items = listOf(RequestItemInput(serviceId = 100L))),
+            )
+        }
+        assertEquals("Deep Clean isn't sold on its own", ex.message)
+        verify(repo, never()).save(any<ServiceRequest>())
+    }
+
+    @Test
+    fun `submit refuses a draft whose item was switched off as sold on its own`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        val req = draftWith(alice, biz, pkg)
+        pkg.catering.soldOnItsOwn = false
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+
+        val ex = assertThrows(IllegalArgumentException::class.java) { sut.submit(alice.email!!, 1L) }
+
+        assertEquals("Catering: this item is no longer available on its own", ex.message)
+        assertEquals(ServiceRequestStatus.DRAFT, req.status)
+    }
+
+    @Test
+    fun `duplicate treats an item no longer sold on its own as unavailable`() {
+        val alice = user()
+        val biz = business()
+        val kept = service(id = 100L, biz = biz)
+        val addOnly = service(id = 101L, biz = biz).apply { soldOnItsOwn = false }
+        val original = ServiceRequest(id = 1L, customer = alice, business = biz, status = ServiceRequestStatus.COMPLETED)
+        original.items.addAll(
+            listOf(
+                ServiceRequestItem(request = original, service = kept, position = 0, snapshotTitle = "Deep Clean"),
+                ServiceRequestItem(request = original, service = addOnly, position = 1, snapshotTitle = "Fairy lights"),
+            ),
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(original))
+        whenever(serviceRepo.findAllById(listOf(100L, 101L))).thenReturn(listOf(kept, addOnly))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.duplicate(alice.email!!, 1L)
+
+        assertEquals(listOf(100L), response.request.items.map { it.serviceId })
+        assertEquals(listOf("Fairy lights"), response.unavailableItems)
+    }
+
+    @Test
+    fun `renaming a choice after submit leaves the snapshot`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        val req = draftWith(alice, biz, pkg)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        sut.submit(alice.email!!, 1L)
+
+        pkg.mangoItem.title = "Mango Deluxe"
+        pkg.passion.priceOverride = BigDecimal("9999.00")
+        pkg.juices.name = "Fresh juices"
+
+        val pick = sut.get(alice.email!!, 1L).items.single().picks
+        assertEquals(listOf("Warm", "Mango", "Passion"), pick.map { it.title })
+        assertEquals("Juices", pick[2].groupName)
+        assertEquals(BigDecimal("2000.00"), pick[2].price)
+    }
+
+    @Test
+    fun `duplicate copies picks still available and drops the rest`() {
+        val alice = user()
+        val biz = business()
+        val pkg = Package(biz)
+        val original = draftWith(alice, biz, pkg).apply { status = ServiceRequestStatus.COMPLETED }
+        pkg.passionItem.status = ServiceOfferedStatus.INACTIVE          // paused
+        original.items.single().picks[0].choice = null                  // deleted
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(original))
+        whenever(serviceRepo.findAllById(listOf(300L))).thenReturn(listOf(pkg.catering))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+
+        val response = sut.duplicate(alice.email!!, 1L)
+
+        val copy = response.request.items.single()
+        assertEquals(40, copy.quantity)
+        assertEquals(listOf("Mango"), copy.picks.map { it.title })
+        assertEquals(listOf(2), copy.picks.map { it.quantity })
+        assertEquals(listOf(403L), copy.picks.map { it.choiceId })
+    }
+
+    @Test
+    fun `pricing an unpriced item after submit leaves the sent request to be confirmed`() {
+        val alice = user()
+        val biz = business()
+        val svc = service(id = 100L, biz = biz).apply { priceAmount = null; priceCurrency = null; coverImageUrl = null }
+        val req = ServiceRequest(
+            id = 1L, customer = alice, business = biz, status = ServiceRequestStatus.DRAFT,
+            requestedDate = LocalDateTime.now().plusDays(3), serviceLocation = "Kampala",
+        )
+        req.items.add(ServiceRequestItem(request = req, service = svc, position = 0))
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(req))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        val sent = sut.submit(alice.email!!, 1L)
+        assertEquals(PricingState.TO_BE_CONFIRMED, sent.pricing)
+
+        // The provider prices the item (and adds a cover) in the catalogue afterwards.
+        svc.priceAmount = BigDecimal("300000.00")
+        svc.priceCurrency = "UGX"
+        svc.coverImageUrl = "https://cdn/new.jpg"
+
+        val after = sut.get(alice.email!!, 1L)
+        assertEquals(PricingState.TO_BE_CONFIRMED, after.pricing)
+        assertNull(after.total)
+        assertNull(after.items.single().priceAmount)
+        assertNull(after.items.single().priceCurrency)
+        assertNull(after.items.single().coverImageUrl)
+    }
+
+    // --- price proposals (Task 7) ---
+
+    /** Alice's CONFIRMED booking, job time 30h ago (prompt window open), with one snapshotted item. */
+    private fun bookedWith(alice: User, price: String?, estimate: Boolean): ServiceRequest {
+        val r = confirmedRequest(alice, LocalDateTime.now().minusHours(30))
+        r.items.add(
+            ServiceRequestItem(
+                request = r, position = 0, quantity = 1, snapshotTitle = "Venue dressing",
+                snapshotPriceAmount = price?.let { BigDecimal(it) },
+                snapshotPriceCurrency = price?.let { "UGX" },
+                snapshotPriceIsEstimate = estimate,
+            ),
+        )
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        whenever(repo.findById(1L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        whenever(priceProposalRepo.save(any<ServiceRequestPriceProposal>()))
+            .thenAnswer { it.arguments[0] as ServiceRequestPriceProposal }
+        return r
+    }
+
+    private fun outstandingPrice(amount: String = "4200000.00", note: String? = "after visiting the venue") =
+        ServiceRequestPriceProposal(
+            id = 7L, amount = BigDecimal(amount), currency = "UGX", note = note,
+            proposedAt = LocalDateTime.now(ZoneOffset.UTC).minusHours(1), outcome = ProposalOutcome.OUTSTANDING,
+        ).also {
+            whenever(priceProposalRepo.findAllByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING)).thenReturn(listOf(it))
+            whenever(priceProposalRepo.findFirstByRequestIdOrderByProposedAtDescIdDesc(1L)).thenReturn(it)
+        }
+
+    @Test
+    fun `accepting sets the agreed price`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val alice = user()
+        val r = bookedWith(alice, null, estimate = false)
+        val proposal = outstandingPrice()
+
+        val response = sut.acceptPrice(alice.email!!, 1L, 7L)
+
+        assertEquals(ProposalOutcome.ACCEPTED, proposal.outcome)
+        assertWrittenInUtcNotLocalZone(proposal.respondedAt)
+        assertEquals(0, BigDecimal("4200000.00").compareTo(r.agreedPriceAmount))
+        assertEquals("UGX", r.agreedPriceCurrency)
+        assertEquals("after visiting the venue", r.agreedPriceNote)
+        assertEquals(ServiceRequestStatus.CONFIRMED, response.status)
+        assertEquals(0, BigDecimal("4200000.00").compareTo(response.agreedPrice!!.amount))
+        assertEquals("UGX", response.agreedPrice!!.currency)
+        assertEquals("after visiting the venue", response.agreedPrice!!.note)
+        assertNull(response.total)
+        assertTrue(response.priceSettled)
+        assertEquals(ProposalOutcome.ACCEPTED, response.priceProposal?.outcome)
+        verify(publisher).priceChanged(any(), eq(PriceEventKind.ACCEPTED), eq(proposal))
+    }
+
+    @Test
+    fun `accept with nothing outstanding is 409`() {
+        val alice = user()
+        val r = bookedWith(alice, null, estimate = false)
+
+        assertThrows(InvalidStateTransitionException::class.java) { sut.acceptPrice(alice.email!!, 1L, 7L) }
+        assertNull(r.agreedPriceAmount)
+    }
+
+    @Test
+    fun `reject with nothing outstanding is 409`() {
+        val alice = user()
+        val r = bookedWith(alice, null, estimate = false)
+
+        assertThrows(InvalidStateTransitionException::class.java) { sut.rejectPrice(alice.email!!, 1L, 7L, "No") }
+        assertEquals(ServiceRequestStatus.CONFIRMED, r.status)
+    }
+
+    @Test
+    fun `price responses on another customer's request throw 404`() {
+        val alice = user(id = 1L, email = "alice@example.com")
+        val bob = user(id = 2L, email = "bob@example.com")
+        bookedWith(bob, null, estimate = false)
+        whenever(userRepo.findByEmail(alice.email!!)).thenReturn(Optional.of(alice))
+        outstandingPrice()
+
+        assertThrows(BusinessNotFoundException::class.java) { sut.acceptPrice(alice.email!!, 1L, 7L) }
+        assertThrows(BusinessNotFoundException::class.java) { sut.rejectPrice(alice.email!!, 1L, 7L, null) }
+    }
+
+    @Test
+    fun `rejecting cancels with the reason and notifies via status change`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val alice = user()
+        val r = bookedWith(alice, "3500000.00", estimate = true)
+        val proposal = outstandingPrice()
+
+        val response = sut.rejectPrice(alice.email!!, 1L, 7L, "  Too expensive  ")
+
+        assertEquals(ServiceRequestStatus.CANCELLED, response.status)
+        assertEquals("Too expensive", r.cancellationReason)
+        assertNotNull(r.cancelledAt)
+        assertNull(r.agreedPriceAmount)
+        assertEquals(ProposalOutcome.REJECTED, proposal.outcome)
+        assertEquals("Too expensive", proposal.responseNote)
+        assertWrittenInUtcNotLocalZone(proposal.respondedAt)
+        verify(publisher).statusChanged(
+            any(), eq(ServiceRequestStatus.CONFIRMED), eq(RequestActor.CUSTOMER), eq("Too expensive"), eq(null),
+        )
+        verify(popularityPublisher).recomputeAndPublish(10L)
+        verify(publisher, never()).priceChanged(any(), any(), any())
+    }
+
+    @Test
+    fun `customer cancel settles an outstanding price proposal`() {
+        assertTestJvmPinnedToNonUtcZone()
+        val alice = user()
+        bookedWith(alice, null, estimate = false)
+        val proposal = outstandingPrice()
+
+        sut.cancel(alice.email!!, 1L, "Plans changed")
+
+        assertEquals(ProposalOutcome.REJECTED, proposal.outcome)
+        assertWrittenInUtcNotLocalZone(proposal.respondedAt)
+        // The customer's cancellation reason is not an answer to the price.
+        assertNull(proposal.responseNote)
+    }
+
+    @Test
+    fun `confirm-completion and no-show are refused while unsettled`() {
+        val alice = user()
+        val r = bookedWith(alice, "3500000.00", estimate = true)
+        outstandingPrice()
+
+        assertThrows(PriceNotSettledException::class.java) { sut.confirmCompletion(alice.email!!, 1L) }
+        assertThrows(PriceNotSettledException::class.java) { sut.reportNoShow(alice.email!!, 1L) }
+        assertEquals(ServiceRequestStatus.CONFIRMED, r.status)
+    }
+
+    @Test
+    fun `confirm-completion and no-show are refused for a to-be-confirmed booking with no agreed price`() {
+        val alice = user()
+        bookedWith(alice, null, estimate = false)
+
+        assertThrows(PriceNotSettledException::class.java) { sut.confirmCompletion(alice.email!!, 1L) }
+        assertThrows(PriceNotSettledException::class.java) { sut.reportNoShow(alice.email!!, 1L) }
+    }
+
+    @Test
+    fun `the response reports an unanswered price as unsettled`() {
+        val alice = user()
+        bookedWith(alice, "3500000.00", estimate = true)
+        outstandingPrice()
+
+        val response = sut.get(alice.email!!, 1L)
+
+        assertEquals(false, response.priceSettled)
+        assertEquals(ProposalOutcome.OUTSTANDING, response.priceProposal?.outcome)
+        assertEquals(0, BigDecimal("4200000.00").compareTo(response.priceProposal!!.amount))
+        // The estimate stays the visible total until the new price is accepted.
+        assertEquals(0, BigDecimal("3500000.00").compareTo(response.total))
+        assertNull(response.agreedPrice)
+    }
+
+    @Test
+    fun `accept naming a superseded proposal is 409 and changes nothing`() {
+        val alice = user()
+        val r = bookedWith(alice, null, estimate = false)
+        val current = outstandingPrice()
+
+        val ex = assertThrows(InvalidStateTransitionException::class.java) { sut.acceptPrice(alice.email!!, 1L, 6L) }
+
+        assertTrue(ex.message!!.contains("replaced"))
+        assertEquals(ProposalOutcome.OUTSTANDING, current.outcome)
+        assertNull(r.agreedPriceAmount)
+        verify(priceProposalRepo, never()).save(any<ServiceRequestPriceProposal>())
+        verify(repo, never()).save(any<ServiceRequest>())
+        verify(publisher, never()).priceChanged(any(), any(), any())
+    }
+
+    @Test
+    fun `reject naming a superseded proposal is 409 and changes nothing`() {
+        val alice = user()
+        val r = bookedWith(alice, null, estimate = false)
+        val current = outstandingPrice()
+
+        assertThrows(InvalidStateTransitionException::class.java) { sut.rejectPrice(alice.email!!, 1L, 6L, "No") }
+
+        assertEquals(ServiceRequestStatus.CONFIRMED, r.status)
+        assertEquals(ProposalOutcome.OUTSTANDING, current.outcome)
+        verify(priceProposalRepo, never()).save(any<ServiceRequestPriceProposal>())
+    }
+
+    @Test
+    fun `cancel settles every outstanding price row`() {
+        val alice = user()
+        bookedWith(alice, null, estimate = false)
+        val rows = listOf(5L, 6L).map {
+            ServiceRequestPriceProposal(id = it, amount = BigDecimal("1"), currency = "UGX", outcome = ProposalOutcome.OUTSTANDING)
+        }
+        whenever(priceProposalRepo.findAllByRequestIdAndOutcome(1L, ProposalOutcome.OUTSTANDING)).thenReturn(rows)
+
+        sut.cancel(alice.email!!, 1L, null)
+
+        rows.forEach { assertEquals(ProposalOutcome.REJECTED, it.outcome) }
+    }
+
+    @Test
+    fun `price answers, completion answers and cancel load the request with a row lock`() {
+        val alice = user()
+        bookedWith(alice, "3500000.00", estimate = true)
+
+        sut.confirmCompletion(alice.email!!, 1L)
+        bookedWith(alice, "3500000.00", estimate = true)
+        sut.reportNoShow(alice.email!!, 1L)
+        bookedWith(alice, "3500000.00", estimate = true)
+        outstandingPrice()
+        sut.acceptPrice(alice.email!!, 1L, 7L)
+        bookedWith(alice, "3500000.00", estimate = true)
+        outstandingPrice()
+        sut.rejectPrice(alice.email!!, 1L, 7L, null)
+        bookedWith(alice, "3500000.00", estimate = true)
+        sut.cancel(alice.email!!, 1L, null)
+
+        verify(repo, org.mockito.kotlin.times(5)).findWithLockById(1L)
     }
 }

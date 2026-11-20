@@ -6,29 +6,31 @@ import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestAttachment
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
-import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemAddon
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemPick
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestPriceProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.PriceEventKind
 import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentResponse
 import com.mudhut.nudge.servicerequests.models.CreateRequestPayload
+import com.mudhut.nudge.servicerequests.models.MoneyDto
+import com.mudhut.nudge.servicerequests.models.PickInput
+import com.mudhut.nudge.servicerequests.models.PriceProposalResponse
 import com.mudhut.nudge.servicerequests.models.ProposalResponse
 import com.mudhut.nudge.servicerequests.models.RequestItemInput
-import com.mudhut.nudge.servicerequests.models.ServiceRequestItemAddonResponse
-import com.mudhut.nudge.servicerequests.models.ServiceRequestItemResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
 import com.mudhut.nudge.servicerequests.models.UpdateRequestPayload
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestPriceProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
-import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
+import com.mudhut.nudge.servicesoffered.entities.GroupChoice
+import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
-import com.mudhut.nudge.servicesoffered.repositories.ServiceAddonRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.repositories.UserRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import com.mudhut.nudge.utils.exceptions.InvalidStateTransitionException
-import com.mudhut.nudge.utils.exceptions.ServiceAddonNotFoundException
 import jakarta.persistence.EntityNotFoundException
 import jakarta.transaction.Transactional
 import org.springframework.data.domain.Page
@@ -53,10 +55,10 @@ class ServiceRequestService(
     private val userRepo: UserRepository,
     private val businessRepo: BusinessRepository,
     private val serviceRepo: ServiceOfferedRepository,
-    private val addonRepo: ServiceAddonRepository,
     private val eventPublisher: ServiceRequestEventPublisher,
     private val popularityPublisher: RequestPopularityPublisher,
     private val proposalRepo: ServiceRequestProposalRepository,
+    private val priceProposalRepo: ServiceRequestPriceProposalRepository,
 ) {
 
     @Transactional
@@ -90,7 +92,6 @@ class ServiceRequestService(
 
         payload.items?.let { items ->
             require(items.isNotEmpty()) { "items must not be empty" }
-            request.items.clear()
             attachItems(request, items, request.business!!)
         }
         payload.requestedDate?.let { request.requestedDate = it }
@@ -127,10 +128,16 @@ class ServiceRequestService(
 
         require(request.items.isNotEmpty()) { "At least one item required" }
         require(request.requestedDate != null) { "requestedDate is required" }
+        // requestedDate is the customer's wall-clock time (sent without a zone), so it is compared
+        // with the server's local clock, not UTC.
         require(request.requestedDate!!.isAfter(LocalDateTime.now())) {
             "requestedDate must be in the future"
         }
         require(!request.serviceLocation.isNullOrBlank()) { "serviceLocation is required" }
+
+        // The catalogue may have changed since the draft was saved: re-check against it as it is now.
+        val problems = request.items.sortedBy { it.position }.flatMap { liveProblems(it) }
+        require(problems.isEmpty()) { problems.joinToString("; ") }
 
         request.items.forEach { item ->
             val source = item.service!!
@@ -138,18 +145,10 @@ class ServiceRequestService(
             item.snapshotPriceAmount = source.priceAmount
             item.snapshotPriceCurrency = source.priceCurrency
             item.snapshotCoverUrl = source.coverImageUrl
-
-            item.addons.forEach { snap ->
-                val live = snap.addon
-                if (live != null) {
-                    snap.snapshotTitle = live.title
-                    snap.snapshotPriceDelta = live.priceDelta
-                    snap.snapshotPriceUnit = live.priceUnit
-                }
-            }
-            // Defensive prune: any snapshot row that lost its live ref *and* has no snapshot title was
-            // orphaned in a delete race; drop it (orphanRemoval handles persistence).
-            item.addons.removeAll { it.addon == null && it.snapshotTitle == null }
+            item.snapshotPriceIsEstimate = source.priceIsEstimate
+            item.snapshotEstimateReason = source.estimateReason?.takeIf { source.priceIsEstimate }
+            item.snapshotQuantityUnit = source.quantityUnit?.takeIf { source.quantityEnabled }
+            item.picks.forEach { pick -> snapshot(pick, pick.choice!!) }
         }
 
         request.status = ServiceRequestStatus.PENDING
@@ -177,16 +176,24 @@ class ServiceRequestService(
     @Transactional
     fun cancel(email: String, id: Long, reason: String?): ServiceRequestResponse {
         val customer = requireUser(email)
-        val request = requireOwned(id, customer)
+        val request = requireOwnedLocked(id, customer)
         // Captured before the write — the event reports where the request came from.
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CANCELLED)
+        return cancelBooking(request, from, reason)
+    }
 
-        // Cancelling out of REVISION_REQUESTED must not leave an OUTSTANDING row
-        // on a terminal request.
-        settleOutstanding(id)
+    /**
+     * The customer's cancellation, shared by [cancel] and [rejectPrice] (declining a price
+     * cancels the booking). Caller has already checked the transition.
+     */
+    private fun cancelBooking(request: ServiceRequest, from: ServiceRequestStatus, reason: String?): ServiceRequestResponse {
+        // Cancelling out of REVISION_REQUESTED, or with a price unanswered, must not
+        // leave an OUTSTANDING row on a terminal request.
+        settleOutstanding(requireNotNull(request.id))
 
         request.status = ServiceRequestStatus.CANCELLED
+        // JVM-local on purpose, per DECISIONS 2026-10-28.
         request.cancelledAt = LocalDateTime.now()
         request.cancellationReason = reason?.trim()?.takeIf { it.isNotEmpty() }
         val saved = repo.save(request)
@@ -211,11 +218,12 @@ class ServiceRequestService(
     @Transactional
     fun confirmCompletion(email: String, id: Long): ServiceRequestResponse {
         val customer = requireUser(email)
-        val request = requireOwned(id, customer)
+        val request = requireOwnedLocked(id, customer)
 
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.COMPLETED)
         requireCompletionWindowOpen(request)
+        requirePriceSettled(request)
 
         request.status = ServiceRequestStatus.COMPLETED
         request.completedAt = LocalDateTime.now()
@@ -236,11 +244,12 @@ class ServiceRequestService(
     @Transactional
     fun reportNoShow(email: String, id: Long): ServiceRequestResponse {
         val customer = requireUser(email)
-        val request = requireOwned(id, customer)
+        val request = requireOwnedLocked(id, customer)
 
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.NO_SHOW)
         requireCompletionWindowOpen(request)
+        requirePriceSettled(request)
 
         request.status = ServiceRequestStatus.NO_SHOW
         val saved = repo.save(request)
@@ -264,6 +273,83 @@ class ServiceRequestService(
         require(LocalDateTime.now().isAfter(date.plusHours(COMPLETION_PROMPT_DELAY_HOURS))) {
             "You can answer this $COMPLETION_PROMPT_DELAY_HOURS hours after the service time."
         }
+    }
+
+    /** The "did this happen?" prompt waits while the price is open; so do its answers. */
+    private fun requirePriceSettled(request: ServiceRequest) =
+        PriceGate.requireSettled(request, outstandingPrice = outstandingPrices(requireNotNull(request.id)).isNotEmpty())
+
+    private fun outstandingPrices(requestId: Long) =
+        priceProposalRepo.findAllByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
+            .filter { it.outcome == ProposalOutcome.OUTSTANDING }
+
+    /**
+     * The proposal the customer is answering, which must be the current OUTSTANDING one (latest by
+     * proposedAt, then id). Otherwise a 409 naming the move the caller attempted, mirroring
+     * [requireOutstanding] for date proposals. Naming the proposal is what stops a customer on a
+     * stale screen from accepting a price the provider has since replaced.
+     */
+    private fun requireCurrentPrice(request: ServiceRequest, proposalId: Long, target: ServiceRequestStatus) =
+        outstandingPrices(requireNotNull(request.id))
+            .maxWithOrNull(compareBy<ServiceRequestPriceProposal>({ it.proposedAt }, { it.id }))
+            .let { current ->
+                when {
+                    current == null -> throw InvalidStateTransitionException(
+                        request.status, target, "There is no price proposal awaiting a reply on this booking",
+                    )
+                    current.id != proposalId -> throw InvalidStateTransitionException(
+                        request.status, target, "This price has been replaced — refresh to see the current one",
+                    )
+                    else -> current
+                }
+            }
+
+    /** Take the provider's price: it becomes the booking's agreed price, final from here on. */
+    @Transactional
+    fun acceptPrice(email: String, id: Long, proposalId: Long): ServiceRequestResponse {
+        val customer = requireUser(email)
+        val request = requireOwnedLocked(id, customer)
+        val proposal = requireCurrentPrice(request, proposalId, ServiceRequestStatus.CONFIRMED)
+        // Unreachable while every path off CONFIRMED settles the proposal; kept so a stray
+        // OUTSTANDING row can never price a cancelled or completed booking.
+        if (request.status != ServiceRequestStatus.CONFIRMED) {
+            throw InvalidStateTransitionException(request.status, ServiceRequestStatus.CONFIRMED)
+        }
+
+        val now = LocalDateTime.now(ZoneOffset.UTC)
+        proposal.outcome = ProposalOutcome.ACCEPTED
+        proposal.respondedAt = now
+        priceProposalRepo.save(proposal)
+        // Only reachable if a duplicate ever slipped in; the price is final now, so close them.
+        outstandingPrices(id).filter { it !== proposal }.forEach {
+            it.outcome = ProposalOutcome.SUPERSEDED
+            it.respondedAt = now
+            priceProposalRepo.save(it)
+        }
+
+        request.agreedPriceAmount = proposal.amount
+        request.agreedPriceCurrency = proposal.currency
+        request.agreedPriceNote = proposal.note
+        val saved = repo.save(request)
+        eventPublisher.priceChanged(saved, PriceEventKind.ACCEPTED, proposal)
+        return toResponse(saved)
+    }
+
+    /** Decline the provider's price, which cancels the booking with the customer's reason. */
+    @Transactional
+    fun rejectPrice(email: String, id: Long, proposalId: Long, reason: String?): ServiceRequestResponse {
+        val customer = requireUser(email)
+        val request = requireOwnedLocked(id, customer)
+        val proposal = requireCurrentPrice(request, proposalId, ServiceRequestStatus.CANCELLED)
+        val from = request.status
+        ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.CANCELLED)
+
+        proposal.outcome = ProposalOutcome.REJECTED
+        proposal.responseNote = reason?.trim()?.takeIf { it.isNotEmpty() }
+        proposal.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
+        priceProposalRepo.save(proposal)
+
+        return cancelBooking(request, from, reason)
     }
 
     /**
@@ -339,7 +425,7 @@ class ServiceRequestService(
     ) = proposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
         ?: throw InvalidStateTransitionException(current, target)
 
-    /** Close any proposal still awaiting a reply, for paths that end the request another way. */
+    /** Close any date or price proposal still awaiting a reply, for paths that end the request another way. */
     private fun settleOutstanding(requestId: Long) {
         proposalRepo.findFirstByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
             ?.let {
@@ -347,6 +433,13 @@ class ServiceRequestService(
                 it.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
                 proposalRepo.save(it)
             }
+        // Every OUTSTANDING row, so a stray duplicate can't survive. The one rejectPrice just
+        // answered is already REJECTED and filtered out, keeping its responseNote.
+        outstandingPrices(requestId).forEach {
+            it.outcome = ProposalOutcome.REJECTED
+            it.respondedAt = LocalDateTime.now(ZoneOffset.UTC)
+            priceProposalRepo.save(it)
+        }
     }
 
     @Transactional
@@ -394,7 +487,7 @@ class ServiceRequestService(
         val services = if (serviceIds.isNotEmpty()) serviceRepo.findAllById(serviceIds) else emptyList()
 
         val availableServiceIds = services
-            .filter { it.business?.id == business.id && it.status == ServiceOfferedStatus.ACTIVE }
+            .filter { it.business?.id == business.id && it.status == ServiceOfferedStatus.ACTIVE && it.soldOnItsOwn }
             .mapNotNull { it.id }
             .toSet()
 
@@ -417,17 +510,28 @@ class ServiceRequestService(
 
         val servicesById = services.associateBy { it.id }
 
-        original.items.forEachIndexed { _, item ->
+        original.items.sortedBy { it.position }.forEach { item ->
             val sid = item.service?.id
             val survivingService = sid?.let { if (it in availableServiceIds) servicesById[it] else null }
             if (survivingService != null) {
-                draft.items.add(
-                    ServiceRequestItem(
-                        request = draft,
-                        service = survivingService,
-                        position = draft.items.size,
-                    )
+                val copy = ServiceRequestItem(
+                    request = draft,
+                    service = survivingService,
+                    position = draft.items.size,
+                    quantity = if (survivingService.quantityEnabled) item.quantity else 1,
                 )
+                // Picks whose choice is gone or paused are dropped; the customer re-picks on review.
+                val liveChoices = survivingService.groups.flatMap { it.choices }.associateBy { it.id }
+                item.picks.sortedBy { it.position }.forEach { pick ->
+                    val choice = pick.choice?.id?.let { liveChoices[it] }
+                    if (choice != null && choice.item?.status == ServiceOfferedStatus.ACTIVE) {
+                        copy.picks.add(
+                            ServiceRequestItemPick(item = copy, choice = choice, quantity = pick.quantity, position = copy.picks.size)
+                                .also { snapshot(it, choice) },
+                        )
+                    }
+                }
+                draft.items.add(copy)
             }
         }
 
@@ -441,15 +545,25 @@ class ServiceRequestService(
     private fun requireUser(email: String): User =
         userRepo.findByEmail(email).orElseThrow { EntityNotFoundException("User not found") }
 
-    private fun requireOwned(id: Long, customer: User): ServiceRequest {
-        val request = repo.findById(id)
-            .orElseThrow { BusinessNotFoundException("Request not found with id: $id") }
-        if (request.customer?.id != customer.id) {
+    private fun requireOwned(id: Long, customer: User): ServiceRequest =
+        requireCustomer(id, customer, repo.findById(id).orElse(null))
+
+    /** [requireOwned], row-locked until commit (see [ServiceRequestRepository.findWithLockById]). */
+    private fun requireOwnedLocked(id: Long, customer: User): ServiceRequest =
+        requireCustomer(id, customer, repo.findWithLockById(id))
+
+    private fun requireCustomer(id: Long, customer: User, request: ServiceRequest?): ServiceRequest {
+        if (request == null || request.customer?.id != customer.id) {
             throw BusinessNotFoundException("Request not found with id: $id")
         }
         return request
     }
 
+    /**
+     * Writes [items] onto the draft, diffing against what is there: the item at each position is
+     * kept and updated, extra ones removed, and each item's picks are matched by choice (kept ones
+     * updated in place, new ones added, missing ones removed). Never clear-and-re-add.
+     */
     private fun attachItems(
         request: ServiceRequest,
         items: List<RequestItemInput>,
@@ -461,116 +575,78 @@ class ServiceRequestService(
         services.forEach {
             require(it.business?.id == business.id) { "Service ${it.id} belongs to a different business" }
             require(it.status == ServiceOfferedStatus.ACTIVE) { "Service ${it.id} is not active" }
+            require(it.soldOnItsOwn) { "${it.title} isn't sold on its own" }
         }
 
         val byServiceId = services.associateBy { it.id }
-
-        // Bulk-load addons referenced by any item:
-        val addonIds = items.flatMap { it.addonInputs.mapNotNull { ai -> ai.addonId } }.distinct()
-        val addonsById: Map<Long?, ServiceAddon> = if (addonIds.isNotEmpty()) {
-            val loaded = addonRepo.findAllById(addonIds)
-            val missing = addonIds - loaded.mapNotNull { it.id }.toSet()
-            if (missing.isNotEmpty()) {
-                throw ServiceAddonNotFoundException("Addon(s) not found: $missing")
-            }
-            loaded.associateBy { it.id }
-        } else emptyMap()
-
-        items.forEachIndexed { idx, input ->
+        val resolved = items.map { input ->
             val serviceId = input.serviceId
                 ?: throw IllegalArgumentException("serviceId is required")
             val svc = byServiceId[serviceId] ?: error("Service $serviceId not found")
+            val quantity = input.quantity ?: 1
+            val problems = PickValidator.problems(svc, quantity, input.picks)
+            require(problems.isEmpty()) { problems.joinToString("; ") }
+            Triple(svc, quantity, input.picks)
+        }
 
-            if (input.addonInputs.isNotEmpty()) {
-                require(svc.priceMode != PriceMode.QUOTE) {
-                    "Addons are not allowed on QUOTE-mode services"
-                }
-            }
-
-            val item = ServiceRequestItem(
-                request = request,
-                service = svc,
-                position = idx,
-            )
-
-            input.addonInputs.forEachIndexed { aIdx, ai ->
-                val addonId = ai.addonId
-                    ?: throw ServiceAddonNotFoundException("addonId is required")
-                val ad = addonsById[addonId]
-                    ?: throw ServiceAddonNotFoundException("Addon $addonId not found")
-                require(ad.service?.id == svc.id) {
-                    "Addon ${ad.id} does not belong to service ${svc.id}"
-                }
-                val max = ad.maxQuantity ?: Int.MAX_VALUE
-                val clamped = ai.quantity.coerceIn(1, max)
-                item.addons.add(
-                    ServiceRequestItemAddon(
-                        item = item,
-                        addon = ad,
-                        quantity = clamped,
-                        position = aIdx,
-                    )
-                )
-            }
-
-            request.items.add(item)
+        val existing = request.items.sortedBy { it.position }
+        request.items.removeAll(existing.drop(resolved.size).toSet())
+        resolved.forEachIndexed { idx, (svc, quantity, picks) ->
+            val item = existing.getOrNull(idx)
+                ?: ServiceRequestItem(request = request).also { request.items.add(it) }
+            item.service = svc
+            item.position = idx
+            item.quantity = quantity
+            syncPicks(item, svc, picks)
         }
     }
 
+    private fun syncPicks(item: ServiceRequestItem, svc: ServiceOffered, inputs: List<PickInput>) {
+        val choices = svc.groups.flatMap { it.choices }.associateBy { it.id }
+        val wanted = inputs.map { it.choiceId }.toSet()
+        item.picks.removeIf { it.choice?.id !in wanted }
+        inputs.forEachIndexed { idx, input ->
+            val choice = choices.getValue(input.choiceId)
+            val pick = item.picks.firstOrNull { it.choice?.id == input.choiceId }
+                ?: ServiceRequestItemPick(item = item, choice = choice).also { item.picks.add(it) }
+            pick.quantity = input.quantity
+            pick.position = idx
+            snapshot(pick, choice)
+        }
+        item.picks.sortBy { it.position }
+    }
+
+    /** Copies the choice's current group, title and effective price onto the pick. */
+    private fun snapshot(pick: ServiceRequestItemPick, choice: GroupChoice) {
+        pick.groupId = choice.group?.id
+        pick.snapshotGroupName = choice.group?.name
+        pick.snapshotTitle = choice.item?.title
+        pick.snapshotPrice = RequestItemMapping.effectivePrice(choice)
+    }
+
+    /** Problems with a draft item against the live catalogue, including picks whose choice was deleted. */
+    private fun liveProblems(item: ServiceRequestItem): List<String> {
+        val svc = item.service!!
+        if (svc.status != ServiceOfferedStatus.ACTIVE) return listOf("${svc.title}: no longer available")
+        if (!svc.soldOnItsOwn) return listOf("${svc.title}: this item is no longer available on its own")
+        val (present, missing) = item.picks.partition { it.choice != null }
+        val liveGroupIds = svc.groups.mapNotNull { it.id }.toSet()
+        // A deleted choice whose whole group is gone too can only be named from its snapshot.
+        val orphaned = missing.filter { it.groupId !in liveGroupIds }
+            .map { "${it.snapshotGroupName ?: "A group"}: this choice is no longer available" }
+        return orphaned + PickValidator.problems(
+            svc,
+            item.quantity,
+            present.sortedBy { it.position }.map { PickInput(it.choice!!.id!!, it.quantity) },
+            missingGroupIds = missing.mapNotNull { it.groupId }.toSet(),
+        )
+    }
+
     private fun toResponse(request: ServiceRequest): ServiceRequestResponse {
-        val items = request.items
-            .sortedBy { it.position }
-            .map { item ->
-                val isDraft = request.status == ServiceRequestStatus.DRAFT
-                val title = if (isDraft) {
-                    item.service?.title ?: "(unknown)"
-                } else {
-                    item.snapshotTitle ?: item.service?.title ?: "(unknown)"
-                }
-                val priceAmount = if (isDraft) {
-                    item.service?.priceAmount
-                } else {
-                    item.snapshotPriceAmount ?: item.service?.priceAmount
-                }
-                val priceCurrency = if (isDraft) {
-                    item.service?.priceCurrency
-                } else {
-                    item.snapshotPriceCurrency ?: item.service?.priceCurrency
-                }
-                val cover = if (isDraft) {
-                    item.service?.coverImageUrl
-                } else {
-                    item.snapshotCoverUrl ?: item.service?.coverImageUrl
-                }
-
-                val addons = item.addons.sortedBy { it.position }.map { a ->
-                    val aTitle = if (isDraft) (a.addon?.title ?: a.snapshotTitle ?: "(unknown)")
-                                 else (a.snapshotTitle ?: a.addon?.title ?: "(unknown)")
-                    val aPriceDelta = if (isDraft) (a.addon?.priceDelta ?: a.snapshotPriceDelta)
-                                      else (a.snapshotPriceDelta ?: a.addon?.priceDelta)
-                    val aPriceUnit = if (isDraft) (a.addon?.priceUnit ?: a.snapshotPriceUnit)
-                                     else (a.snapshotPriceUnit ?: a.addon?.priceUnit)
-                    ServiceRequestItemAddonResponse(
-                        id = a.id ?: 0L,
-                        addonId = a.addon?.id,
-                        title = aTitle,
-                        priceDelta = aPriceDelta,
-                        priceUnit = aPriceUnit,
-                        quantity = a.quantity,
-                        position = a.position,
-                    )
-                }
-
-                ServiceRequestItemResponse(
-                    serviceId = item.service?.id,
-                    title = title,
-                    priceAmount = priceAmount,
-                    priceCurrency = priceCurrency,
-                    coverImageUrl = cover,
-                    position = item.position,
-                    addons = addons,
-                )
-            }
+        val items = RequestItemMapping.items(request.items, live = request.status == ServiceRequestStatus.DRAFT)
+        val (pricing, total) = RequestItemMapping.pricing(items)
+        val latestPrice = request.id?.let { priceProposalRepo.findFirstByRequestIdOrderByProposedAtDescIdDesc(it) }
+        val agreed = MoneyDto.agreedOf(request)
 
         return ServiceRequestResponse(
             id = request.id ?: 0L,
@@ -604,6 +680,16 @@ class ServiceRequestService(
                         position = it.position,
                     )
                 },
+            pricing = pricing,
+            total = if (agreed != null) null else total,
+            agreedPrice = agreed,
+            priceProposal = latestPrice?.let { PriceProposalResponse.from(it) },
+            // Latest is the outstanding one whenever one exists: a new proposal supersedes the last.
+            priceSettled = PriceGate.settled(
+                pricing,
+                request.agreedPriceAmount,
+                latestPrice?.outcome == ProposalOutcome.OUTSTANDING,
+            ),
             submittedAt = request.submittedAt,
             respondedAt = request.respondedAt,
             completedAt = request.completedAt,

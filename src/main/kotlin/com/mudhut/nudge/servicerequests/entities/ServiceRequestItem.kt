@@ -45,6 +45,19 @@ class ServiceRequestItem(
     @Column(name = "snapshot_cover_url", length = 500)
     var snapshotCoverUrl: String? = null,
 
+    /** Units booked; 1 unless the item has quantity on. */
+    @Column(nullable = false)
+    var quantity: Int = 1,
+
+    @Column(name = "snapshot_price_is_estimate", nullable = false)
+    var snapshotPriceIsEstimate: Boolean = false,
+
+    @Column(name = "snapshot_estimate_reason", length = 200)
+    var snapshotEstimateReason: String? = null,
+
+    @Column(name = "snapshot_quantity_unit", length = 32)
+    var snapshotQuantityUnit: String? = null,
+
     @OneToMany(
         mappedBy = "item",
         cascade = [CascadeType.ALL],
@@ -52,5 +65,5 @@ class ServiceRequestItem(
         fetch = FetchType.LAZY,
     )
     @OrderBy("position ASC")
-    var addons: MutableList<ServiceRequestItemAddon> = mutableListOf(),
+    var picks: MutableList<ServiceRequestItemPick> = mutableListOf(),
 )

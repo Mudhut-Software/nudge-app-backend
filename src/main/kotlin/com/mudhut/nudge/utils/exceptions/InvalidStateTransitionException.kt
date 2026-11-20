@@ -5,4 +5,5 @@ import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 class InvalidStateTransitionException(
     val from: ServiceRequestStatus,
     val to: ServiceRequestStatus,
-) : RuntimeException("Cannot transition from $from to $to")
+    message: String = "Cannot transition from $from to $to",
+) : RuntimeException(message)

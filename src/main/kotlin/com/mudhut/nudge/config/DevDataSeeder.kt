@@ -9,10 +9,11 @@ import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.repositories.BusinessCategoryRepository
 import com.mudhut.nudge.businesses.repositories.BusinessMemberRepository
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
-import com.mudhut.nudge.servicesoffered.entities.ServiceAddon
+import com.mudhut.nudge.servicesoffered.entities.GroupChoice
+import com.mudhut.nudge.servicesoffered.entities.GroupSelection
+import com.mudhut.nudge.servicesoffered.entities.OptionGroup
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedTag
 import java.time.LocalDate
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
@@ -55,7 +56,7 @@ private val DEFAULT_COVER =
  *     be created lazily on the first quota read and every seeded provider's period would start
  *     from whenever someone happened to open the screen.
  *   • Five businesses across different categories, each owned by its own provider
- *   • Each business has 3–4 ACTIVE services plus one tagged bundle service (with addons)
+ *   • Each business has 3–4 ACTIVE services plus one tagged bundle service (contents listed in its description)
  *
  * Skipped silently in other profiles or when data already exists, so re-running the app
  * never duplicates rows.
@@ -199,10 +200,10 @@ class DevDataSeeder(
                 email = "hello@sparkleclean.local",
                 phone = "+256700000010",
                 services = listOf(
-                    ServiceSpec("Deep House Cleaning", "Top-to-bottom clean for a 3-bed home — 2 cleaners, supplies included.", PriceMode.FIXED, BigDecimal("250000"), null),
-                    ServiceSpec("Carpet Cleaning", "Steam-cleaned carpets and rugs.", PriceMode.FIXED, BigDecimal("80000"), null),
-                    ServiceSpec("Laundry Service", "Wash, dry, fold — picked up and dropped off.", PriceMode.FIXED, BigDecimal("60000"), null),
-                    ServiceSpec("Office Move-out Clean", "Full deep clean for office spaces up to 200m².", PriceMode.FIXED, BigDecimal("200000"), null),
+                    ServiceSpec("Deep House Cleaning", "Top-to-bottom clean for a 3-bed home — 2 cleaners, supplies included.", BigDecimal("250000"), null),
+                    ServiceSpec("Carpet Cleaning", "Steam-cleaned carpets and rugs.", BigDecimal("80000"), null),
+                    ServiceSpec("Laundry Service", "Wash, dry, fold — picked up and dropped off.", BigDecimal("60000"), null),
+                    ServiceSpec("Office Move-out Clean", "Full deep clean for office spaces up to 200m².", BigDecimal("200000"), null),
                 ),
                 bundles = listOf(
                     BundleSpec("Sparkle Home Bundle", BigDecimal("350000"), listOf("Deep House Cleaning", "Carpet Cleaning", "Laundry Service")),
@@ -221,9 +222,9 @@ class DevDataSeeder(
                 email = "events@kampalacatering.local",
                 phone = "+256700000020",
                 services = listOf(
-                    ServiceSpec("Corporate Lunch", "Hot buffet lunch delivered to your office.", PriceMode.PER_UNIT, BigDecimal("15000"), "person"),
-                    ServiceSpec("Birthday Party Buffet", "Themed buffet for parties of 20 guests.", PriceMode.FIXED, BigDecimal("180000"), null),
-                    ServiceSpec("Wedding Catering", "Bespoke wedding menu — get a custom quote.", PriceMode.QUOTE, null, null),
+                    ServiceSpec("Corporate Lunch", "Hot buffet lunch delivered to your office.", BigDecimal("15000"), "person"),
+                    ServiceSpec("Birthday Party Buffet", "Themed buffet for parties of 20 guests.", BigDecimal("180000"), null),
+                    ServiceSpec("Wedding Catering", "Bespoke wedding menu — get a custom quote.", null, null),
                 ),
                 bundles = listOf(
                     BundleSpec("Birthday All-In Package", BigDecimal("320000"), listOf("Birthday Party Buffet", "Corporate Lunch")),
@@ -242,9 +243,9 @@ class DevDataSeeder(
                 email = "hello@acaciaglow.local",
                 phone = "+256700000030",
                 services = listOf(
-                    ServiceSpec("Full Body Massage", "60-minute Swedish or deep tissue massage.", PriceMode.FIXED, BigDecimal("120000"), null),
-                    ServiceSpec("Manicure & Pedicure", "Classic mani-pedi with gel options.", PriceMode.FIXED, BigDecimal("60000"), null),
-                    ServiceSpec("Hair Styling", "Wash, blow-dry, and styling.", PriceMode.FIXED, BigDecimal("80000"), null),
+                    ServiceSpec("Full Body Massage", "60-minute Swedish or deep tissue massage.", BigDecimal("120000"), null),
+                    ServiceSpec("Manicure & Pedicure", "Classic mani-pedi with gel options.", BigDecimal("60000"), null),
+                    ServiceSpec("Hair Styling", "Wash, blow-dry, and styling.", BigDecimal("80000"), null),
                 ),
                 bundles = listOf(
                     BundleSpec("Bridal Glow Day", BigDecimal("220000"), listOf("Full Body Massage", "Manicure & Pedicure", "Hair Styling")),
@@ -263,9 +264,9 @@ class DevDataSeeder(
                 email = "book@highlandphoto.local",
                 phone = "+256700000040",
                 services = listOf(
-                    ServiceSpec("Portrait Session", "90-minute studio portrait session with 20 edits.", PriceMode.FIXED, BigDecimal("200000"), null),
-                    ServiceSpec("Event Photography", "Full-day event coverage with edited gallery.", PriceMode.FIXED, BigDecimal("500000"), null),
-                    ServiceSpec("Drone Aerial Video", "Cinematic drone reel for outdoor venues.", PriceMode.FIXED, BigDecimal("350000"), null),
+                    ServiceSpec("Portrait Session", "90-minute studio portrait session with 20 edits.", BigDecimal("200000"), null),
+                    ServiceSpec("Event Photography", "Full-day event coverage with edited gallery.", BigDecimal("500000"), null),
+                    ServiceSpec("Drone Aerial Video", "Cinematic drone reel for outdoor venues.", BigDecimal("350000"), null),
                 ),
                 bundles = listOf(
                     BundleSpec("Wedding Coverage Pack", BigDecimal("900000"), listOf("Event Photography", "Drone Aerial Video", "Portrait Session")),
@@ -284,9 +285,9 @@ class DevDataSeeder(
                 email = "woof@pawpals.local",
                 phone = "+256700000050",
                 services = listOf(
-                    ServiceSpec("Dog Walking", "30-minute neighbourhood walk for one dog.", PriceMode.PER_UNIT, BigDecimal("25000"), "walk"),
-                    ServiceSpec("Pet Grooming", "Bath, brush, and nail trim for dogs and cats.", PriceMode.FIXED, BigDecimal("70000"), null),
-                    ServiceSpec("Home Vet Check", "Routine wellness check at your home.", PriceMode.FIXED, BigDecimal("90000"), null),
+                    ServiceSpec("Dog Walking", "30-minute neighbourhood walk for one dog.", BigDecimal("25000"), "walk"),
+                    ServiceSpec("Pet Grooming", "Bath, brush, and nail trim for dogs and cats.", BigDecimal("70000"), null),
+                    ServiceSpec("Home Vet Check", "Routine wellness check at your home.", BigDecimal("90000"), null),
                 ),
                 bundles = listOf(
                     BundleSpec("Premium Pet Care Bundle", BigDecimal("160000"), listOf("Pet Grooming", "Home Vet Check", "Dog Walking")),
@@ -301,7 +302,55 @@ class DevDataSeeder(
 
             val owner = seedOwner(spec)
             owners.add(owner)
+            val savedBiz = createBusiness(spec, category, owner)
+            val (coverUrl, coverPublicId) = COVER_BY_CATEGORY[spec.category] ?: DEFAULT_COVER
 
+            spec.services.forEach { svc ->
+                serviceRepo.save(
+                    ServiceOffered(
+                        business = savedBiz,
+                        title = svc.title,
+                        description = svc.description,
+                        coverImageUrl = coverUrl,
+                        coverImagePublicId = coverPublicId,
+                        priceAmount = svc.priceAmount,
+                        priceCurrency = if (svc.priceAmount == null) null else DEMO_CURRENCY,
+                        quantityEnabled = svc.quantityUnit != null,
+                        quantityUnit = svc.quantityUnit,
+                        status = ServiceOfferedStatus.ACTIVE,
+                    )
+                )
+            }
+
+            // Former "packages" are now tagged, fixed-price services; what comes with
+            // the package goes in its description (there is no "included" group kind).
+            // Demonstrates the promo tag + validity window.
+            val today = LocalDate.now()
+            for (bundle in spec.bundles) {
+                val bundleService = ServiceOffered(
+                    business = savedBiz,
+                    title = bundle.title,
+                    description = "Bundle offer. Includes: ${bundle.includedItems.joinToString(", ")}.",
+                    coverImageUrl = coverUrl,
+                    coverImagePublicId = coverPublicId,
+                    priceAmount = bundle.priceAmount,
+                    priceCurrency = DEMO_CURRENCY,
+                    status = ServiceOfferedStatus.ACTIVE,
+                    tag = ServiceOfferedTag.HOLIDAY_OFFER,
+                    validFrom = today.minusDays(1),
+                    validUntil = today.plusDays(30),
+                )
+                serviceRepo.save(bundleService)
+            }
+
+            log.info("DevDataSeeder: seeded business '{}' (owner {}) with {} services and {} bundle services.",
+                spec.name, owner.email, spec.services.size, spec.bundles.size)
+        }
+        seedCatalogueBusinesses(categories)
+        return owners
+    }
+
+    private fun createBusiness(spec: BusinessSpec, category: BusinessCategory, owner: User): Business {
             val biz = Business(
                 name = spec.name,
                 description = spec.description,
@@ -329,64 +378,200 @@ class DevDataSeeder(
                 )
             )
 
-            val (coverUrl, coverPublicId) = COVER_BY_CATEGORY[spec.category] ?: DEFAULT_COVER
-            spec.services.forEach { svc ->
-                serviceRepo.save(
-                    ServiceOffered(
-                        business = savedBiz,
-                        title = svc.title,
-                        description = svc.description,
-                        coverImageUrl = coverUrl,
-                        coverImagePublicId = coverPublicId,
-                        priceMode = svc.priceMode,
-                        priceAmount = svc.priceAmount,
-                        priceCurrency = if (svc.priceMode == PriceMode.QUOTE) null else DEMO_CURRENCY,
-                        priceUnit = svc.priceUnit,
-                        status = ServiceOfferedStatus.ACTIVE,
-                    )
-                )
-            }
+        return savedBiz
+    }
 
-            // Former "packages" are now tagged, FIXED-price services whose included
-            // items are default-selected addons (priceDelta 0). Demonstrates the
-            // promo tag + validity window and the addon model in one shot.
-            val today = LocalDate.now()
-            for (bundle in spec.bundles) {
-                val bundleService = ServiceOffered(
-                    business = savedBiz,
-                    title = bundle.title,
-                    description = "Bundle offer — included items below, plus optional add-ons.",
-                    coverImageUrl = coverUrl,
-                    coverImagePublicId = coverPublicId,
-                    priceMode = PriceMode.FIXED,
-                    priceAmount = bundle.priceAmount,
-                    priceCurrency = DEMO_CURRENCY,
-                    priceUnit = null,
-                    status = ServiceOfferedStatus.ACTIVE,
-                    tag = ServiceOfferedTag.HOLIDAY_OFFER,
-                    validFrom = today.minusDays(1),
-                    validUntil = today.plusDays(30),
-                )
-                bundle.includedItems.forEachIndexed { idx, itemTitle ->
-                    bundleService.addons.add(
-                        ServiceAddon(
-                            service = bundleService,
-                            title = itemTitle,
-                            priceDelta = BigDecimal.ZERO,
-                            defaultSelected = true,
-                            position = idx,
-                        )
-                    )
-                }
-                serviceRepo.save(bundleService)
-            }
+    /**
+     * Two businesses that show off the item catalogue: a wedding designer (one package with
+     * single- and multiple-choice groups, one unpriced service) and a juice seller (bottles sold
+     * alone, a sized drink, and a "choose 3 bottles" pack with quantity steppers).
+     * Everything here satisfies the rules OptionGroupService enforces at the API.
+     */
+    private fun seedCatalogueBusinesses(categories: Map<String, BusinessCategory>) {
+        val rustic = seedCatalogueBusiness(
+            categories,
+            BusinessSpec(
+                name = "Rustic Weddings",
+                category = "Events & Photography",
+                ownerName = "Mercy Namutebi",
+                ownerEmail = "mercy@rusticweddings.local",
+                ownerPhone = "+256781000006",
+                description = "Barn-style and garden wedding design, styling and planning.",
+                address = "Muyenga Hill, Kampala",
+                latitude = 0.29500, longitude = 32.61500,
+                serviceAreas = listOf("Kampala", "Wakiso", "Entebbe"),
+                email = "hello@rusticweddings.local",
+                phone = "+256700000060",
+                services = emptyList(),
+                bundles = emptyList(),
+            ),
+        )
+        val wedding = rustic.item(
+            "Rustic Wedding", "A complete rustic wedding set-up: choose your style, palette and table layout.",
+            price = BigDecimal("3500000"), estimateReason = "Final price depends on venue size and guest count",
+        )
+        rustic.item("Full Wedding Planning", "Month-by-month planning and day-of coordination. Price agreed after a consultation.")
+        val hayBale = rustic.choiceItem("Hay-bale lounge", "Relaxed seating corner of stacked hay bales and throws.", BigDecimal("300000"))
+        // Also bookable alone at 450,000; in Optional extras it has no override, so it shows +450,000.
+        val canopy = rustic.item("Fairy-light canopy", "Overhead canopy of warm fairy lights.", price = BigDecimal("450000"))
+        rustic.group(
+            wedding, "Style", GroupSelection.SINGLE, required = true,
+            rustic.choiceItem("Classic rustic", "Timber, linen and wildflowers.").choice(),
+            rustic.choiceItem("Boho rustic", "Pampas grass, macrame and earthy tones.").choice(),
+        )
+        rustic.group(
+            wedding, "Colour palette", GroupSelection.SINGLE, required = true,
+            rustic.choiceItem("Sage & gold", "Soft green with gold accents.").choice(),
+            rustic.choiceItem("Terracotta & cream", "Warm clay tones with cream.").choice(),
+        )
+        rustic.group(
+            wedding, "Table arrangement", GroupSelection.SINGLE, required = false,
+            rustic.choiceItem("Long banquet tables", "Family-style long tables.").choice(),
+            rustic.choiceItem("Round tables of 10", "Classic round tables seating ten.").choice(),
+        )
+        rustic.group(
+            wedding, "Optional extras", GroupSelection.MULTIPLE, required = false,
+            hayBale.choice(), canopy.choice(),
+        )
 
-            log.info("DevDataSeeder: seeded business '{}' (owner {}) with {} services and {} bundle services.",
-                spec.name, owner.email, spec.services.size, spec.bundles.size)
-        }
-        return owners
+        val juice = seedCatalogueBusiness(
+            categories,
+            BusinessSpec(
+                name = "Fresh Press Juice",
+                category = "Catering",
+                ownerName = "Joan Akello",
+                ownerEmail = "joan@freshpress.local",
+                ownerPhone = "+256781000007",
+                description = "Cold-pressed fruit juice, bottled to order.",
+                address = "Ntinda, Kampala",
+                latitude = 0.35400, longitude = 32.61700,
+                serviceAreas = listOf("Kampala"),
+                email = "hello@freshpress.local",
+                phone = "+256700000070",
+                services = emptyList(),
+                bundles = emptyList(),
+            ),
+        )
+        val bottlePrice = BigDecimal("14000")
+        val mango = juice.item("Mango 1L", "One litre of cold-pressed mango juice.", price = bottlePrice)
+        val passion = juice.item("Passion 1L", "One litre of cold-pressed passion juice.", price = bottlePrice)
+        val ginger = juice.item("Pineapple-ginger 1L", "One litre of pineapple juice with fresh ginger.", price = bottlePrice)
+        // Priced at zero so the total is driven entirely by the Size pick (no price would read "to be confirmed").
+        val fresh = juice.item("Fresh Juice", "Pressed to order: pick a size and the flavours you want.", price = BigDecimal.ZERO)
+        juice.group(
+            fresh, "Size", GroupSelection.SINGLE, required = true,
+            juice.choiceItem("300ml", "A small bottle.", BigDecimal("5000")).choice(),
+            juice.choiceItem("1 litre", "A family bottle.", BigDecimal("14000")).choice(),
+        )
+        juice.group(
+            fresh, "Flavour", GroupSelection.MULTIPLE, required = false,
+            juice.choiceItem("Mango", "Sweet and thick.").choice(),
+            juice.choiceItem("Passion", "Sharp and bright.").choice(),
+            juice.choiceItem("Pineapple-ginger", "Tangy with a kick.").choice(),
+        )
+        val pack = juice.item("Party Pack", "Three one-litre bottles, mixed as you like.", price = BigDecimal("36000"))
+        juice.group(
+            pack, "Choose 3 bottles", GroupSelection.MULTIPLE, required = true, minPicks = 3, maxPicks = 3,
+            listOf(mango, passion, ginger).map { it.choice(priceOverride = BigDecimal.ZERO, quantityEnabled = true, maxQuantity = 3) },
+        )
+    }
+
+    private fun seedCatalogueBusiness(categories: Map<String, BusinessCategory>, spec: BusinessSpec): CatalogueSeed {
+        val category = categories[spec.category]
+            ?: error("Seeder: category '${spec.category}' missing for business '${spec.name}'")
+        val owner = seedOwner(spec)
+        val biz = createBusiness(spec, category, owner)
+        val (coverUrl, coverPublicId) = COVER_BY_CATEGORY[spec.category] ?: DEFAULT_COVER
+        log.info("DevDataSeeder: seeded catalogue business '{}' (owner {}).", spec.name, owner.email)
+        return CatalogueSeed(biz, coverUrl, coverPublicId, serviceRepo)
     }
 }
+
+/** Small builder around one seeded business: items, then groups linking them. */
+private class CatalogueSeed(
+    private val business: Business,
+    private val coverUrl: String,
+    private val coverPublicId: String,
+    private val serviceRepo: ServiceOfferedRepository,
+) {
+    fun item(
+        title: String,
+        description: String,
+        price: BigDecimal? = null,
+        estimateReason: String? = null,
+        soldOnItsOwn: Boolean = true,
+    ): ServiceOffered = serviceRepo.save(
+        ServiceOffered(
+            business = business,
+            title = title,
+            description = description,
+            coverImageUrl = coverUrl,
+            coverImagePublicId = coverPublicId,
+            priceAmount = price,
+            priceCurrency = if (price == null) null else DEMO_CURRENCY,
+            priceIsEstimate = estimateReason != null,
+            estimateReason = estimateReason,
+            soldOnItsOwn = soldOnItsOwn,
+            status = ServiceOfferedStatus.ACTIVE,
+        )
+    )
+
+    /** An item that exists only to be picked inside a group, so it is not bookable on its own. */
+    fun choiceItem(title: String, description: String, price: BigDecimal? = null): ServiceOffered =
+        item(title, description, price, soldOnItsOwn = false)
+
+    fun group(
+        parent: ServiceOffered,
+        name: String,
+        selection: GroupSelection,
+        required: Boolean,
+        vararg choices: ChoiceSpec,
+    ) = group(parent, name, selection, required, null, null, choices.toList())
+
+    fun group(
+        parent: ServiceOffered,
+        name: String,
+        selection: GroupSelection,
+        required: Boolean,
+        minPicks: Int? = null,
+        maxPicks: Int? = null,
+        choices: List<ChoiceSpec>,
+    ) {
+        require(selection == GroupSelection.MULTIPLE || (minPicks == null && maxPicks == null && choices.none { it.quantityEnabled })) {
+            "Seeder: single-choice group '$name' cannot set picks limits or quantity choices"
+        }
+        val group = OptionGroup(
+            item = parent, name = name, selection = selection, required = required,
+            minPicks = minPicks, maxPicks = maxPicks, position = parent.groups.size,
+        )
+        choices.forEachIndexed { index, spec ->
+            require(spec.item.business?.id == business.id) { "Seeder: '${spec.item.title}' belongs to another business" }
+            group.choices.add(
+                GroupChoice(
+                    group = group, item = spec.item, priceOverride = spec.priceOverride,
+                    quantityEnabled = spec.quantityEnabled,
+                    maxQuantity = if (spec.quantityEnabled) spec.maxQuantity else null,
+                    position = index,
+                )
+            )
+        }
+        parent.groups.add(group)
+        serviceRepo.save(parent)
+    }
+}
+
+private class ChoiceSpec(
+    val item: ServiceOffered,
+    val priceOverride: BigDecimal?,
+    val quantityEnabled: Boolean,
+    val maxQuantity: Int?,
+)
+
+private fun ServiceOffered.choice(
+    priceOverride: BigDecimal? = null,
+    quantityEnabled: Boolean = false,
+    maxQuantity: Int? = null,
+) = ChoiceSpec(this, priceOverride, quantityEnabled, maxQuantity)
 
 private data class BusinessSpec(
     val name: String,
@@ -408,9 +593,8 @@ private data class BusinessSpec(
 private data class ServiceSpec(
     val title: String,
     val description: String,
-    val priceMode: PriceMode,
     val priceAmount: BigDecimal?,
-    val priceUnit: String?,
+    val quantityUnit: String?,
 )
 
 private data class BundleSpec(

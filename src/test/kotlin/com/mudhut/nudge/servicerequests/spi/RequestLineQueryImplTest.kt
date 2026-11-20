@@ -3,7 +3,7 @@ package com.mudhut.nudge.servicerequests.spi
 import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
-import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemAddon
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemPick
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.users.entities.User
@@ -59,18 +59,19 @@ class RequestLineQueryImplTest {
     }
 
     @Test
-    fun `forRequest derives item and addon lines with the addon's own quantity`() {
+    fun `forRequest derives item and pick lines with each one's own quantity`() {
         val req = completed(6L)
-        req.items[0].addons.add(
-            ServiceRequestItemAddon(
-                id = 200L, item = req.items[0], snapshotTitle = "Extra towels",
-                snapshotPriceDelta = BigDecimal("25.00"), quantity = 3,
+        req.items[0].quantity = 2
+        req.items[0].picks.add(
+            ServiceRequestItemPick(
+                id = 200L, item = req.items[0], snapshotGroupName = "Extras", snapshotTitle = "Extra towels",
+                snapshotPrice = BigDecimal("25.00"), quantity = 3,
             ),
         )
         `when`(repo.findByIdAndBusinessId(6L, 1L)).thenReturn(Optional.of(req))
         val data = impl.forRequest(1L, 6L)!!
-        assertEquals(listOf("Deep clean", "+ Extra towels"), data.lines.map { it.description })
-        assertEquals(1, data.lines[0].quantity)
+        assertEquals(listOf("Deep clean", "+ Extras: Extra towels"), data.lines.map { it.description })
+        assertEquals(2, data.lines[0].quantity)
         assertEquals(BigDecimal("25.00"), data.lines[1].unitAmount)
         assertEquals(3, data.lines[1].quantity)
     }
@@ -88,5 +89,20 @@ class RequestLineQueryImplTest {
         `when`(repo.findByIdAndBusinessId(7L, 1L)).thenReturn(Optional.of(req))
         val data = impl.forRequest(1L, 7L)!!
         assertEquals("USD", data.currency)
+    }
+
+    @Test
+    fun `agreed price yields one "Agreed price" line in the agreed currency`() {
+        val req = completed(8L)
+        req.items[0].snapshotPriceAmount = null
+        req.agreedPriceAmount = BigDecimal("300.00")
+        req.agreedPriceCurrency = "KES"
+        req.agreedPriceNote = "Includes travel"
+        `when`(repo.findByIdAndBusinessId(8L, 1L)).thenReturn(Optional.of(req))
+        val data = impl.forRequest(1L, 8L)!!
+        assertEquals("KES", data.currency)
+        assertEquals(listOf("Agreed price: Includes travel"), data.lines.map { it.description })
+        assertEquals(BigDecimal("300.00"), data.lines.single().unitAmount)
+        assertEquals(1, data.lines.single().quantity)
     }
 }

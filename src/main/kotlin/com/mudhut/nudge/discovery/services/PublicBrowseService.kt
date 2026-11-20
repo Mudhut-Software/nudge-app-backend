@@ -4,12 +4,16 @@ import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.discovery.models.BusinessSort
 import com.mudhut.nudge.discovery.models.PublicBusinessDetail
 import com.mudhut.nudge.discovery.models.PublicBusinessSummary
+import com.mudhut.nudge.discovery.models.PublicGroupChoice
+import com.mudhut.nudge.discovery.models.PublicOptionGroup
 import com.mudhut.nudge.discovery.models.PublicServiceSummary
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.discovery.repositories.DiscoveryBusinessRepository
 import com.mudhut.nudge.discovery.repositories.ReviewRepository
+import com.mudhut.nudge.servicesoffered.entities.OptionGroup
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
+import com.mudhut.nudge.servicesoffered.models.Bookability
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
 import org.springframework.data.domain.Page
@@ -82,11 +86,16 @@ class PublicBrowseService(
             .orElseThrow { BusinessNotFoundException("Business not found") }
 
         val activeServices = serviceRepository
-            .findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(biz.id!!, ServiceOfferedStatus.ACTIVE)
+            .findTop20ByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtDesc(biz.id!!, ServiceOfferedStatus.ACTIVE)
+            .filter { it.soldOnItsOwn }
 
+        // No public item at all: the business is not listed, so 404 (agrees with Explore's EXISTS).
         if (activeServices.isEmpty()) {
             throw BusinessNotFoundException("Business not found")
         }
+
+        // Unbookable packages are hidden; a business left with none still renders, with no items.
+        val bookableServices = activeServices.filter { Bookability.blockingGroup(it) == null }
 
         return PublicBusinessDetail(
             id = biz.id!!,
@@ -99,25 +108,23 @@ class PublicBrowseService(
             phoneNumbers = biz.phoneNumbers.mapNotNull { it.phoneNumber },
             email = biz.email,
             serviceAreas = biz.serviceAreas.toList(),
-            coverImageUrl = deriveCover(biz, activeServices.firstOrNull()),
-            services = activeServices.map { toServiceSummary(it) },
+            coverImageUrl = deriveCover(biz, bookableServices.firstOrNull()),
+            services = bookableServices.map { toServiceSummary(it) },
             averageRating = reviewRepository.averageForBusiness(biz.id!!),
             reviewCount = reviewRepository.countByBusinessId(biz.id!!).toInt(),
         )
     }
 
     private fun toSummary(biz: Business, distanceKm: Double? = null): PublicBusinessSummary {
-        val firstActive = serviceRepository
-            .findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(biz.id!!, ServiceOfferedStatus.ACTIVE)
+        val bookable = serviceRepository.bookableItems(biz.id!!)
         return PublicBusinessSummary(
             id = biz.id!!,
             name = biz.name!!,
             categoryId = biz.category!!.id!!,
             categoryName = biz.category!!.name!!,
             address = biz.address,
-            coverImageUrl = deriveCover(biz, firstActive),
-            serviceCount = serviceRepository
-                .countByBusinessIdAndStatus(biz.id!!, ServiceOfferedStatus.ACTIVE).toInt(),
+            coverImageUrl = deriveCover(biz, bookable.firstOrNull()),
+            serviceCount = bookable.size,
             distanceKm = distanceKm,
         )
     }
@@ -130,32 +137,46 @@ class PublicBrowseService(
         id = s.id!!,
         title = s.title!!,
         description = s.description,
-        priceMode = s.priceMode!!,
         priceAmount = s.priceAmount,
         priceCurrency = s.priceCurrency,
-        priceUnit = s.priceUnit,
-        coverImageUrl = s.coverImageUrl!!,
+        priceIsEstimate = s.priceIsEstimate,
+        estimateReason = s.estimateReason,
+        quantityEnabled = s.quantityEnabled,
+        quantityUnit = s.quantityUnit,
+        quantityMin = s.quantityMin,
+        quantityMax = s.quantityMax,
+        coverImageUrl = s.coverImageUrl,
         galleryImageUrls = s.galleryImages
             .sortedBy { it.position }
             .mapNotNull { it.url },
         tag = s.tag,
         validFrom = s.validFrom,
         validUntil = s.validUntil,
-        addons = s.addons.sortedBy { it.position }.map { a ->
-            com.mudhut.nudge.servicesoffered.models.PublicServiceAddon(
-                id = a.id!!,
-                title = a.title!!,
-                description = a.description,
-                coverImageUrl = a.coverImageUrl,
-                priceDelta = a.priceDelta,
-                priceUnit = a.priceUnit,
-                defaultSelected = a.defaultSelected,
-                quantifiable = a.quantifiable,
-                defaultQuantity = a.defaultQuantity,
-                maxQuantity = a.maxQuantity,
-                position = a.position,
-            )
-        },
+        groups = s.groups.sortedBy { it.position }.map { it.toPublic() },
+    )
+
+    private fun OptionGroup.toPublic() = PublicOptionGroup(
+        id = id!!,
+        name = name!!,
+        selection = selection,
+        required = required,
+        minPicks = minPicks,
+        maxPicks = maxPicks,
+        choices = choices
+            .sortedBy { it.position }
+            .filter { it.item!!.status == ServiceOfferedStatus.ACTIVE }
+            .map {
+                val linked = it.item!!
+                PublicGroupChoice(
+                    id = it.id!!,
+                    title = linked.title!!,
+                    description = linked.description,
+                    coverImageUrl = linked.coverImageUrl,
+                    price = it.priceOverride ?: linked.priceAmount,
+                    quantityEnabled = it.quantityEnabled,
+                    maxQuantity = it.maxQuantity,
+                )
+            },
     )
 
 }

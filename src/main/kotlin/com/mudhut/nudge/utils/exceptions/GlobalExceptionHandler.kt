@@ -225,6 +225,15 @@ class GlobalExceptionHandler {
         )
     }
 
+    @ExceptionHandler(PriceNotSettledException::class)
+    fun handlePriceNotSettled(ex: PriceNotSettledException): ResponseEntity<ErrorResponse> {
+        logger.warn("Price not settled: {}", ex.message)
+        return ResponseEntity(
+            ErrorResponse("PRICE_NOT_SETTLED", ex.message ?: "The price hasn't been agreed yet"),
+            HttpStatus.CONFLICT,
+        )
+    }
+
     @ExceptionHandler(BusinessNotFoundException::class)
     fun handleBusinessNotFoundException(ex: BusinessNotFoundException): ResponseEntity<ErrorResponse> {
         logger.warn("Business not found: {}", ex.message)
@@ -239,15 +248,6 @@ class GlobalExceptionHandler {
         logger.warn("Category not found: {}", ex.message)
         return ResponseEntity(
             ErrorResponse(ERROR_CODE_NOT_FOUND, ex.message ?: "Category not found"),
-            HttpStatus.NOT_FOUND
-        )
-    }
-
-    @ExceptionHandler(ServiceAddonNotFoundException::class)
-    fun handleServiceAddonNotFoundException(ex: ServiceAddonNotFoundException): ResponseEntity<ErrorResponse> {
-        logger.warn("Service addon not found: {}", ex.message)
-        return ResponseEntity(
-            ErrorResponse(ERROR_CODE_NOT_FOUND, ex.message ?: "Service addon not found"),
             HttpStatus.NOT_FOUND
         )
     }

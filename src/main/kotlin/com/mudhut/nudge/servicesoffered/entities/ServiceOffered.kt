@@ -25,15 +25,11 @@ class ServiceOffered(
     @Column(columnDefinition = "TEXT")
     var description: String? = null,
 
-    @Column(name = "cover_image_url", nullable = false)
+    @Column(name = "cover_image_url")
     var coverImageUrl: String? = null,
 
-    @Column(name = "cover_image_public_id", nullable = false)
+    @Column(name = "cover_image_public_id")
     var coverImagePublicId: String? = null,
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "price_mode", nullable = false, length = 16)
-    var priceMode: PriceMode? = null,
 
     @Column(name = "price_amount", precision = 19, scale = 2)
     var priceAmount: BigDecimal? = null,
@@ -41,8 +37,26 @@ class ServiceOffered(
     @Column(name = "price_currency", length = 3)
     var priceCurrency: String? = null,
 
-    @Column(name = "price_unit", length = 32)
-    var priceUnit: String? = null,
+    @Column(name = "price_is_estimate", nullable = false)
+    var priceIsEstimate: Boolean = false,
+
+    @Column(name = "estimate_reason", length = 200)
+    var estimateReason: String? = null,
+
+    @Column(name = "quantity_enabled", nullable = false)
+    var quantityEnabled: Boolean = false,
+
+    @Column(name = "quantity_unit", length = 32)
+    var quantityUnit: String? = null,
+
+    @Column(name = "quantity_min", nullable = false)
+    var quantityMin: Int = 1,
+
+    @Column(name = "quantity_max")
+    var quantityMax: Int? = null,
+
+    @Column(name = "sold_on_its_own", nullable = false)
+    var soldOnItsOwn: Boolean = true,
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
@@ -71,13 +85,13 @@ class ServiceOffered(
     var galleryImages: MutableList<ServiceOfferedImage> = mutableListOf(),
 
     @OneToMany(
-        mappedBy = "service",
+        mappedBy = "item",
         cascade = [CascadeType.ALL],
         orphanRemoval = true,
         fetch = FetchType.LAZY
     )
     @OrderBy("position ASC")
-    var addons: MutableList<ServiceAddon> = mutableListOf(),
+    var groups: MutableList<OptionGroup> = mutableListOf(),
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

@@ -11,11 +11,10 @@ import com.mudhut.nudge.businesses.repositories.BusinessCategoryRepository
 import com.mudhut.nudge.businesses.repositories.BusinessRepository
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
-import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemAddon
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemPick
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus.COMPLETED
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
 import com.mudhut.nudge.users.entities.User
@@ -78,16 +77,18 @@ class RequestStatsQueryImplTest {
         ServiceOffered(
             business = b, title = title,
             coverImageUrl = "https://example.com/c.jpg", coverImagePublicId = unique("cover"),
-            priceMode = PriceMode.FIXED, priceAmount = BigDecimal("100.00"), priceCurrency = "UGX",
+            priceAmount = BigDecimal("100.00"), priceCurrency = "UGX",
         ),
     )
 
-    /** One line on a request: a service, its snapshot price (null = QUOTE), and addons as (delta, quantity). */
+    /** One line on a request: a service, its snapshot price (null = QUOTE), and picks as (price, quantity). */
     data class Line(
         val service: ServiceOffered,
         val price: BigDecimal?,
-        val addons: List<Pair<BigDecimal, Int>> = emptyList(),
+        val picks: List<Pair<BigDecimal, Int>> = emptyList(),
         val currency: String? = "UGX",
+        val estimate: Boolean = false,
+        val quantity: Int = 1,
     )
 
     private fun request(
@@ -98,20 +99,24 @@ class RequestStatsQueryImplTest {
         submittedAt: LocalDateTime? = null,
         respondedAt: LocalDateTime? = null,
         business: Business = biz,
+        agreed: BigDecimal? = null,
+        agreedCurrency: String? = null,
     ): ServiceRequest {
         val r = ServiceRequest(
             customer = customer, business = business, status = status,
             completedAt = completedAt, submittedAt = submittedAt, respondedAt = respondedAt,
+            agreedPriceAmount = agreed, agreedPriceCurrency = agreedCurrency,
         )
         lines.forEachIndexed { idx, line ->
             val item = ServiceRequestItem(
                 request = r, service = line.service, position = idx,
                 snapshotTitle = line.service.title, snapshotPriceAmount = line.price,
-                snapshotPriceCurrency = line.currency,
+                snapshotPriceCurrency = line.currency, snapshotPriceIsEstimate = line.estimate,
+                quantity = line.quantity,
             )
-            line.addons.forEachIndexed { j, (delta, qty) ->
-                item.addons.add(
-                    ServiceRequestItemAddon(item = item, snapshotTitle = "addon", snapshotPriceDelta = delta, quantity = qty, position = j),
+            line.picks.forEachIndexed { j, (price, qty) ->
+                item.picks.add(
+                    ServiceRequestItemPick(item = item, snapshotGroupName = "Extras", snapshotTitle = "pick", snapshotPrice = price, quantity = qty, position = j),
                 )
             }
             r.items.add(item)
@@ -135,11 +140,11 @@ class RequestStatsQueryImplTest {
     }
 
     @Test
-    fun `work sums item prices and addon delta times quantity per currency`() {
+    fun `work sums item prices and pick price times quantity per currency`() {
         val c = user("customer")
         completed(
             c, LocalDateTime.of(2026, 10, 5, 10, 0),
-            Line(haircut, BigDecimal("100.00"), addons = listOf(BigDecimal("10.00") to 3)),   // 130
+            Line(haircut, BigDecimal("100.00"), picks = listOf(BigDecimal("10.00") to 3)),   // 130
             Line(shave, BigDecimal("20.00")),                                                 // +20 = 150 UGX
         )
         completed(c, LocalDateTime.of(2026, 10, 6, 10, 0), Line(haircut, BigDecimal("5.50"), currency = "USD"))
@@ -150,6 +155,63 @@ class RequestStatsQueryImplTest {
 
         assertEquals(0, BigDecimal("150.00").compareTo(work["UGX"]))
         assertEquals(0, BigDecimal("5.50").compareTo(work["USD"]))
+    }
+
+    @Test
+    fun `work multiplies item price by quantity and adds picks`() {
+        completed(
+            user("customer"), LocalDateTime.of(2026, 10, 5, 10, 0),
+            Line(haircut, BigDecimal("100.00"), quantity = 2, picks = listOf(BigDecimal("10.00") to 3)),
+        )
+        val work = stats.completions(biz.id!!, FROM, TO).work.single()
+        assertEquals(0, BigDecimal("230.00").compareTo(work.amount))
+    }
+
+    @Test
+    fun `agreed price counts once and is attributed to the unpriced item`() {
+        val at = LocalDateTime.of(2026, 10, 5, 10, 0)
+        request(
+            user("customer"), COMPLETED,
+            listOf(Line(haircut, BigDecimal("100.00")), Line(shave, null)),
+            completedAt = at, submittedAt = at.minusDays(1),
+            agreed = BigDecimal("300.00"), agreedCurrency = "KES",
+        )
+        val s = stats.completions(biz.id!!, FROM, TO)
+        assertEquals(listOf(MonthlyMoney(OCT, "KES", BigDecimal("300.00"))), s.work.map { MonthlyMoney(it.month, it.currency, it.amount.setScale(2)) })
+
+        val rows = stats.serviceBreakdown(biz.id!!, LocalDateTime.of(2026, 10, 1, 0, 0), TO).associateBy { it.title }
+        assertEquals(0, BigDecimal("300.00").compareTo(rows.getValue("Shave").work.single().amount))
+        assertEquals(0, BigDecimal.ZERO.compareTo(rows.getValue("Haircut").work.sumOf { it.amount }))
+    }
+
+    @Test
+    fun `mixed currencies on one request stay in separate buckets`() {
+        completed(
+            user("customer"), LocalDateTime.of(2026, 10, 5, 10, 0),
+            Line(haircut, BigDecimal("100000.00"), currency = "UGX"),
+            Line(shave, BigDecimal("20.00"), currency = "USD"),
+        )
+        val work = stats.completions(biz.id!!, FROM, TO).work.associate { it.currency to it.amount }
+        assertEquals(0, BigDecimal("100000.00").compareTo(work["UGX"]))
+        assertEquals(0, BigDecimal("20.00").compareTo(work["USD"]))
+
+        val rows = stats.serviceBreakdown(biz.id!!, LocalDateTime.of(2026, 10, 1, 0, 0), TO).associateBy { it.title }
+        assertEquals(listOf("UGX"), rows.getValue("Haircut").work.map { it.currency })
+        assertEquals(listOf("USD"), rows.getValue("Shave").work.map { it.currency })
+    }
+
+    @Test
+    fun `agreed price on a mixed-currency request counts once in the agreed currency`() {
+        val at = LocalDateTime.of(2026, 10, 5, 10, 0)
+        request(
+            user("customer"), COMPLETED,
+            listOf(Line(haircut, BigDecimal("100000.00"), currency = "UGX"), Line(shave, null, currency = "USD")),
+            completedAt = at, submittedAt = at.minusDays(1),
+            agreed = BigDecimal("500.00"), agreedCurrency = "KES",
+        )
+        val work = stats.completions(biz.id!!, FROM, TO).work
+        assertEquals(listOf("KES"), work.map { it.currency })
+        assertEquals(0, BigDecimal("500.00").compareTo(work.single().amount))
     }
 
     @Test
@@ -169,14 +231,14 @@ class RequestStatsQueryImplTest {
     }
 
     @Test
-    fun `a priced item with a null currency is excluded without crashing`() {
+    fun `a priced item with a null currency counts in the default currency`() {
         val c = user("customer")
         completed(c, LocalDateTime.of(2026, 10, 5, 10, 0), Line(haircut, BigDecimal("100.00"), currency = null))
 
         val s = stats.completions(biz.id!!, FROM, TO)
 
         assertEquals(listOf(MonthlyCount(OCT, 1)), s.jobs)
-        assertEquals(emptyList<MonthlyMoney>(), s.work)
+        assertEquals(listOf(Money("USD", BigDecimal("100.00"))), s.work.map { Money(it.currency, it.amount) })
     }
 
     @Test
@@ -245,11 +307,11 @@ class RequestStatsQueryImplTest {
     }
 
     @Test
-    fun `addons are credited to their own service and quote services are flagged`() {
+    fun `picks are credited to their own service and quote services are flagged`() {
         val c = user("customer")
         completed(
             c, LocalDateTime.of(2026, 10, 5, 10, 0),
-            Line(haircut, BigDecimal("100.00"), addons = listOf(BigDecimal("10.00") to 2)),   // 120 to Haircut
+            Line(haircut, BigDecimal("100.00"), picks = listOf(BigDecimal("10.00") to 2)),   // 120 to Haircut
             Line(shave, null),                                                                 // QUOTE
         )
 

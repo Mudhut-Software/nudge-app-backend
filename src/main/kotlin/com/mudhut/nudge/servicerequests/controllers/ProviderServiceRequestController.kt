@@ -2,6 +2,7 @@ package com.mudhut.nudge.servicerequests.controllers
 
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
 import com.mudhut.nudge.servicerequests.models.CancelRequestPayload
+import com.mudhut.nudge.servicerequests.models.ProposePricePayload
 import com.mudhut.nudge.servicerequests.models.ProposeTimePayload
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
 import com.mudhut.nudge.servicerequests.models.UnreadCountResponse
@@ -84,6 +85,22 @@ class ProviderServiceRequestController(
         businessId,
         id,
         requireNotNull(payload.proposedDate) { "proposedDate is required" },
+        payload.note,
+    )
+
+    /** Set one price for the whole booking; MANAGER role is checked in the service. */
+    @PostMapping("/{id}/price")
+    fun proposePrice(
+        @PathVariable businessId: Long,
+        @PathVariable id: Long,
+        @Valid @RequestBody payload: ProposePricePayload,
+        authentication: Authentication,
+    ): ServiceRequestResponse = service.proposePrice(
+        authentication.name,
+        businessId,
+        id,
+        requireNotNull(payload.amount) { "amount is required" },
+        requireNotNull(payload.currency) { "currency is required" },
         payload.note,
     )
 

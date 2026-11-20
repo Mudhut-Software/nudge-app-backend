@@ -4,7 +4,6 @@ import com.mudhut.nudge.businesses.entities.Business
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
 import com.mudhut.nudge.media.PendingMediaDeletion
-import com.mudhut.nudge.servicesoffered.entities.PriceMode
 import com.mudhut.nudge.servicesoffered.entities.ServiceOffered
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedImage
 import com.mudhut.nudge.servicesoffered.entities.ServiceOfferedStatus
@@ -13,7 +12,12 @@ import com.mudhut.nudge.servicesoffered.models.CreateServiceOfferedRequest
 import com.mudhut.nudge.servicesoffered.models.MediaInput
 import com.mudhut.nudge.servicesoffered.models.UpdateServiceOfferedRequest
 import com.mudhut.nudge.media.PendingMediaDeletionRepository
+import com.mudhut.nudge.servicesoffered.entities.GroupChoice
+import com.mudhut.nudge.servicesoffered.entities.OptionGroup
+import com.mudhut.nudge.servicesoffered.events.GroupChoicesDeletedEvent
+import com.mudhut.nudge.servicesoffered.repositories.GroupChoiceRepository
 import com.mudhut.nudge.servicesoffered.repositories.ServiceOfferedRepository
+import org.springframework.context.ApplicationEventPublisher
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
@@ -46,6 +50,12 @@ class ServicesOfferedServiceTest {
     private lateinit var pendingMediaDeletionRepository: PendingMediaDeletionRepository
 
 
+    @Mock
+    private lateinit var groupChoiceRepository: GroupChoiceRepository
+
+    @Mock
+    private lateinit var events: ApplicationEventPublisher
+
     @Captor
     private lateinit var pendingDeletionCaptor: ArgumentCaptor<List<PendingMediaDeletion>>
 
@@ -66,15 +76,13 @@ class ServicesOfferedServiceTest {
             url = "https://res.cloudinary.com/x/image/upload/nudge/images/cover.jpg",
             publicId = "nudge/images/cover"
         ),
-        priceMode = PriceMode.FIXED,
         priceAmount = amount,
         priceCurrency = currency,
-        priceUnit = null,
         galleryImages = emptyList()
     )
 
     @Test
-    fun `createService persists a FIXED-priced service`() {
+    fun `createService persists a priced service`() {
         val business = businessFixture()
         `when`(businessService.findBusinessEntity(1L)).thenReturn(business)
         `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { invocation ->
@@ -95,12 +103,10 @@ class ServicesOfferedServiceTest {
         assertEquals(99L, response.id)
         assertEquals(1L, response.businessId)
         assertEquals("Sofa cleaning", response.title)
-        assertEquals(PriceMode.FIXED, response.priceMode)
         assertEquals(BigDecimal("50000.00"), response.priceAmount)
         assertEquals("UGX", response.priceCurrency)
-        assertNull(response.priceUnit)
         assertEquals(ServiceOfferedStatus.ACTIVE, response.status)
-        assertEquals("nudge/images/cover", response.coverImage.publicId)
+        assertEquals("nudge/images/cover", response.coverImage!!.publicId)
         assertTrue(response.galleryImages.isEmpty())
     }
 
@@ -159,22 +165,10 @@ class ServicesOfferedServiceTest {
         }
     }
 
-    private fun perUnitRequest() = fixedRequest().copy(
-        priceMode = PriceMode.PER_UNIT,
-        priceUnit = "plate"
-    )
+    private fun itemRequest() = CreateServiceOfferedRequest(title = "Wedding cake")
 
-    private fun quoteRequest() = fixedRequest().copy(
-        priceMode = PriceMode.QUOTE,
-        priceAmount = null,
-        priceCurrency = null,
-        priceUnit = null
-    )
-
-    @Test
-    fun `createService persists a PER_UNIT-priced service`() {
-        val business = businessFixture()
-        `when`(businessService.findBusinessEntity(1L)).thenReturn(business)
+    private fun stubSave() {
+        `when`(businessService.findBusinessEntity(1L)).thenReturn(businessFixture())
         `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { invocation ->
             (invocation.arguments[0] as ServiceOffered).apply {
                 id = 100L
@@ -182,68 +176,178 @@ class ServicesOfferedServiceTest {
                 updatedAt = LocalDateTime.now()
             }
         }
-
-        val response = offeringService.createService(1L, "owner@test.com", perUnitRequest())
-
-        assertEquals(PriceMode.PER_UNIT, response.priceMode)
-        assertEquals("plate", response.priceUnit)
     }
 
     @Test
-    fun `createService persists a QUOTE service with no price fields`() {
-        val business = businessFixture()
-        `when`(businessService.findBusinessEntity(1L)).thenReturn(business)
-        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { invocation ->
-            (invocation.arguments[0] as ServiceOffered).apply {
-                id = 101L
-                createdAt = LocalDateTime.now()
-                updatedAt = LocalDateTime.now()
-            }
-        }
+    fun `create accepts an item with no price and no cover`() {
+        stubSave()
 
-        val response = offeringService.createService(1L, "owner@test.com", quoteRequest())
+        val response = offeringService.createService(1L, "owner@test.com", itemRequest())
 
-        assertEquals(PriceMode.QUOTE, response.priceMode)
         assertNull(response.priceAmount)
         assertNull(response.priceCurrency)
-        assertNull(response.priceUnit)
+        assertNull(response.coverImage)
+        assertTrue(response.soldOnItsOwn)
+        val captor = ArgumentCaptor.forClass(ServiceOffered::class.java)
+        verify(serviceRepository).save(captor.capture())
+        assertNull(captor.value.priceAmount)
+        assertNull(captor.value.coverImageUrl)
     }
 
     @Test
-    fun `createService rejects FIXED without amount`() {
-        val request = fixedRequest().copy(priceAmount = null)
+    fun `price without currency is rejected`() {
+        val request = itemRequest().copy(priceAmount = BigDecimal("10.00"))
         assertThrows(IllegalArgumentException::class.java) {
             offeringService.createService(1L, "owner@test.com", request)
         }
     }
 
     @Test
-    fun `createService rejects FIXED with a unit`() {
-        val request = fixedRequest().copy(priceUnit = "plate")
+    fun `estimate without a reason is rejected`() {
+        val request = fixedRequest().copy(priceIsEstimate = true, estimateReason = "   ")
         assertThrows(IllegalArgumentException::class.java) {
             offeringService.createService(1L, "owner@test.com", request)
         }
     }
 
     @Test
-    fun `createService rejects PER_UNIT without unit`() {
-        val request = perUnitRequest().copy(priceUnit = null)
+    fun `estimate without a price is rejected`() {
+        val request = itemRequest().copy(priceIsEstimate = true, estimateReason = "Depends on size")
         assertThrows(IllegalArgumentException::class.java) {
             offeringService.createService(1L, "owner@test.com", request)
         }
     }
 
     @Test
-    fun `createService rejects QUOTE with an amount`() {
-        val request = quoteRequest().copy(priceAmount = BigDecimal("100.00"))
+    fun `estimate with price and reason is stored trimmed`() {
+        stubSave()
+        val request = fixedRequest().copy(priceIsEstimate = true, estimateReason = "  Depends on size ")
+
+        val response = offeringService.createService(1L, "owner@test.com", request)
+
+        assertTrue(response.priceIsEstimate)
+        assertEquals("Depends on size", response.estimateReason)
+    }
+
+    @Test
+    fun `quantity max below min is rejected`() {
+        val request = itemRequest().copy(quantityEnabled = true, quantityMin = 5, quantityMax = 2)
         assertThrows(IllegalArgumentException::class.java) {
             offeringService.createService(1L, "owner@test.com", request)
         }
     }
 
     @Test
-    fun `createService rejects non-positive amount`() {
-        val request = fixedRequest().copy(priceAmount = BigDecimal.ZERO)
+    fun `quantity fields are ignored when quantity is off`() {
+        stubSave()
+        val request = itemRequest().copy(
+            quantityEnabled = false, quantityUnit = "plate", quantityMin = 4, quantityMax = 9
+        )
+
+        offeringService.createService(1L, "owner@test.com", request)
+
+        val captor = ArgumentCaptor.forClass(ServiceOffered::class.java)
+        verify(serviceRepository).save(captor.capture())
+        assertEquals(1, captor.value.quantityMin)
+        assertNull(captor.value.quantityMax)
+        assertNull(captor.value.quantityUnit)
+    }
+
+    @Test
+    fun `quantity fields are kept when quantity is on`() {
+        stubSave()
+        val request = itemRequest().copy(
+            quantityEnabled = true, quantityUnit = "plate", quantityMin = 2, quantityMax = 9
+        )
+
+        val response = offeringService.createService(1L, "owner@test.com", request)
+
+        assertEquals("plate", response.quantityUnit)
+        assertEquals(2, response.quantityMin)
+        assertEquals(9, response.quantityMax)
+    }
+
+    @Test
+    fun `updateService clearPrice removes amount, currency and estimate`() {
+        val entity = ServiceOffered(
+            id = 7L, business = businessFixture(), title = "X",
+            priceAmount = BigDecimal("10.00"), priceCurrency = "UGX",
+            priceIsEstimate = true, estimateReason = "why",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        val response = offeringService.updateService(
+            7L, "owner@test.com", UpdateServiceOfferedRequest(clearPrice = true)
+        )
+
+        assertNull(response.priceAmount)
+        assertNull(response.priceCurrency)
+        assertFalse(response.priceIsEstimate)
+        assertNull(response.estimateReason)
+    }
+
+    private fun quantityEntity() = ServiceOffered(
+        id = 7L, business = businessFixture(), title = "Platter",
+        quantityEnabled = true, quantityUnit = "plate", quantityMin = 2, quantityMax = 9,
+        createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+    )
+
+    @Test
+    fun `updateService clearQuantityMax removes the upper limit and keeps quantity on`() {
+        val entity = quantityEntity()
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        val response = offeringService.updateService(
+            7L, "owner@test.com", UpdateServiceOfferedRequest(clearQuantityMax = true)
+        )
+
+        assertNull(response.quantityMax)
+        assertTrue(response.quantityEnabled)
+        assertEquals(2, response.quantityMin)
+        assertEquals("plate", response.quantityUnit)
+    }
+
+    @Test
+    fun `updateService with a blank quantityUnit clears the unit`() {
+        val entity = quantityEntity()
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        val response = offeringService.updateService(
+            7L, "owner@test.com", UpdateServiceOfferedRequest(quantityUnit = "")
+        )
+
+        assertNull(response.quantityUnit)
+        assertNull(entity.quantityUnit)
+        assertEquals(9, response.quantityMax)
+    }
+
+    @Test
+    fun `updateService clearCover queues the old cover for deletion`() {
+        val entity = ServiceOffered(
+            id = 7L, business = businessFixture(), title = "X",
+            coverImageUrl = "u", coverImagePublicId = "nudge/images/old",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(serviceRepository.save(any<ServiceOffered>())).thenAnswer { it.arguments[0] }
+
+        val response = offeringService.updateService(
+            7L, "owner@test.com", UpdateServiceOfferedRequest(clearCover = true)
+        )
+
+        assertNull(response.coverImage)
+        verify(pendingMediaDeletionRepository).save(org.mockito.kotlin.argThat<PendingMediaDeletion> {
+            publicId == "nudge/images/old"
+        })
+    }
+
+    @Test
+    fun `createService rejects negative amount`() {
+        val request = fixedRequest().copy(priceAmount = BigDecimal("-1.00"))
         assertThrows(IllegalArgumentException::class.java) {
             offeringService.createService(1L, "owner@test.com", request)
         }
@@ -266,7 +370,6 @@ class ServicesOfferedServiceTest {
             title = "A",
             coverImageUrl = "u",
             coverImagePublicId = "nudge/images/u",
-            priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
         )
@@ -274,7 +377,7 @@ class ServicesOfferedServiceTest {
         `when`(serviceRepository.findAllByBusinessId(1L, pageable))
             .thenReturn(PageImpl(listOf(s1), pageable, 1))
 
-        val page = offeringService.listServices(1L, "owner@test.com", pageable, null)
+        val page = offeringService.listServices(1L, "owner@test.com", pageable, null, null)
 
         verify(businessService).requireRole(1L, "owner@test.com", BusinessRole.STAFF)
         assertEquals(1, page.totalElements)
@@ -287,9 +390,36 @@ class ServicesOfferedServiceTest {
         `when`(serviceRepository.findAllByBusinessIdAndStatus(1L, ServiceOfferedStatus.ACTIVE, pageable))
             .thenReturn(PageImpl(emptyList(), pageable, 0))
 
-        val page = offeringService.listServices(1L, "owner@test.com", pageable, ServiceOfferedStatus.ACTIVE)
+        val page = offeringService.listServices(1L, "owner@test.com", pageable, ServiceOfferedStatus.ACTIVE, null)
 
         assertEquals(0, page.totalElements)
+    }
+
+    @Test
+    fun `list filters by q case-insensitively`() {
+        val pageable = PageRequest.of(0, 20)
+        `when`(serviceRepository.findAllByBusinessIdAndTitleContainingIgnoreCase(1L, "wed", pageable))
+            .thenReturn(PageImpl(emptyList(), pageable, 0))
+
+        offeringService.listServices(1L, "owner@test.com", pageable, null, "  wed ")
+
+        verify(serviceRepository).findAllByBusinessIdAndTitleContainingIgnoreCase(1L, "wed", pageable)
+    }
+
+    @Test
+    fun `list filters by q and status together`() {
+        val pageable = PageRequest.of(0, 20)
+        `when`(
+            serviceRepository.findAllByBusinessIdAndStatusAndTitleContainingIgnoreCase(
+                1L, ServiceOfferedStatus.ACTIVE, "wed", pageable
+            )
+        ).thenReturn(PageImpl(emptyList(), pageable, 0))
+
+        offeringService.listServices(1L, "owner@test.com", pageable, ServiceOfferedStatus.ACTIVE, "wed")
+
+        verify(serviceRepository).findAllByBusinessIdAndStatusAndTitleContainingIgnoreCase(
+            1L, ServiceOfferedStatus.ACTIVE, "wed", pageable
+        )
     }
 
     @Test
@@ -301,7 +431,6 @@ class ServicesOfferedServiceTest {
             title = "Get-quote service",
             coverImageUrl = "u",
             coverImagePublicId = "nudge/images/u",
-            priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
         )
@@ -331,7 +460,6 @@ class ServicesOfferedServiceTest {
             title = "Old title",
             coverImageUrl = "u",
             coverImagePublicId = "nudge/images/u",
-            priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
         )
@@ -346,7 +474,6 @@ class ServicesOfferedServiceTest {
 
         verify(businessService).requireRole(1L, "owner@test.com", BusinessRole.MANAGER)
         assertEquals("New title", response.title)
-        assertEquals(PriceMode.QUOTE, response.priceMode)
     }
 
     @Test
@@ -357,7 +484,6 @@ class ServicesOfferedServiceTest {
             title = "X",
             coverImageUrl = "u",
             coverImagePublicId = "nudge/images/u",
-            priceMode = PriceMode.QUOTE,
             status = ServiceOfferedStatus.ACTIVE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
@@ -374,24 +500,21 @@ class ServicesOfferedServiceTest {
     }
 
     @Test
-    fun `updateService re-validates pricing when mode changes`() {
+    fun `updateService re-validates the resulting item`() {
         val entity = ServiceOffered(
             id = 7L,
             business = businessFixture(),
             title = "X",
-            coverImageUrl = "u",
-            coverImagePublicId = "nudge/images/u",
-            priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
         )
         `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
 
-        // Move from QUOTE to FIXED but supply no amount → must reject.
+        // Estimate flag on an item that has no price → must reject.
         assertThrows(IllegalArgumentException::class.java) {
             offeringService.updateService(
                 7L, "owner@test.com",
-                UpdateServiceOfferedRequest(priceMode = PriceMode.FIXED)
+                UpdateServiceOfferedRequest(priceIsEstimate = true, estimateReason = "why")
             )
         }
     }
@@ -404,7 +527,6 @@ class ServicesOfferedServiceTest {
             title = "X",
             coverImageUrl = "old",
             coverImagePublicId = "nudge/images/old",
-            priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
         )
@@ -421,8 +543,8 @@ class ServicesOfferedServiceTest {
             )
         )
 
-        assertEquals("newUrl", response.coverImage.url)
-        assertEquals("nudge/images/new", response.coverImage.publicId)
+        assertEquals("newUrl", response.coverImage!!.url)
+        assertEquals("nudge/images/new", response.coverImage!!.publicId)
     }
 
     private fun entityWithGallery(images: List<Pair<String, String>>): ServiceOffered {
@@ -432,7 +554,6 @@ class ServicesOfferedServiceTest {
             title = "X",
             coverImageUrl = "u",
             coverImagePublicId = "nudge/images/u",
-            priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
         )
@@ -507,7 +628,6 @@ class ServicesOfferedServiceTest {
             title = "X",
             coverImageUrl = "u",
             coverImagePublicId = "nudge/images/u",
-            priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
         )
@@ -520,6 +640,29 @@ class ServicesOfferedServiceTest {
     }
 
     @Test
+    fun `deleting an item removes its choices from other items' groups and publishes their ids`() {
+        val entity = ServiceOffered(id = 7L, business = businessFixture(), title = "Mango")
+        val otherParent = ServiceOffered(id = 8L, business = businessFixture(), title = "Platter")
+        val otherGroup = OptionGroup(id = 3L, item = otherParent, name = "Flavours")
+        val linking = GroupChoice(id = 70L, group = otherGroup, item = entity)
+        otherGroup.choices.add(linking)
+        // The item's own group goes with it, so its choice ids are announced too.
+        val ownGroup = OptionGroup(id = 4L, item = entity, name = "Sizes")
+        ownGroup.choices.add(GroupChoice(id = 71L, group = ownGroup, item = otherParent))
+        entity.groups.add(ownGroup)
+        `when`(serviceRepository.findById(7L)).thenReturn(java.util.Optional.of(entity))
+        `when`(groupChoiceRepository.findAllByItemId(7L)).thenReturn(listOf(linking))
+
+        offeringService.deleteService(7L, "owner@test.com")
+
+        val order = org.mockito.Mockito.inOrder(events, groupChoiceRepository, serviceRepository)
+        order.verify(events).publishEvent(GroupChoicesDeletedEvent(listOf(70L, 71L)))
+        order.verify(groupChoiceRepository).deleteAll(listOf(linking))
+        order.verify(serviceRepository).delete(entity)
+        assertTrue(otherGroup.choices.isEmpty())
+    }
+
+    @Test
     fun `deleteService also deletes package_offered_items rows for the service`() {
         val entity = ServiceOffered(
             id = 7L,
@@ -527,7 +670,6 @@ class ServicesOfferedServiceTest {
             title = "X",
             coverImageUrl = "u",
             coverImagePublicId = "nudge/images/u",
-            priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now()
         )
@@ -555,7 +697,6 @@ class ServicesOfferedServiceTest {
             title = "X",
             coverImageUrl = "old-url",
             coverImagePublicId = "nudge/images/old-cover",
-            priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now(),
         )
@@ -582,7 +723,6 @@ class ServicesOfferedServiceTest {
             title = "X",
             coverImageUrl = "u",
             coverImagePublicId = "nudge/images/cover",
-            priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now(),
         )
@@ -605,7 +745,6 @@ class ServicesOfferedServiceTest {
             title = "X",
             coverImageUrl = "u",
             coverImagePublicId = "nudge/images/cover",
-            priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now(),
         )
@@ -630,7 +769,6 @@ class ServicesOfferedServiceTest {
             title = "X",
             coverImageUrl = "u",
             coverImagePublicId = "nudge/images/cover-7",
-            priceMode = PriceMode.QUOTE,
             createdAt = LocalDateTime.now(),
             updatedAt = LocalDateTime.now(),
         )

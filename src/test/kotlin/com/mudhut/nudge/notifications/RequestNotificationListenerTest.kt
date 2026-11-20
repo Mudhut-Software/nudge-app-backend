@@ -2,7 +2,9 @@ package com.mudhut.nudge.notifications
 
 import com.mudhut.nudge.email.IEmailService
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.PriceEventKind
 import com.mudhut.nudge.servicerequests.events.RequestActor
+import com.mudhut.nudge.servicerequests.events.ServiceRequestPriceEvent
 import com.mudhut.nudge.servicerequests.events.ServiceRequestStatusChangedEvent
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.repositories.UserRepository
@@ -21,6 +23,7 @@ import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.thymeleaf.TemplateEngine
+import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.util.Optional
 
@@ -229,5 +232,60 @@ class RequestNotificationListenerTest {
         assertTrue(text.firstValue.contains("Fully booked Monday morning"))
         // The original 1 Sep date must not be the one shown.
         assertTrue(!text.firstValue.contains("1 Sep"), text.firstValue)
+    }
+
+    private fun priceEvent(kind: PriceEventKind, note: String? = null) = ServiceRequestPriceEvent(
+        requestId = 7,
+        kind = kind,
+        amount = BigDecimal("4200000"),
+        currency = "UGX",
+        note = note,
+        businessId = 3,
+        businessName = "SparkleClean",
+        ownerEmail = "owner@x.com",
+        customerId = 5,
+        customerName = "Alice",
+        serviceTitle = "Deep clean",
+        changedAt = LocalDateTime.now(),
+    )
+
+    @Test
+    fun `price proposed emails the customer with the amount and note`() {
+        whenever(userRepo.findById(5L))
+            .thenReturn(Optional.of(User(id = 5, email = "alice@x.com", username = "Alice")))
+        stubTemplate()
+
+        listener.onPriceChanged(priceEvent(PriceEventKind.PROPOSED, note = "Includes materials"))
+
+        val subject = argumentCaptor<String>()
+        val text = argumentCaptor<String>()
+        verify(emailService).sendHtmlEmail(eq("alice@x.com"), subject.capture(), any(), text.capture())
+        assertEquals("SparkleClean proposed a new price", subject.firstValue)
+        assertTrue(text.firstValue.contains("UGX 4,200,000"))
+        assertTrue(text.firstValue.contains("Includes materials"))
+        assertTrue(text.firstValue.contains("https://app.nudge.test/bookings"))
+    }
+
+    @Test
+    fun `price accepted emails the owner`() {
+        stubTemplate()
+
+        listener.onPriceChanged(priceEvent(PriceEventKind.ACCEPTED))
+
+        val subject = argumentCaptor<String>()
+        val text = argumentCaptor<String>()
+        verify(emailService).sendHtmlEmail(eq("owner@x.com"), subject.capture(), any(), text.capture())
+        assertEquals("Alice accepted your price", subject.firstValue)
+        assertTrue(text.firstValue.contains("UGX 4,200,000"))
+        assertTrue(text.firstValue.contains("https://app.nudge.test/calendar?tab=requests"))
+    }
+
+    @Test
+    fun `price proposed with an unresolvable customer sends nothing`() {
+        whenever(userRepo.findById(5L)).thenReturn(Optional.empty())
+
+        listener.onPriceChanged(priceEvent(PriceEventKind.PROPOSED))
+
+        verify(emailService, never()).sendHtmlEmail(any(), any(), any(), any())
     }
 }

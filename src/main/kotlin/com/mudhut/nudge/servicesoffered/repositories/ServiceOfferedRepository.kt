@@ -16,17 +16,25 @@ interface ServiceOfferedRepository : JpaRepository<ServiceOffered, Long> {
         pageable: Pageable
     ): Page<ServiceOffered>
 
-    fun findFirstByBusinessIdAndStatusOrderByCreatedAtAsc(
+    fun findAllByBusinessIdAndTitleContainingIgnoreCase(
+        businessId: Long,
+        title: String,
+        pageable: Pageable
+    ): Page<ServiceOffered>
+
+    fun findAllByBusinessIdAndStatusAndTitleContainingIgnoreCase(
         businessId: Long,
         status: ServiceOfferedStatus,
-    ): ServiceOffered?
+        title: String,
+        pageable: Pageable
+    ): Page<ServiceOffered>
 
-    fun countByBusinessIdAndStatus(
+    fun findAllByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtAsc(
         businessId: Long,
         status: ServiceOfferedStatus,
-    ): Long
+    ): List<ServiceOffered>
 
-    fun findTop20ByBusinessIdAndStatusOrderByCreatedAtDesc(
+    fun findTop20ByBusinessIdAndStatusAndSoldOnItsOwnTrueOrderByCreatedAtDesc(
         businessId: Long,
         status: ServiceOfferedStatus,
     ): List<ServiceOffered>

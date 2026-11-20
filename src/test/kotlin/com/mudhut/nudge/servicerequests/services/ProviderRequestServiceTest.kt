@@ -5,15 +5,23 @@ import com.mudhut.nudge.businesses.entities.BusinessCategory
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.entities.BusinessStatus
 import com.mudhut.nudge.businesses.services.BusinessService
+import com.mudhut.nudge.servicerequests.entities.PricingState
 import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItem
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestItemPick
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestPriceProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.PriceEventKind
+import com.mudhut.nudge.servicerequests.models.ItemPickResponse
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestPriceProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.users.entities.User
 import com.mudhut.nudge.users.entities.UserRole
 import com.mudhut.nudge.utils.exceptions.InvalidStateTransitionException
+import com.mudhut.nudge.utils.exceptions.PriceNotSettledException
 import com.mudhut.nudge.utils.exceptions.QuotaExceededException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -30,6 +38,7 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
+import java.math.BigDecimal
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -45,7 +54,16 @@ class ProviderRequestServiceTest {
     private val eventPublisher: ServiceRequestEventPublisher = mock()
     private val proposalRepo: ServiceRequestProposalRepository = mock()
     private val quotaService: JobQuotaService = mock()
-    private val sut = ProviderRequestService(repo, businessService, popularityPublisher, eventPublisher, proposalRepo, quotaService)
+    private val priceProposalRepo: ServiceRequestPriceProposalRepository = mock()
+    private val sut = ProviderRequestService(
+        repo, businessService, popularityPublisher, eventPublisher, proposalRepo, quotaService, priceProposalRepo,
+    )
+
+    init {
+        // Price-changing paths load the request with a row lock. The locked finder answers with
+        // whatever each test stubbed on findById, so fixtures stay written once.
+        whenever(repo.findWithLockById(any())).thenAnswer { repo.findById(it.arguments[0] as Long).orElse(null) }
+    }
 
     private fun biz(id: Long = 10L) = Business(
         id = id,
@@ -476,5 +494,247 @@ class ProviderRequestServiceTest {
         sut.complete("owner@example.com", 10L, 100L)
 
         verify(quotaService, never()).requireCapacity(any())
+    }
+
+    @Test
+    fun `the provider sees the sent quantity, estimate and snapshotted picks`() {
+        val r = req(ServiceRequestStatus.PENDING, viewedAt = LocalDateTime.now())
+        val item = ServiceRequestItem(
+            request = r, position = 0, quantity = 40,
+            snapshotTitle = "Catering", snapshotPriceAmount = BigDecimal("20000.00"), snapshotPriceCurrency = "UGX",
+            snapshotPriceIsEstimate = true, snapshotEstimateReason = "Final count may change", snapshotQuantityUnit = "guest",
+        )
+        item.picks.add(
+            ServiceRequestItemPick(
+                id = 7L, item = item, choice = null, groupId = 32L, snapshotGroupName = "Juices",
+                snapshotTitle = "Mango", snapshotPrice = BigDecimal("3000.00"), quantity = 2, position = 0,
+            ),
+        )
+        r.items.add(item)
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+
+        val response = sut.get("owner@example.com", 10L, 100L)
+
+        val dto = response.items.single()
+        assertEquals(40, dto.quantity)
+        assertEquals("guest", dto.quantityUnit)
+        assertTrue(dto.priceIsEstimate)
+        assertEquals("Final count may change", dto.estimateReason)
+        assertEquals(
+            listOf(ItemPickResponse(7L, null, 32L, "Juices", "Mango", BigDecimal("3000.00"), 2, 0)),
+            dto.picks,
+        )
+        assertEquals(PricingState.ESTIMATED, response.pricing)
+        assertEquals(0, BigDecimal("806000.00").compareTo(response.total))
+    }
+
+    // --- price proposals (Task 7) ---
+
+    /** A CONFIRMED booking whose job date has passed, with one snapshotted item. */
+    private fun bookedWith(
+        price: String?,
+        estimate: Boolean,
+        status: ServiceRequestStatus = ServiceRequestStatus.CONFIRMED,
+    ): ServiceRequest {
+        val r = req(status)
+        r.requestedDate = LocalDateTime.now().minusDays(1)
+        r.items.add(
+            ServiceRequestItem(
+                request = r, position = 0, quantity = 1, snapshotTitle = "Venue dressing",
+                snapshotPriceAmount = price?.let { BigDecimal(it) },
+                snapshotPriceCurrency = price?.let { "UGX" },
+                snapshotPriceIsEstimate = estimate,
+            ),
+        )
+        whenever(repo.findById(100L)).thenReturn(Optional.of(r))
+        whenever(repo.save(any<ServiceRequest>())).thenAnswer { it.arguments[0] as ServiceRequest }
+        return r
+    }
+
+    /** Saves echo back and become the "latest" the response reads, as the real repository would. */
+    private fun priceRepoRemembersSaves(): MutableList<ServiceRequestPriceProposal> {
+        val saved = mutableListOf<ServiceRequestPriceProposal>()
+        whenever(priceProposalRepo.save(any<ServiceRequestPriceProposal>())).thenAnswer {
+            val p = it.arguments[0] as ServiceRequestPriceProposal
+            if (p.id == null) p.id = 1000L + saved.size // the database assigns one on insert
+            if (p !in saved) saved.add(p)
+            p
+        }
+        whenever(priceProposalRepo.findFirstByRequestIdOrderByProposedAtDescIdDesc(100L))
+            .thenAnswer { saved.lastOrNull { it.outcome == ProposalOutcome.OUTSTANDING } ?: saved.lastOrNull() }
+        return saved
+    }
+
+    @Test
+    fun `propose price on a confirmed estimated booking stores an outstanding proposal`() {
+        assertTestJvmPinnedToNonUtcZone()
+        bookedWith("3500000.00", estimate = true)
+        val saved = priceRepoRemembersSaves()
+
+        val response = sut.proposePrice(
+            "owner@example.com", 10L, 100L, BigDecimal("4200000"), "UGX", "  after visiting the venue  ",
+        )
+
+        val p = saved.single()
+        assertEquals(0, BigDecimal("4200000").compareTo(p.amount))
+        assertEquals("UGX", p.currency)
+        assertEquals("after visiting the venue", p.note)
+        assertEquals(ProposalOutcome.OUTSTANDING, p.outcome)
+        assertWrittenInUtcNotLocalZone(p.proposedAt)
+        assertEquals(ProposalOutcome.OUTSTANDING, response.priceProposal?.outcome)
+        assertEquals(false, response.priceSettled)
+        assertNull(response.agreedPrice)
+        // Still CONFIRMED: proposing a price is not a status change.
+        assertEquals(ServiceRequestStatus.CONFIRMED, response.status)
+        verify(businessService).requireRole(10L, "owner@example.com", BusinessRole.MANAGER)
+        verify(eventPublisher).priceChanged(any(), eq(PriceEventKind.PROPOSED), any())
+    }
+
+    @Test
+    fun `propose price normalises a blank note to null`() {
+        bookedWith(null, estimate = false)
+        val saved = priceRepoRemembersSaves()
+
+        sut.proposePrice("owner@example.com", 10L, 100L, BigDecimal("100"), "UGX", "   ")
+
+        assertNull(saved.single().note)
+    }
+
+    @Test
+    fun `second proposal supersedes the unanswered one`() {
+        bookedWith(null, estimate = false)
+        val saved = priceRepoRemembersSaves()
+        val first = ServiceRequestPriceProposal(
+            id = 1L, amount = BigDecimal("100"), currency = "UGX",
+            proposedAt = LocalDateTime.now(ZoneOffset.UTC).minusHours(1), outcome = ProposalOutcome.OUTSTANDING,
+        )
+        whenever(priceProposalRepo.findAllByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(listOf(first))
+
+        val response = sut.proposePrice("owner@example.com", 10L, 100L, BigDecimal("150"), "UGX", null)
+
+        assertEquals(ProposalOutcome.SUPERSEDED, first.outcome)
+        assertWrittenInUtcNotLocalZone(first.respondedAt)
+        val current = saved.single { it !== first }
+        assertEquals(ProposalOutcome.OUTSTANDING, current.outcome)
+        assertEquals(0, BigDecimal("150").compareTo(response.priceProposal!!.amount))
+    }
+
+    @Test
+    fun `propose price is refused on a firm booking`() {
+        bookedWith("250000.00", estimate = false)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.proposePrice("owner@example.com", 10L, 100L, BigDecimal("300000"), "UGX", null)
+        }
+        verify(priceProposalRepo, never()).save(any<ServiceRequestPriceProposal>())
+    }
+
+    @Test
+    fun `propose price is refused once a price was accepted`() {
+        val r = bookedWith(null, estimate = false)
+        r.agreedPriceAmount = BigDecimal("100")
+        r.agreedPriceCurrency = "UGX"
+
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.proposePrice("owner@example.com", 10L, 100L, BigDecimal("300000"), "UGX", null)
+        }
+        verify(priceProposalRepo, never()).save(any<ServiceRequestPriceProposal>())
+    }
+
+    @Test
+    fun `propose price is refused when not confirmed`() {
+        bookedWith(null, estimate = false, status = ServiceRequestStatus.PENDING)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.proposePrice("owner@example.com", 10L, 100L, BigDecimal("300000"), "UGX", null)
+        }
+        verify(priceProposalRepo, never()).save(any<ServiceRequestPriceProposal>())
+    }
+
+    @Test
+    fun `propose price refuses a zero amount`() {
+        bookedWith(null, estimate = false)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            sut.proposePrice("owner@example.com", 10L, 100L, BigDecimal.ZERO, "UGX", null)
+        }
+    }
+
+    @Test
+    fun `complete is refused while a price is outstanding`() {
+        val r = bookedWith("3500000.00", estimate = true)
+        whenever(priceProposalRepo.findAllByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING))
+            .thenReturn(listOf(ServiceRequestPriceProposal(id = 1L, amount = BigDecimal("1"), currency = "UGX")))
+
+        assertThrows(PriceNotSettledException::class.java) {
+            sut.complete("owner@example.com", 10L, 100L)
+        }
+        assertEquals(ServiceRequestStatus.CONFIRMED, r.status)
+        verify(repo, never()).save(any<ServiceRequest>())
+    }
+
+    @Test
+    fun `complete is refused for an unpriced booking with no agreed price`() {
+        bookedWith(null, estimate = false)
+
+        assertThrows(PriceNotSettledException::class.java) {
+            sut.complete("owner@example.com", 10L, 100L)
+        }
+    }
+
+    @Test
+    fun `complete goes through for an unpriced booking once a price was agreed`() {
+        val r = bookedWith(null, estimate = false)
+        r.agreedPriceAmount = BigDecimal("100")
+        r.agreedPriceCurrency = "UGX"
+
+        val response = sut.complete("owner@example.com", 10L, 100L)
+
+        assertEquals(ServiceRequestStatus.COMPLETED, response.status)
+        assertEquals(true, response.priceSettled)
+        // The agreed figure replaces the itemised total on the wire.
+        assertNull(response.total)
+        assertEquals(0, BigDecimal("100").compareTo(response.agreedPrice!!.amount))
+    }
+
+    @Test
+    fun `an estimate that was never changed does not block completion`() {
+        bookedWith("3500000.00", estimate = true)
+
+        val response = sut.complete("owner@example.com", 10L, 100L)
+
+        assertEquals(ServiceRequestStatus.COMPLETED, response.status)
+    }
+
+    @Test
+    fun `supersede marks every outstanding row, so a stray duplicate cannot wedge the booking`() {
+        bookedWith(null, estimate = false)
+        val saved = priceRepoRemembersSaves()
+        val stray = listOf(1L, 2L).map {
+            ServiceRequestPriceProposal(
+                id = it, amount = BigDecimal("100"), currency = "UGX",
+                proposedAt = LocalDateTime.now(ZoneOffset.UTC).minusHours(1), outcome = ProposalOutcome.OUTSTANDING,
+            )
+        }
+        whenever(priceProposalRepo.findAllByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING)).thenReturn(stray)
+
+        sut.proposePrice("owner@example.com", 10L, 100L, BigDecimal("150"), "UGX", null)
+
+        stray.forEach { assertEquals(ProposalOutcome.SUPERSEDED, it.outcome) }
+        assertEquals(1, saved.count { it.outcome == ProposalOutcome.OUTSTANDING })
+    }
+
+    @Test
+    fun `propose price and complete load the request with a row lock`() {
+        bookedWith("3500000.00", estimate = true)
+        priceRepoRemembersSaves()
+
+        sut.proposePrice("owner@example.com", 10L, 100L, BigDecimal("150"), "UGX", null)
+        verify(repo).findWithLockById(100L)
+
+        whenever(priceProposalRepo.findAllByRequestIdAndOutcome(100L, ProposalOutcome.OUTSTANDING)).thenReturn(emptyList())
+        sut.complete("owner@example.com", 10L, 100L)
+        verify(repo, org.mockito.kotlin.times(2)).findWithLockById(100L)
     }
 }

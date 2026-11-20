@@ -2,15 +2,20 @@ package com.mudhut.nudge.servicerequests.services
 
 import com.mudhut.nudge.businesses.entities.BusinessRole
 import com.mudhut.nudge.businesses.services.BusinessService
+import com.mudhut.nudge.servicerequests.entities.PricingState
 import com.mudhut.nudge.servicerequests.entities.ProposalOutcome
 import com.mudhut.nudge.servicerequests.entities.ServiceRequest
+import com.mudhut.nudge.servicerequests.entities.ServiceRequestPriceProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestProposal
 import com.mudhut.nudge.servicerequests.entities.ServiceRequestStatus
+import com.mudhut.nudge.servicerequests.events.PriceEventKind
 import com.mudhut.nudge.servicerequests.events.RequestActor
 import com.mudhut.nudge.servicerequests.models.AttachmentResponse
+import com.mudhut.nudge.servicerequests.models.MoneyDto
+import com.mudhut.nudge.servicerequests.models.PriceProposalResponse
 import com.mudhut.nudge.servicerequests.models.ProposalResponse
-import com.mudhut.nudge.servicerequests.models.ServiceRequestItemResponse
 import com.mudhut.nudge.servicerequests.models.ServiceRequestResponse
+import com.mudhut.nudge.servicerequests.repositories.ServiceRequestPriceProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestProposalRepository
 import com.mudhut.nudge.servicerequests.repositories.ServiceRequestRepository
 import com.mudhut.nudge.utils.exceptions.BusinessNotFoundException
@@ -18,9 +23,13 @@ import jakarta.transaction.Transactional
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
+import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
+
+private val ISO_CURRENCY = Regex("^[A-Z]{3}$")
+private const val MAX_PRICE_NOTE = 500
 
 @Service
 class ProviderRequestService(
@@ -30,6 +39,7 @@ class ProviderRequestService(
     private val eventPublisher: ServiceRequestEventPublisher,
     private val proposalRepo: ServiceRequestProposalRepository,
     private val quotaService: JobQuotaService,
+    private val priceProposalRepo: ServiceRequestPriceProposalRepository,
 ) {
 
     fun list(
@@ -195,10 +205,71 @@ class ProviderRequestService(
         return toResponse(saved)
     }
 
+    /**
+     * Set one price for the whole booking, for the customer to accept or decline.
+     *
+     * CONFIRMED, estimated or to-be-confirmed, and only until a price was accepted (after that it
+     * is final). An unanswered earlier proposal is replaced: it becomes SUPERSEDED, so there is
+     * never more than one OUTSTANDING. Not a status change, so no status event; a price event
+     * tells the customer instead.
+     */
+    @Transactional
+    fun proposePrice(
+        email: String,
+        businessId: Long,
+        requestId: Long,
+        amount: BigDecimal,
+        currency: String,
+        note: String?,
+    ): ServiceRequestResponse {
+        businessService.requireRole(businessId, email, BusinessRole.MANAGER)
+        // Locked: serialises this with a concurrent propose (no second OUTSTANDING row) and with
+        // the customer's accept (no proposal replacing a price mid-accept).
+        val request = requireSameBusinessLocked(businessId, requestId)
+
+        // `require` (400), not `check` (403) or a transition error (409): these are the rules
+        // of the price, not of the request's lifecycle or the caller's rights.
+        require(request.status == ServiceRequestStatus.CONFIRMED) {
+            "A price can only be set on a confirmed booking"
+        }
+        require(PriceGate.stateOf(request) != PricingState.FIRM) {
+            "This booking has a fixed price"
+        }
+        require(request.agreedPriceAmount == null) {
+            "The customer already accepted a price for this booking"
+        }
+        require(amount.signum() > 0) { "The price must be more than zero" }
+        require(ISO_CURRENCY.matches(currency)) { "currency must be a 3-letter ISO-4217 code" }
+        val cleanNote = note?.trim()?.takeIf { it.isNotEmpty() }
+        require((cleanNote?.length ?: 0) <= MAX_PRICE_NOTE) { "The note must be at most $MAX_PRICE_NOTE characters" }
+
+        val now = LocalDateTime.now(ZoneOffset.UTC)
+        // Every OUTSTANDING row, not just the first, so a stray duplicate can't wedge the gate.
+        priceProposalRepo.findAllByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
+            .forEach {
+                it.outcome = ProposalOutcome.SUPERSEDED
+                it.respondedAt = now
+                priceProposalRepo.save(it)
+            }
+        val proposal = priceProposalRepo.save(
+            ServiceRequestPriceProposal(
+                request = request,
+                amount = amount,
+                currency = currency,
+                note = cleanNote,
+                proposedAt = now,
+                outcome = ProposalOutcome.OUTSTANDING,
+            )
+        )
+        eventPublisher.priceChanged(request, PriceEventKind.PROPOSED, proposal)
+        return toResponse(request)
+    }
+
     @Transactional
     fun complete(email: String, businessId: Long, requestId: Long): ServiceRequestResponse {
         businessService.requireRole(businessId, email, BusinessRole.MANAGER)
-        val request = requireSameBusiness(businessId, requestId)
+        // Locked so a price proposed concurrently can't slip past the gate below.
+        val request = requireSameBusinessLocked(businessId, requestId)
         val from = request.status
         ServiceRequestStateMachine.requireTransition(from, ServiceRequestStatus.COMPLETED)
 
@@ -207,6 +278,12 @@ class ProviderRequestService(
         check(date.isBefore(LocalDateTime.now())) {
             "Service date hasn't passed yet"
         }
+        // No completion (and so no invoice) while a price awaits an answer or was never set.
+        PriceGate.requireSettled(
+            request,
+            outstandingPrice = priceProposalRepo.findAllByRequestIdAndOutcome(requestId, ProposalOutcome.OUTSTANDING)
+                .isNotEmpty(),
+        )
 
         request.status = ServiceRequestStatus.COMPLETED
         request.completedAt = LocalDateTime.now()
@@ -216,33 +293,26 @@ class ProviderRequestService(
         return toResponse(saved)
     }
 
-    private fun requireSameBusiness(businessId: Long, requestId: Long): ServiceRequest {
-        val request = repo.findById(requestId)
-            .orElseThrow { BusinessNotFoundException("Request not found with id: $requestId") }
-        if (request.business?.id != businessId) {
+    private fun requireSameBusiness(businessId: Long, requestId: Long): ServiceRequest =
+        requireInBusiness(businessId, requestId, repo.findById(requestId).orElse(null))
+
+    /** [requireSameBusiness], row-locked until commit (see [ServiceRequestRepository.findWithLockById]). */
+    private fun requireSameBusinessLocked(businessId: Long, requestId: Long): ServiceRequest =
+        requireInBusiness(businessId, requestId, repo.findWithLockById(requestId))
+
+    private fun requireInBusiness(businessId: Long, requestId: Long, request: ServiceRequest?): ServiceRequest {
+        if (request == null || request.business?.id != businessId) {
             throw BusinessNotFoundException("Request not found with id: $requestId")
         }
         return request
     }
 
     private fun toResponse(request: ServiceRequest): ServiceRequestResponse {
-        val items = request.items
-            .sortedBy { it.position }
-            .map { item ->
-                ServiceRequestItemResponse(
-                    serviceId = item.service?.id,
-                    title = item.snapshotTitle
-                        ?: item.service?.title
-                        ?: "(unknown)",
-                    priceAmount = item.snapshotPriceAmount
-                        ?: item.service?.priceAmount,
-                    priceCurrency = item.snapshotPriceCurrency
-                        ?: item.service?.priceCurrency,
-                    coverImageUrl = item.snapshotCoverUrl
-                        ?: item.service?.coverImageUrl,
-                    position = item.position,
-                )
-            }
+        // Providers never see drafts, so every request here reads its snapshot.
+        val items = RequestItemMapping.items(request.items, live = false)
+        val (pricing, total) = RequestItemMapping.pricing(items)
+        val latestPrice = request.id?.let { priceProposalRepo.findFirstByRequestIdOrderByProposedAtDescIdDesc(it) }
+        val agreed = MoneyDto.agreedOf(request)
 
         return ServiceRequestResponse(
             id = request.id ?: 0L,
@@ -276,6 +346,16 @@ class ProviderRequestService(
                         position = it.position,
                     )
                 },
+            pricing = pricing,
+            total = if (agreed != null) null else total,
+            agreedPrice = agreed,
+            priceProposal = latestPrice?.let { PriceProposalResponse.from(it) },
+            // Latest is the outstanding one whenever one exists: a new proposal supersedes the last.
+            priceSettled = PriceGate.settled(
+                pricing,
+                request.agreedPriceAmount,
+                latestPrice?.outcome == ProposalOutcome.OUTSTANDING,
+            ),
             submittedAt = request.submittedAt,
             respondedAt = request.respondedAt,
             completedAt = request.completedAt,

@@ -35,7 +35,7 @@ internal object AnalyticsMath {
         rows.filter { it.month == month }.sumOf { it.count }
 
     /**
-     * Item and addon sums arrive as separate rows for the same currency, so
+     * Several requests can report money for the same month and currency, so
      * they are merged here. Currencies are never combined with each other.
      */
     fun moneyFor(month: YearMonth, rows: List<MonthlyMoney>): List<Money> =
