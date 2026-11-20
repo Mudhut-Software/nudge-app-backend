@@ -77,7 +77,7 @@ class DevDataSeeder(
      * seeded: no demo customer, businesses or catalogue, and so no [AnalyticsDemoSeeder]
      * bookings either (it needs the demo owner). Read only when the database is empty.
      */
-    @Value("\${nudge.seed.demo-data:false}") private val seedDemoData: Boolean = false,
+    @param:Value("\${nudge.seed.demo-data:false}") private val seedDemoData: Boolean = false,
 ) : ApplicationRunner {
 
     private val log = LoggerFactory.getLogger(DevDataSeeder::class.java)
