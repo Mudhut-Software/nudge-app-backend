@@ -25,6 +25,7 @@ import jakarta.transaction.Transactional
 import org.slf4j.LoggerFactory
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Profile
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Component
@@ -71,6 +72,12 @@ class DevDataSeeder(
     private val serviceRepo: ServiceOfferedRepository,
     private val passwordEncoder: PasswordEncoder,
     private val subscriptionService: SubscriptionService,
+    /**
+     * When false (the dev default, see application-dev.properties) only the categories are
+     * seeded: no demo customer, businesses or catalogue, and so no [AnalyticsDemoSeeder]
+     * bookings either (it needs the demo owner). Read only when the database is empty.
+     */
+    @Value("\${nudge.seed.demo-data:false}") private val seedDemoData: Boolean = false,
 ) : ApplicationRunner {
 
     private val log = LoggerFactory.getLogger(DevDataSeeder::class.java)
@@ -78,10 +85,14 @@ class DevDataSeeder(
     @Transactional
     override fun run(args: ApplicationArguments) {
         if (categoryRepo.count() == 0L) {
-            log.info("DevDataSeeder: empty database — seeding demo data…")
             val categories = seedCategories()
-            seedCustomer()
-            seedBusinesses(categories)
+            if (seedDemoData) {
+                log.info("DevDataSeeder: empty database — seeding demo data…")
+                seedCustomer()
+                seedBusinesses(categories)
+            } else {
+                log.info("DevDataSeeder: empty database — categories only (nudge.seed.demo-data=false).")
+            }
         } else {
             log.info("DevDataSeeder: data already present — skipping demo seed.")
         }
